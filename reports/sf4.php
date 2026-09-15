@@ -1,4 +1,5 @@
 <?php
+
 /**
  * DepEd School Form 4 (SF4)
  * Monthly Attendance Report for the School
@@ -18,7 +19,7 @@ $year            = (int)($_GET['year']  ?? date('Y'));
 $schoolName      = getSetting('school_name')  ?? 'San Pablo City Central School';
 $schoolAddress   = getSetting('school_address') ?? '';
 $schoolYear      = getSetting('school_year')   ?? '';
-$monthLabel      = date('F Y', mktime(0,0,0,$month,1,$year));
+$monthLabel      = date('F Y', mktime(0, 0, 0, $month, 1, $year));
 $daysInMonth     = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 $calEntries      = getCalendarMonth($month, $year);
 
@@ -26,8 +27,8 @@ $calEntries      = getCalendarMonth($month, $year);
 $schoolDays = 0;
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
-    $dow = (int)date('N', mktime(0,0,0,$month,$d,$year));
-    if (!in_array($dow,[6,7]) && !isHolidayOrNoClass($ds)) $schoolDays++;
+    $dow = (int)date('N', mktime(0, 0, 0, $month, $d, $year));
+    if (!in_array($dow, [6, 7]) && !isHolidayOrNoClass($ds)) $schoolDays++;
 }
 
 // Get all sections grouped by grade
@@ -102,10 +103,18 @@ foreach ($allSections as $sec) {
 
 // Grand totals
 $grandTotals = [
-    'enrolled'   => 0, 'male' => 0, 'female' => 0,
-    'full_day'   => 0, 'partial' => 0, 'absent' => 0,
-    'am_present' => 0, 'am_late' => 0, 'am_absent' => 0,
-    'pm_present' => 0, 'pm_late' => 0, 'pm_absent' => 0,
+    'enrolled'   => 0,
+    'male' => 0,
+    'female' => 0,
+    'full_day'   => 0,
+    'partial' => 0,
+    'absent' => 0,
+    'am_present' => 0,
+    'am_late' => 0,
+    'am_absent' => 0,
+    'pm_present' => 0,
+    'pm_late' => 0,
+    'pm_absent' => 0,
 ];
 foreach ($sectionData as $s) {
     $grandTotals['enrolled']   += $s['total_enrolled'] ?? 0;
@@ -151,18 +160,18 @@ include '../includes/sidebar.php';
             <div class="col-md-3">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">
-                    <?php for($m=1;$m<=12;$m++): ?>
-                    <option value="<?=$m?>" <?=$m==$month?'selected':''?>>
-                        <?= date('F',mktime(0,0,0,$m,1)) ?>
-                    </option>
+                    <?php for ($m = 1; $m <= 12; $m++): ?>
+                        <option value="<?= $m ?>" <?= $m == $month ? 'selected' : '' ?>>
+                            <?= date('F', mktime(0, 0, 0, $m, 1)) ?>
+                        </option>
                     <?php endfor; ?>
                 </select>
             </div>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Year</label>
                 <select name="year" class="form-select form-select-sm">
-                    <?php for($y=2024;$y<=date('Y')+1;$y++): ?>
-                    <option value="<?=$y?>" <?=$y==$year?'selected':''?>><?=$y?></option>
+                    <?php for ($y = 2024; $y <= date('Y') + 1; $y++): ?>
+                        <option value="<?= $y ?>" <?= $y == $year ? 'selected' : '' ?>><?= $y ?></option>
                     <?php endfor; ?>
                 </select>
             </div>
@@ -178,20 +187,39 @@ include '../includes/sidebar.php';
     <div class="card-body p-3" id="sf4Document">
 
         <!-- Header -->
-        <div class="text-center mb-2" style="font-size:0.8rem">
-            <div style="font-size:0.72rem">Republic of the Philippines</div>
-            <div class="fw-700">Department of Education</div>
-            <div class="fw-700"><?= sanitize($schoolName) ?></div>
-            <?php if ($schoolAddress): ?>
-            <div><?= sanitize($schoolAddress) ?></div>
-            <?php endif; ?>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;border-bottom:2px solid #000;padding-bottom:10px">
+
+            <!-- Left logo -->
+            <img src="<?= BASE_URL ?>assets/img/school_logo.png"
+                style="width:80px;height:80px;object-fit:contain;flex-shrink:0"
+                alt="School Logo">
+
+            <!-- Center text -->
+            <div style="flex:1;text-align:center;font-size:0.82rem">
+                <div style="font-size:0.72rem">Republic of the Philippines</div>
+                <div style="font-weight:700;font-size:0.9rem">Department of Education</div>
+                <div style="font-weight:700"><?= sanitize($schoolName) ?></div>
+                <?php if ($schoolAddress): ?>
+                    <div style="font-size:0.75rem"><?= sanitize($schoolAddress) ?></div>
+                <?php endif; ?>
+                <div style="font-size:0.75rem">S.Y. <?= $schoolYear ?></div>
+            </div>
+
+            <!-- Right logo -->
+            <img src="<?= BASE_URL ?>assets/img/school_logo.png"
+                style="width:80px;height:80px;object-fit:contain;flex-shrink:0;opacity:0.15"
+                alt="DepEd Logo">
+
         </div>
 
-        <div class="text-center mb-3">
-            <div class="fw-800 border-top border-bottom py-1" style="font-size:0.88rem">
-                SCHOOL FORM 4 (SF4) — MONTHLY LEARNER MOVEMENT AND ATTENDANCE REPORT
+        <div style="text-align:center;margin-bottom:10px">
+            <div style="font-weight:800;font-size:0.95rem;border:2px solid #000;padding:4px 8px;display:inline-block;letter-spacing:0.05em">
+                SCHOOL FORM 4 (SF4)
             </div>
-            <div style="font-size:0.8rem">
+            <div style="font-weight:700;font-size:0.85rem;margin-top:4px">
+                MONTHLY LEARNER MOVEMENT AND ATTENDANCE REPORT
+            </div>
+            <div style="font-size:0.8rem;margin-top:4px">
                 Month: <strong><?= $monthLabel ?></strong>
                 &nbsp;|&nbsp; S.Y.: <strong><?= $schoolYear ?></strong>
                 &nbsp;|&nbsp; No. of School Days: <strong><?= $schoolDays ?></strong>
@@ -250,90 +278,90 @@ include '../includes/sidebar.php';
                         if ($s['grade_level'] !== $currentGrade):
                             $currentGrade = $s['grade_level'];
                     ?>
-                    <tr style="background:#f8f8f8">
-                        <td colspan="18" style="border:1px solid #000;padding:2px 4px;font-weight:700;font-size:0.72rem">
-                            <?= sanitize($currentGrade) ?>
-                        </td>
-                    </tr>
-                    <?php endif; ?>
-                    <tr>
-                        <td style="border:1px solid #000;padding:2px;text-align:center">
-                            <?= $idx + 1 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px">
-                            <?= sanitize($s['grade_level']) ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;font-weight:bold">
-                            <?= sanitize($s['section_name']) ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center">
-                            <?= ucfirst(str_replace('_',' ',$s['schedule_type'])) ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px">
-                            <?= sanitize($s['adviser_name'] ?? '—') ?>
-                        </td>
-                        <!-- Enrollment -->
-                        <td style="border:1px solid #000;padding:2px;text-align:center;font-weight:bold">
-                            <?= $s['total_enrolled'] ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center">
-                            <?= $s['male'] ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center">
-                            <?= $s['female'] ?>
-                        </td>
-                        <!-- School Days -->
-                        <td style="border:1px solid #000;padding:2px;text-align:center">
-                            <?= $schoolDays ?>
-                        </td>
-                        <!-- AM -->
-                        <?php if ($s['schedule_type'] === 'pm_only'): ?>
-                        <td colspan="3" style="border:1px solid #000;padding:2px;text-align:center;background:#f5f5f5;color:#999;font-size:0.6rem">
-                            PM Only
-                        </td>
-                        <?php else: ?>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#f9fffe">
-                            <?= $s['am_present'] ?? 0 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#f9fffe;color:darkorange">
-                            <?= $s['am_late'] ?? 0 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#f9fffe;color:red">
-                            <?= $s['am_absent'] ?? 0 ?>
-                        </td>
+                            <tr style="background:#f8f8f8">
+                                <td colspan="18" style="border:1px solid #000;padding:2px 4px;font-weight:700;font-size:0.72rem">
+                                    <?= sanitize($currentGrade) ?>
+                                </td>
+                            </tr>
                         <?php endif; ?>
-                        <!-- PM -->
-                        <?php if ($s['schedule_type'] === 'am_only'): ?>
-                        <td colspan="3" style="border:1px solid #000;padding:2px;text-align:center;background:#f5f5f5;color:#999;font-size:0.6rem">
-                            AM Only
-                        </td>
-                        <?php else: ?>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#f5f8ff">
-                            <?= $s['pm_present'] ?? 0 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#f5f8ff;color:darkorange">
-                            <?= $s['pm_late'] ?? 0 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#f5f8ff;color:red">
-                            <?= $s['pm_absent'] ?? 0 ?>
-                        </td>
-                        <?php endif; ?>
-                        <!-- Overall -->
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#fffdf0;color:green;font-weight:bold">
-                            <?= $s['full_day'] ?? 0 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#fffdf0;color:darkorange">
-                            <?= $s['partial'] ?? 0 ?>
-                        </td>
-                        <td style="border:1px solid #000;padding:2px;text-align:center;background:#fffdf0;color:red">
-                            <?= $s['absent'] ?? 0 ?>
-                        </td>
-                        <!-- Rate -->
-                        <td style="border:1px solid #000;padding:2px;text-align:center;font-weight:bold;
-                                   color:<?= $s['rate']>=90?'green':($s['rate']>=75?'darkorange':'red') ?>">
-                            <?= $s['rate'] ?>%
-                        </td>
-                    </tr>
+                        <tr>
+                            <td style="border:1px solid #000;padding:2px;text-align:center">
+                                <?= $idx + 1 ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px">
+                                <?= sanitize($s['grade_level']) ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px;font-weight:bold">
+                                <?= sanitize($s['section_name']) ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px;text-align:center">
+                                <?= ucfirst(str_replace('_', ' ', $s['schedule_type'])) ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px">
+                                <?= sanitize($s['adviser_name'] ?? '—') ?>
+                            </td>
+                            <!-- Enrollment -->
+                            <td style="border:1px solid #000;padding:2px;text-align:center;font-weight:bold">
+                                <?= $s['total_enrolled'] ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px;text-align:center">
+                                <?= $s['male'] ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px;text-align:center">
+                                <?= $s['female'] ?>
+                            </td>
+                            <!-- School Days -->
+                            <td style="border:1px solid #000;padding:2px;text-align:center">
+                                <?= $schoolDays ?>
+                            </td>
+                            <!-- AM -->
+                            <?php if ($s['schedule_type'] === 'pm_only'): ?>
+                                <td colspan="3" style="border:1px solid #000;padding:2px;text-align:center;background:#f5f5f5;color:#999;font-size:0.6rem">
+                                    PM Only
+                                </td>
+                            <?php else: ?>
+                                <td style="border:1px solid #000;padding:2px;text-align:center;background:#f9fffe">
+                                    <?= $s['am_present'] ?? 0 ?>
+                                </td>
+                                <td style="border:1px solid #000;padding:2px;text-align:center;background:#f9fffe;color:darkorange">
+                                    <?= $s['am_late'] ?? 0 ?>
+                                </td>
+                                <td style="border:1px solid #000;padding:2px;text-align:center;background:#f9fffe;color:red">
+                                    <?= $s['am_absent'] ?? 0 ?>
+                                </td>
+                            <?php endif; ?>
+                            <!-- PM -->
+                            <?php if ($s['schedule_type'] === 'am_only'): ?>
+                                <td colspan="3" style="border:1px solid #000;padding:2px;text-align:center;background:#f5f5f5;color:#999;font-size:0.6rem">
+                                    AM Only
+                                </td>
+                            <?php else: ?>
+                                <td style="border:1px solid #000;padding:2px;text-align:center;background:#f5f8ff">
+                                    <?= $s['pm_present'] ?? 0 ?>
+                                </td>
+                                <td style="border:1px solid #000;padding:2px;text-align:center;background:#f5f8ff;color:darkorange">
+                                    <?= $s['pm_late'] ?? 0 ?>
+                                </td>
+                                <td style="border:1px solid #000;padding:2px;text-align:center;background:#f5f8ff;color:red">
+                                    <?= $s['pm_absent'] ?? 0 ?>
+                                </td>
+                            <?php endif; ?>
+                            <!-- Overall -->
+                            <td style="border:1px solid #000;padding:2px;text-align:center;background:#fffdf0;color:green;font-weight:bold">
+                                <?= $s['full_day'] ?? 0 ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px;text-align:center;background:#fffdf0;color:darkorange">
+                                <?= $s['partial'] ?? 0 ?>
+                            </td>
+                            <td style="border:1px solid #000;padding:2px;text-align:center;background:#fffdf0;color:red">
+                                <?= $s['absent'] ?? 0 ?>
+                            </td>
+                            <!-- Rate -->
+                            <td style="border:1px solid #000;padding:2px;text-align:center;font-weight:bold;
+                                   color:<?= $s['rate'] >= 90 ? 'green' : ($s['rate'] >= 75 ? 'darkorange' : 'red') ?>">
+                                <?= $s['rate'] ?>%
+                            </td>
+                        </tr>
                     <?php endforeach; ?>
                 </tbody>
                 <tfoot>
@@ -417,16 +445,49 @@ include '../includes/sidebar.php';
 </div>
 
 <style>
-@media print {
-    .no-print, .sidebar, .top-navbar, .page-header { display: none !important; }
-    .main-content { margin: 0 !important; }
-    .content-area { padding: 0 !important; }
-    .card { border: none !important; box-shadow: none !important; }
-    body { font-size: 8px; }
-    #sf4Document { padding: 0 !important; }
-    table { page-break-inside: auto; }
-    tr { page-break-inside: avoid; }
-}
+    @media print {
+
+        .no-print,
+        .sidebar,
+        .top-navbar,
+        .page-header {
+            display: none !important;
+        }
+
+        .main-content {
+            margin: 0 !important;
+        }
+
+        .content-area {
+            padding: 0 !important;
+        }
+
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        body {
+            font-size: 8px;
+        }
+
+        #sf4Document {
+            padding: 0 !important;
+        }
+
+        table {
+            page-break-inside: auto;
+        }
+
+        tr {
+            page-break-inside: avoid;
+        }
+
+        img {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+    }
 </style>
 
 <?php include '../includes/footer.php'; ?>

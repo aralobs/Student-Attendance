@@ -1,4 +1,5 @@
 <?php
+
 /**
  * System Settings
  */
@@ -11,13 +12,27 @@ $db        = getDB();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $keys = [
-        'school_name','school_address','school_year','grade_level',
-        'time_in_start','time_in_end','late_threshold',
-        'time_out_start','time_out_end',
-        'unisms_api_key','unisms_sender_id',
-        'sms_arrival_template','sms_departure_template','sms_absence_template',
-        'mail_host','mail_port','mail_username','mail_password',
-        'mail_from_name','mail_from_email','email_notifications'
+        'school_name',
+        'school_address',
+        'school_year',
+        'grade_level',
+        'time_in_start',
+        'time_in_end',
+        'late_threshold',
+        'time_out_start',
+        'time_out_end',
+        'unisms_api_key',
+        'unisms_sender_id',
+        'sms_arrival_template',
+        'sms_departure_template',
+        'sms_absence_template',
+        'mail_host',
+        'mail_port',
+        'mail_username',
+        'mail_password',
+        'mail_from_name',
+        'mail_from_email',
+        'email_notifications'
     ];
     foreach ($keys as $key) {
         if (isset($_POST[$key])) {
@@ -64,24 +79,24 @@ include '../includes/sidebar.php';
                     <div class="mb-3">
                         <label class="form-label">School Name</label>
                         <input type="text" name="school_name" class="form-control"
-                               value="<?= htmlspecialchars($settings['school_name'] ?? '') ?>">
+                            value="<?= htmlspecialchars($settings['school_name'] ?? '') ?>">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Address</label>
                         <input type="text" name="school_address" class="form-control"
-                               value="<?= htmlspecialchars($settings['school_address'] ?? '') ?>">
+                            value="<?= htmlspecialchars($settings['school_address'] ?? '') ?>">
                     </div>
                     <div class="row g-2">
                         <div class="col">
                             <label class="form-label">School Year</label>
                             <input type="text" name="school_year" class="form-control"
-                                   placeholder="2024-2025"
-                                   value="<?= htmlspecialchars($settings['school_year'] ?? '') ?>">
+                                placeholder="2024-2025"
+                                value="<?= htmlspecialchars($settings['school_year'] ?? '') ?>">
                         </div>
                         <div class="col">
                             <label class="form-label">Grade Level</label>
                             <input type="text" name="grade_level" class="form-control"
-                                   value="<?= htmlspecialchars($settings['grade_level'] ?? 'Kindergarten') ?>">
+                                value="<?= htmlspecialchars($settings['grade_level'] ?? 'Kindergarten') ?>">
                         </div>
                     </div>
                 </div>
@@ -102,12 +117,12 @@ include '../includes/sidebar.php';
                         <div class="col">
                             <label class="form-label">Time-In Start</label>
                             <input type="time" name="time_in_start" class="form-control"
-                                   value="<?= $settings['time_in_start'] ?? '07:00' ?>">
+                                value="<?= $settings['time_in_start'] ?? '07:00' ?>">
                         </div>
                         <div class="col">
                             <label class="form-label">Time-In End</label>
                             <input type="time" name="time_in_end" class="form-control"
-                                   value="<?= $settings['time_in_end'] ?? '08:00' ?>">
+                                value="<?= $settings['time_in_end'] ?? '08:00' ?>">
                         </div>
                     </div>
                     <div class="mb-3">
@@ -118,18 +133,18 @@ include '../includes/sidebar.php';
                             </span>
                         </label>
                         <input type="time" name="late_threshold" class="form-control"
-                               value="<?= $settings['late_threshold'] ?? '07:31' ?>">
+                            value="<?= $settings['late_threshold'] ?? '07:31' ?>">
                     </div>
                     <div class="row g-2">
                         <div class="col">
                             <label class="form-label">Time-Out Start</label>
                             <input type="time" name="time_out_start" class="form-control"
-                                   value="<?= $settings['time_out_start'] ?? '11:00' ?>">
+                                value="<?= $settings['time_out_start'] ?? '11:00' ?>">
                         </div>
                         <div class="col">
                             <label class="form-label">Time-Out End</label>
                             <input type="time" name="time_out_end" class="form-control"
-                                   value="<?= $settings['time_out_end'] ?? '12:00' ?>">
+                                value="<?= $settings['time_out_end'] ?? '12:00' ?>">
                         </div>
                     </div>
                 </div>
@@ -143,7 +158,7 @@ include '../includes/sidebar.php';
                     <i class="bi bi-chat-dots-fill me-2 text-primary"></i>
                     UniSMS API Settings
                     <a href="https://unismsapi.com" target="_blank"
-                       class="btn btn-sm btn-outline-info ms-2">
+                        class="btn btn-sm btn-outline-info ms-2">
                         <i class="bi bi-box-arrow-up-right me-1"></i>Get API Key
                     </a>
                 </div>
@@ -165,14 +180,14 @@ include '../includes/sidebar.php';
                                     <i class="bi bi-key text-muted"></i>
                                 </span>
                                 <input type="password"
-                                       name="unisms_api_key"
-                                       id="apiKeyInput"
-                                       class="form-control font-monospace"
-                                       placeholder="sk_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                                       value="<?= htmlspecialchars($settings['unisms_api_key'] ?? '') ?>">
+                                    name="unisms_api_key"
+                                    id="apiKeyInput"
+                                    class="form-control font-monospace"
+                                    placeholder="sk_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                                    value="<?= htmlspecialchars($settings['unisms_api_key'] ?? '') ?>">
                                 <button type="button"
-                                        class="btn btn-outline-secondary"
-                                        onclick="toggleField('apiKeyInput','apiKeyEye')">
+                                    class="btn btn-outline-secondary"
+                                    onclick="toggleField('apiKeyInput','apiKeyEye')">
                                     <i class="bi bi-eye" id="apiKeyEye"></i>
                                 </button>
                             </div>
@@ -180,9 +195,9 @@ include '../includes/sidebar.php';
                         <div class="col-md-4">
                             <label class="form-label">Sender ID</label>
                             <input type="text" name="unisms_sender_id" class="form-control"
-                                   maxlength="11"
-                                   placeholder="UnisoftSMS"
-                                   value="<?= htmlspecialchars($settings['unisms_sender_id'] ?? 'UnisoftSMS') ?>">
+                                maxlength="11"
+                                placeholder="UnisoftSMS"
+                                value="<?= htmlspecialchars($settings['unisms_sender_id'] ?? 'UnisoftSMS') ?>">
                             <small class="text-muted">Max 11 characters</small>
                         </div>
                     </div>
@@ -190,13 +205,13 @@ include '../includes/sidebar.php';
                     <!-- Test SMS -->
                     <div class="mb-4">
                         <button type="button" class="btn btn-sm btn-outline-success"
-                                onclick="testSMS()">
+                            onclick="testSMS()">
                             <i class="bi bi-send me-1"></i>Send Test SMS
                         </button>
                         <input type="text" id="testNumber"
-                               class="form-control d-inline-block ms-2"
-                               placeholder="+639XXXXXXXXX"
-                               style="width:200px;display:inline-block!important">
+                            class="form-control d-inline-block ms-2"
+                            placeholder="+639XXXXXXXXX"
+                            style="width:200px;display:inline-block!important">
                         <span id="testSMSResult" class="ms-2 small"></span>
                     </div>
 
@@ -215,7 +230,7 @@ include '../includes/sidebar.php';
                                 Arrival Message
                             </label>
                             <textarea name="sms_arrival_template"
-                                      class="form-control" rows="4"><?= htmlspecialchars($settings['sms_arrival_template'] ?? '') ?></textarea>
+                                class="form-control" rows="4"><?= htmlspecialchars($settings['sms_arrival_template'] ?? '') ?></textarea>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">
@@ -223,7 +238,7 @@ include '../includes/sidebar.php';
                                 Departure Message
                             </label>
                             <textarea name="sms_departure_template"
-                                      class="form-control" rows="4"><?= htmlspecialchars($settings['sms_departure_template'] ?? '') ?></textarea>
+                                class="form-control" rows="4"><?= htmlspecialchars($settings['sms_departure_template'] ?? '') ?></textarea>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">
@@ -231,7 +246,7 @@ include '../includes/sidebar.php';
                                 Absence Alert
                             </label>
                             <textarea name="sms_absence_template"
-                                      class="form-control" rows="4"><?= htmlspecialchars($settings['sms_absence_template'] ?? '') ?></textarea>
+                                class="form-control" rows="4"><?= htmlspecialchars($settings['sms_absence_template'] ?? '') ?></textarea>
                         </div>
                     </div>
 
@@ -265,8 +280,8 @@ include '../includes/sidebar.php';
                                     <i class="bi bi-envelope text-muted"></i>
                                 </span>
                                 <input type="email" name="mail_username" class="form-control"
-                                       placeholder="your_gmail@gmail.com"
-                                       value="<?= htmlspecialchars($settings['mail_username'] ?? '') ?>">
+                                    placeholder="your_gmail@gmail.com"
+                                    value="<?= htmlspecialchars($settings['mail_username'] ?? '') ?>">
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -276,14 +291,14 @@ include '../includes/sidebar.php';
                                     <i class="bi bi-shield-lock text-muted"></i>
                                 </span>
                                 <input type="password"
-                                       name="mail_password"
-                                       id="mailPassInput"
-                                       class="form-control font-monospace"
-                                       placeholder="xxxx xxxx xxxx xxxx"
-                                       value="<?= htmlspecialchars($settings['mail_password'] ?? '') ?>">
+                                    name="mail_password"
+                                    id="mailPassInput"
+                                    class="form-control font-monospace"
+                                    placeholder="xxxx xxxx xxxx xxxx"
+                                    value="<?= htmlspecialchars($settings['mail_password'] ?? '') ?>">
                                 <button type="button"
-                                        class="btn btn-outline-secondary"
-                                        onclick="toggleField('mailPassInput','mailPassEye')">
+                                    class="btn btn-outline-secondary"
+                                    onclick="toggleField('mailPassInput','mailPassEye')">
                                     <i class="bi bi-eye" id="mailPassEye"></i>
                                 </button>
                             </div>
@@ -291,30 +306,30 @@ include '../includes/sidebar.php';
                         <div class="col-md-6">
                             <label class="form-label">From Name</label>
                             <input type="text" name="mail_from_name" class="form-control"
-                                   value="<?= htmlspecialchars($settings['mail_from_name'] ?? 'SPCCS Kinder Attendance') ?>">
+                                value="<?= htmlspecialchars($settings['mail_from_name'] ?? 'SPCCS Kinder Attendance') ?>">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">From Email</label>
                             <input type="email" name="mail_from_email" class="form-control"
-                                   placeholder="same as Gmail address"
-                                   value="<?= htmlspecialchars($settings['mail_from_email'] ?? '') ?>">
+                                placeholder="same as Gmail address"
+                                value="<?= htmlspecialchars($settings['mail_from_email'] ?? '') ?>">
                         </div>
                         <div class="col-md-3">
                             <label class="form-label">SMTP Host</label>
                             <input type="text" name="mail_host" class="form-control"
-                                   value="<?= htmlspecialchars($settings['mail_host'] ?? 'smtp.gmail.com') ?>">
+                                value="<?= htmlspecialchars($settings['mail_host'] ?? 'smtp.gmail.com') ?>">
                         </div>
                         <div class="col-md-2">
                             <label class="form-label">SMTP Port</label>
                             <input type="number" name="mail_port" class="form-control"
-                                   value="<?= htmlspecialchars($settings['mail_port'] ?? '587') ?>">
+                                value="<?= htmlspecialchars($settings['mail_port'] ?? '587') ?>">
                         </div>
                         <div class="col-md-3 d-flex align-items-end">
                             <div class="form-check form-switch">
                                 <input class="form-check-input" type="checkbox"
-                                       name="email_notifications"
-                                       id="emailNotifToggle" value="1"
-                                       <?= ($settings['email_notifications'] ?? '1') === '1' ? 'checked' : '' ?>>
+                                    name="email_notifications"
+                                    id="emailNotifToggle" value="1"
+                                    <?= ($settings['email_notifications'] ?? '1') === '1' ? 'checked' : '' ?>>
                                 <label class="form-check-label fw-600" for="emailNotifToggle">
                                     Enable Email Notifications
                                 </label>
@@ -325,13 +340,13 @@ include '../includes/sidebar.php';
                     <!-- Test Email -->
                     <div class="mt-3">
                         <button type="button" class="btn btn-sm btn-outline-success"
-                                onclick="testEmail()">
+                            onclick="testEmail()">
                             <i class="bi bi-envelope me-1"></i>Send Test Email
                         </button>
                         <input type="email" id="testEmailAddr"
-                               class="form-control d-inline-block ms-2"
-                               placeholder="test@gmail.com"
-                               style="width:220px;display:inline-block!important">
+                            class="form-control d-inline-block ms-2"
+                            placeholder="test@gmail.com"
+                            style="width:220px;display:inline-block!important">
                         <span id="testEmailResult" class="ms-2 small"></span>
                     </div>
 
@@ -346,6 +361,27 @@ include '../includes/sidebar.php';
             </button>
         </div>
 
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">School Logo</label>
+        <div class="d-flex align-items-center gap-3">
+            <img src="<?= BASE_URL ?>assets/img/school_logo.png"
+                style="width:60px;height:60px;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;padding:4px"
+                onerror="this.style.display='none'"
+                id="logoPreview"
+                alt="School Logo">
+            <div>
+                <label for="logoUpload" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-upload me-1"></i>Upload Logo (PNG/JPG)
+                </label>
+                <input type="file" id="logoUpload" accept="image/*" class="d-none"
+                    onchange="uploadLogo(this)">
+                <div class="text-muted small mt-1">
+                    Recommended: 960×960px PNG. Used in SF2 and SF4 reports.
+                </div>
+            </div>
+        </div>
     </div>
 </form>
 
@@ -426,6 +462,31 @@ async function testEmail() {
         }
     } catch (e) {
         result.innerHTML = '<span class="text-danger">Network error: ' + e.message + '</span>';
+    }
+}
+
+async function uploadLogo(input) {
+    if (!input.files || !input.files[0]) return;
+
+    const formData = new FormData();
+    formData.append('logo', input.files[0]);
+
+    try {
+        const res  = await fetch('upload_logo.php', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('logoPreview').src =
+                data.url + '?v=' + Date.now();
+            document.getElementById('logoPreview').style.display = '';
+            alert('Logo uploaded successfully!');
+        } else {
+            alert('Upload failed: ' + data.message);
+        }
+    } catch (e) {
+        alert('Network error uploading logo.');
     }
 }
 </script>
