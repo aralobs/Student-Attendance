@@ -21,7 +21,7 @@ $student = $stmt->fetch();
 
 if (!$student) {
     setFlash('danger', 'Student not found.');
-    header('Location: index.php');
+    header('Location: students.php');
     exit;
 }
 
@@ -76,7 +76,7 @@ include '../includes/sidebar.php';
         <a href="generate_qr.php?id=<?= $student['id'] ?>" class="btn btn-outline-success">
             <i class="bi bi-qr-code me-1"></i>QR Code
         </a>
-        <a href="index.php" class="btn btn-outline-secondary">
+        <a href="students.php" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>
@@ -240,7 +240,7 @@ include '../includes/sidebar.php';
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-clock-history me-2"></i>Recent Attendance</span>
-                <a href="../attendance/index.php"
+                <a href="../attendance/students.php"
                    class="btn btn-sm btn-outline-primary">View All</a>
             </div>
             <div class="card-body p-0">

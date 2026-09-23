@@ -147,7 +147,7 @@ include '../includes/sidebar.php';
         <button onclick="window.print()" class="btn btn-success btn-sm">
             <i class="bi bi-printer me-1"></i>Print / Save PDF
         </button>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">
+        <a href="index_reports.php" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>

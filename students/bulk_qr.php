@@ -42,7 +42,7 @@ include '../includes/sidebar.php';
             <i class="bi bi-printer me-1"></i>Print All (<?= count($students) ?>)
         </button>
         <?php endif; ?>
-        <a href="index.php" class="btn btn-outline-secondary">
+        <a href="students.php" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>

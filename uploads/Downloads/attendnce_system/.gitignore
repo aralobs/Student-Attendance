@@ -1,0 +1,32 @@
+# Composer dependencies (reinstall with: composer install)
+/vendor/
+
+# Uploaded files (don't commit student photos/QR codes)
+/uploads/students/*
+/qrcodes/*
+
+# Keep the folders but not the files
+!uploads/students/.gitkeep
+!qrcodes/.gitkeep
+
+# Environment / sensitive config
+config/database.php
+
+# Temp/test files
+test_qr.php
+uppass.php
+genhash.php
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# PHP error logs
+*.log
+error_log
+
+# IDE files
+.vscode/
+.idea/
+*.swp

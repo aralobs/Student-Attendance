@@ -95,7 +95,7 @@ include '../includes/sidebar.php';
         <button onclick="window.print()" class="btn btn-outline-secondary btn-sm no-print">
             <i class="bi bi-printer me-1"></i>Print
         </button>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm no-print">
+        <a href="index_reports.php" class="btn btn-outline-secondary btn-sm no-print">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>

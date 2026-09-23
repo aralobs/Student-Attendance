@@ -32,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
            ->execute([$username, $hash, $fullName, $email, $role]);
 
         setFlash('success', "User '{$fullName}' created successfully.");
-        header('Location: index.php');
+        header('Location: users.php');
         exit;
     }
 }
@@ -47,7 +47,7 @@ include '../includes/sidebar.php';
     <div>
         <h1 class="page-title"><i class="bi bi-person-plus me-2 text-primary"></i>Add User</h1>
     </div>
-    <a href="index.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
+    <a href="users.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-1"></i>Back</a>
 </div>
 
 <?php if (!empty($errors)): ?>

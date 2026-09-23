@@ -11,6 +11,11 @@ $pageTitle = 'Analytics';
 $db        = getDB();
 $year      = (int)($_GET['year'] ?? date('Y'));
 
+// Endpoint URL — resolved by PHP so it works regardless of folder moves.
+// analytics.php lives in /Attendance_System/analytics/, the endpoint in /Attendance_System/attendance/.
+$endpointUrl = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/')
+             . '/../attendance/get_today_log.php';
+
 // Build section filter for teachers
 $sectionFilter = '';
 $sectionParams = [];
@@ -233,6 +238,69 @@ include '../includes/sidebar.php';
     </div>
 </div>
 
+<!-- ── Today's Log (absent students, snapshot layout) ──────── -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>
+                    <i class="bi bi-person-x me-2 text-danger"></i>
+                    Today's Log — <span id="todayLogDate"><?= date('F j, Y') ?></span>
+                    <span id="todayLogCount" class="badge bg-danger ms-2">—</span>
+                </span>
+                <div class="d-flex gap-2 align-items-center">
+                    <select id="todayLogGrade" class="form-select form-select-sm" style="width:auto">
+                        <option value="">All Grade Levels</option>
+                        <?php foreach (getGradeLevels() as $grade): ?>
+                            <option value="<?= sanitize($grade) ?>"><?= sanitize($grade) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <select id="todayLogType" class="form-select form-select-sm" style="width:auto">
+                        <option value="">All (Absent + Partial)</option>
+                        <option value="absent">Absent only</option>
+                        <option value="partial">Partial only</option>
+                    </select>
+                    <input type="text"
+                           id="todayLogSearch"
+                           class="form-control form-control-sm"
+                           placeholder="Search name / LRN / section..."
+                           style="width:220px">
+                    <button id="todayLogRefresh" class="btn btn-sm btn-outline-primary" title="Refresh">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0" style="max-height:480px;overflow-y:auto">
+                <table class="table table-sm table-hover mb-0" id="todayLogTable">
+                    <thead class="sticky-top bg-white">
+                        <tr>
+                            <th>Student</th>
+                            <th>Grade / Section</th>
+                            <th class="text-center">AM In</th>
+                            <th class="text-center">AM Out</th>
+                            <th class="text-center">PM In</th>
+                            <th class="text-center">PM Out</th>
+                            <th class="text-center">Type</th>
+                        </tr>
+                    </thead>
+                    <tbody id="todayLogBody">
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">
+                                <span class="spinner-border spinner-border-sm me-2"></span>
+                                Loading today's log...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-muted small d-flex justify-content-between">
+                <span id="todayLogUpdated">—</span>
+                <span>Only students flagged absent or partial appear here.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Monthly Chart + Grade Rates -->
 <div class="row g-3 mb-4">
     <div class="col-lg-8">
@@ -280,37 +348,49 @@ include '../includes/sidebar.php';
 <div class="row g-3 mb-4">
     <div class="col-lg-6">
         <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-people me-2 text-primary"></i>Section Attendance Rates
+            <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <span>
+                    <i class="bi bi-people me-2 text-primary"></i>Section Attendance Rates
+                </span>
+                <div class="d-flex gap-2">
+                    <input type="text"
+                           id="sectionSearch"
+                           class="form-control form-control-sm"
+                           placeholder="Search section..."
+                           style="width:160px">
+                    <select id="gradeFilter" class="form-select form-select-sm" style="width:auto">
+                        <option value="">All Grade Levels</option>
+                        <?php foreach (getGradeLevels() as $grade): ?>
+                            <option value="<?= sanitize($grade) ?>"><?= sanitize($grade) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
             </div>
             <div class="card-body p-0" style="max-height:350px;overflow-y:auto">
-                <table class="table table-sm table-hover mb-0">
+                <table class="table table-sm table-hover mb-0" id="sectionTable">
                     <thead class="sticky-top bg-white">
                         <tr>
                             <th>Section</th>
                             <th>Grade</th>
-                            <th class="text-center">Rate</th>
-                            <th>Bar</th>
+                            <th class="text-center">Present</th>
+                            <th class="text-center">Total</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($sectionRates as $sr): ?>
-                        <tr>
+                        <tr data-grade="<?= sanitize($sr['grade_level']) ?>"
+                            data-section="<?= sanitize($sr['section_name']) ?>">
                             <td class="fw-600 small"><?= sanitize($sr['section_name']) ?></td>
                             <td class="small text-muted"><?= sanitize($sr['grade_level']) ?></td>
-                            <td class="text-center">
-                                <span class="fw-700 text-<?= $sr['rate'] >= 90 ? 'success' : ($sr['rate'] >= 75 ? 'warning' : 'danger') ?>">
-                                    <?= $sr['rate'] ?>%
-                                </span>
-                            </td>
-                            <td style="width:80px">
-                                <div class="progress" style="height:6px">
-                                    <div class="progress-bar bg-<?= $sr['rate'] >= 90 ? 'success' : ($sr['rate'] >= 75 ? 'warning' : 'danger') ?>"
-                                         style="width:<?= $sr['rate'] ?>%"></div>
-                                </div>
-                            </td>
+                            <td class="text-center small"><?= number_format($sr['attended']) ?></td>
+                            <td class="text-center small"><?= number_format($sr['total']) ?></td>
                         </tr>
                         <?php endforeach; ?>
+                        <tr id="noSectionResults" style="display:none">
+                            <td colspan="4" class="text-center text-muted py-4">
+                                No sections match your filter.
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -411,6 +491,159 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
         scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
     }
 });
+
+// ── Section Attendance Rates filter ──────────────────────────
+(function () {
+    const searchInput = document.getElementById('sectionSearch');
+    const gradeSelect = document.getElementById('gradeFilter');
+    const table       = document.getElementById('sectionTable');
+    const noResults   = document.getElementById('noSectionResults');
+
+    if (!table) return;
+
+    const rows = table.querySelectorAll('tbody tr[data-section]');
+
+    function applyFilter() {
+        const term  = (searchInput.value || '').toLowerCase().trim();
+        const grade = gradeSelect.value.toLowerCase();
+        let visible = 0;
+
+        rows.forEach(row => {
+            const rowSection = (row.dataset.section || '').toLowerCase();
+            const rowGrade   = (row.dataset.grade   || '').toLowerCase();
+
+            const matchesSearch = term === '' || rowSection.includes(term);
+            const matchesGrade  = grade === '' || rowGrade === grade;
+
+            if (matchesSearch && matchesGrade) {
+                row.style.display = '';
+                visible++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        noResults.style.display = visible === 0 ? '' : 'none';
+    }
+
+    searchInput.addEventListener('input', applyFilter);
+    gradeSelect.addEventListener('change', applyFilter);
+})();
+
+// ── Today's Log (absent + partial, snapshot layout) ──────────
+(function () {
+    const tbody      = document.getElementById('todayLogBody');
+    const searchBox  = document.getElementById('todayLogSearch');
+    const gradeSel   = document.getElementById('todayLogGrade');
+    const typeSel    = document.getElementById('todayLogType');
+    const refreshBtn = document.getElementById('todayLogRefresh');
+    const updatedEl  = document.getElementById('todayLogUpdated');
+    const countEl    = document.getElementById('todayLogCount');
+
+    if (!tbody) return;
+
+    const ENDPOINT = '{$endpointUrl}';
+
+    let rows = [];
+
+    function esc(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => (
+            { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
+        ));
+    }
+
+    function timeCell(t) {
+        if (t) return '<span class="text-muted">' + esc(t) + '</span>';
+        return '<span class="text-danger" title="No scan">—</span>';
+    }
+
+    function typeBadge(type) {
+        const map = {
+            absent:  'danger',
+            partial: 'warning text-dark',
+            pending: 'secondary'
+        };
+        const cls = map[type] || 'secondary';
+        return '<span class="badge bg-' + cls + '">' + esc(type || '—') + '</span>';
+    }
+
+    function render() {
+        const term  = (searchBox.value || '').toLowerCase().trim();
+        const grade = gradeSel.value;
+        const type  = typeSel.value;
+
+        const filtered = rows.filter(r => {
+            const matchesTerm =
+                term === '' ||
+                r.name.toLowerCase().includes(term) ||
+                r.lrn.toLowerCase().includes(term) ||
+                r.section.toLowerCase().includes(term);
+            const matchesGrade = grade === '' || r.grade === grade;
+            const matchesType  = type  === '' || r.attendance_type === type;
+            return matchesTerm && matchesGrade && matchesType;
+        });
+
+        countEl.textContent = filtered.length + ' student' + (filtered.length === 1 ? '' : 's');
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" ' +
+                'class="text-center text-success py-4">' +
+                '<i class="bi bi-check-circle me-1"></i>' +
+                'No absences match your filter.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(r => (
+            '<tr>' +
+              '<td class="fw-600 small">' + esc(r.name) +
+                  '<div class="text-muted" style="font-size:.75rem">' + esc(r.lrn) + '</div></td>' +
+              '<td class="small text-muted">' + esc(r.grade) + ' / ' + esc(r.section) + '</td>' +
+              '<td class="text-center small">' + timeCell(r.am_in)  + '</td>' +
+              '<td class="text-center small">' + timeCell(r.am_out) + '</td>' +
+              '<td class="text-center small">' + timeCell(r.pm_in)  + '</td>' +
+              '<td class="text-center small">' + timeCell(r.pm_out) + '</td>' +
+              '<td class="text-center">' + typeBadge(r.attendance_type) + '</td>' +
+            '</tr>'
+        )).join('');
+    }
+
+    async function load() {
+        tbody.innerHTML = '<tr><td colspan="7" ' +
+            'class="text-center text-muted py-4">' +
+            '<span class="spinner-border spinner-border-sm me-2"></span>' +
+            'Loading today\'s log...</td></tr>';
+
+        try {
+            // No ?mode=activity — use the snapshot endpoint shape.
+            const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const all = await res.json();
+            if (!Array.isArray(all)) throw new Error('Invalid response');
+
+            // Show only students flagged absent or partial.
+            rows = all.filter(r =>
+                r.attendance_type === 'absent' ||
+                r.attendance_type === 'partial'
+            );
+
+            render();
+            updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="7" ' +
+                'class="text-center text-danger py-4">' +
+                'Failed to load today\'s log: ' + esc(err.message) + '</td></tr>';
+            countEl.textContent = '—';
+        }
+    }
+
+    searchBox.addEventListener('input', render);
+    gradeSel.addEventListener('change', render);
+    typeSel.addEventListener('change', render);
+    refreshBtn.addEventListener('click', load);
+
+    load();
+    setInterval(load, 60000);
+})();
 </script>
 JS;
 include '../includes/footer.php';

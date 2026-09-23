@@ -209,7 +209,7 @@ include '../includes/sidebar.php';
                 <button type="submit" class="btn btn-primary btn-sm">
                     <i class="bi bi-filter me-1"></i>Filter
                 </button>
-                <a href="index.php" class="btn btn-outline-secondary btn-sm">
+                <a href="attendance.php" class="btn btn-outline-secondary btn-sm">
                     Reset
                 </a>
             </div>
@@ -376,7 +376,7 @@ include '../includes/sidebar.php';
             of <?= $total ?>
         </small>
         <?= paginate($total, $perPage, $page,
-            'index.php?date=' . urlencode($date) .
+            'attendance.php?date=' . urlencode($date) .
             '&grade=' . urlencode($gradeLevel) .
             '&section=' . $sectionId .
             '&type=' . urlencode($typeFilter)) ?>
@@ -385,7 +385,7 @@ include '../includes/sidebar.php';
 </div>
 
 <!-- Override Modal -->
-<div class="modal fade" id="overrideModal" tabindex="-1">
+<div class="modal fade" id="overrideModal" tabattendance="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">

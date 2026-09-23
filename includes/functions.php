@@ -57,10 +57,6 @@ function currentUser() {
 
 // ─── Teacher section access ──────────────────────────────────
 
-/**
- * Get sections a teacher is allowed to see
- * Admin sees all, teacher sees only their assigned section
- */
 function getAllowedSections() {
     $db   = getDB();
     $user = currentUser();
@@ -88,9 +84,6 @@ function getAllowedSections() {
     return $stmt->fetchAll();
 }
 
-/**
- * Check if current user can access a specific section
- */
 function canAccessSection(int $sectionId): bool {
     if (isAdmin()) return true;
     $db   = getDB();
@@ -149,9 +142,6 @@ function updateSetting(string $key, string $value) {
 
 // ─── School Calendar ─────────────────────────────────────────
 
-/**
- * Get calendar entry for a date
- */
 function getCalendarEntry(string $date): ?array {
     $db   = getDB();
     $stmt = $db->prepare("SELECT * FROM school_calendar WHERE date = ?");
@@ -159,27 +149,18 @@ function getCalendarEntry(string $date): ?array {
     return $stmt->fetch() ?: null;
 }
 
-/**
- * Check if a date is a school day
- */
 function isSchoolDay(string $date): bool {
     $entry = getCalendarEntry($date);
-    if (!$entry) return true; // not marked = school day
+    if (!$entry) return true;
     return $entry['type'] === 'school_day';
 }
 
-/**
- * Check if a date is a holiday or no-class day
- */
 function isHolidayOrNoClass(string $date): bool {
     $entry = getCalendarEntry($date);
     if (!$entry) return false;
     return in_array($entry['type'], ['holiday', 'no_class']);
 }
 
-/**
- * Get calendar entries for a month
- */
 function getCalendarMonth(int $month, int $year): array {
     $db   = getDB();
     $stmt = $db->prepare("
@@ -198,9 +179,6 @@ function getCalendarMonth(int $month, int $year): array {
 
 // ─── Section helpers ─────────────────────────────────────────
 
-/**
- * Get section details with schedule info
- */
 function getSection(int $sectionId): ?array {
     $db   = getDB();
     $stmt = $db->prepare("
@@ -213,9 +191,6 @@ function getSection(int $sectionId): ?array {
     return $stmt->fetch() ?: null;
 }
 
-/**
- * Get grade levels list
- */
 function getGradeLevels(): array {
     return ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
 }
@@ -223,75 +198,90 @@ function getGradeLevels(): array {
 // ─── Attendance event detection ──────────────────────────────
 
 /**
- * Determine which attendance event to record next
- * based on existing record and section schedule type
+ * Determine which attendance event to record next.
  *
- * Returns: 'am_in' | 'am_out' | 'pm_in' | 'pm_out' | 'complete' | 'invalid'
+ * TIME-AWARE: If the current time is at/after noon, prefer PM events
+ * even if AM events are empty — this prevents late-afternoon scans from
+ * being stored as AM In/Out when the student never scanned in the morning.
+ *
+ * Returns: 'am_in' | 'am_out' | 'pm_in' | 'pm_out' | 'complete'
  */
-function getNextAttendanceEvent(array $existing = null, array $section): string {
-    $scheduleType = $section['schedule_type'];
+function getNextAttendanceEvent(?array $existing = null, array $section, ?string $now = null): string {
+    $scheduleType = $section['schedule_type'] ?? 'full_day';
+    $now          = $now ?: date('H:i:s');
 
+    $usesAM = in_array($scheduleType, ['full_day', 'am_only'], true);
+    $usesPM = in_array($scheduleType, ['full_day', 'pm_only'], true);
+
+    // No record yet — decide based on time of day
     if (!$existing) {
-        // No record yet — first event is always AM IN
-        return 'am_in';
+        if ($usesAM && $now < '12:00:00') return 'am_in';
+        if ($usesPM)                      return 'pm_in';
+        if ($usesAM)                      return 'am_in'; // fallback for am_only past noon
+        return 'complete';
     }
 
-    $amIn  = $existing['am_in'];
-    $amOut = $existing['am_out'];
-    $pmIn  = $existing['pm_in'];
-    $pmOut = $existing['pm_out'];
+    $amIn  = !empty($existing['am_in']);
+    $amOut = !empty($existing['am_out']);
+    $pmIn  = !empty($existing['pm_in']);
+    $pmOut = !empty($existing['pm_out']);
 
-    if ($scheduleType === 'am_only') {
+    // Whether we're in the PM window (for full_day sections)
+    $isPMTime = $usesPM && $now >= '12:00:00';
+
+    // ── AM sequence (only if currently AM-time, or section is am_only) ──
+    if ($usesAM && !$isPMTime) {
         if (!$amIn)  return 'am_in';
         if (!$amOut) return 'am_out';
-        return 'complete';
+        if ($scheduleType === 'am_only') return 'complete';
     }
 
-    if ($scheduleType === 'pm_only') {
+    // ── PM sequence ─────────────────────────────────────────
+    if ($usesPM) {
         if (!$pmIn)  return 'pm_in';
         if (!$pmOut) return 'pm_out';
-        return 'complete';
     }
 
-    // full_day
-    if (!$amIn)  return 'am_in';
-    if (!$amOut) return 'am_out';
-    if (!$pmIn)  return 'pm_in';
-    if (!$pmOut) return 'pm_out';
     return 'complete';
 }
 
 /**
- * Determine AM or PM status (present/late)
- * based on section's late threshold
+ * Determine AM or PM status (present/late) based on section's late threshold.
+ * Falls back to 'present' if no threshold is set.
  */
 function getSessionStatus(string $time, string $thresholdKey, array $section): string {
-    $threshold = $section[$thresholdKey] ?? '07:31:00';
+    $threshold = $section[$thresholdKey] ?? null;
+    if (!$threshold) return 'present';
     return strtotime($time) > strtotime($threshold) ? 'late' : 'present';
 }
 
 /**
- * Compute overall attendance_type from all 4 events
+ * Compute overall attendance_type from all 4 events.
+ * Handles all three schedule types (full_day, am_only, pm_only).
  */
 function computeAttendanceType(array $record, array $section): string {
-    $scheduleType = $section['schedule_type'];
+    $scheduleType = $section['schedule_type'] ?? 'full_day';
+
+    $amIn  = !empty($record['am_in']);
+    $amOut = !empty($record['am_out']);
+    $pmIn  = !empty($record['pm_in']);
+    $pmOut = !empty($record['pm_out']);
 
     if ($scheduleType === 'am_only') {
-        if ($record['am_in']) return 'full_day';
+        if ($amIn && $amOut) return 'full_day';
+        if ($amIn || $amOut) return 'partial';
         return 'absent';
     }
 
     if ($scheduleType === 'pm_only') {
-        if ($record['pm_in']) return 'full_day';
+        if ($pmIn && $pmOut) return 'full_day';
+        if ($pmIn || $pmOut) return 'partial';
         return 'absent';
     }
 
     // full_day
-    $hasAM = !empty($record['am_in']);
-    $hasPM = !empty($record['pm_in']);
-
-    if ($hasAM && $hasPM)  return 'full_day';
-    if ($hasAM || $hasPM)  return 'partial';
+    if ($amIn && $amOut && $pmIn && $pmOut) return 'full_day';
+    if ($amIn || $amOut || $pmIn || $pmOut) return 'partial';
     return 'absent';
 }
 
@@ -302,20 +292,17 @@ function getDashboardStats(?int $sectionId = null): array {
     $today = date('Y-m-d');
     $stats = [];
 
-    // Build section filter
     $sectionFilter  = '';
     $sectionParams  = [];
     if ($sectionId) {
         $sectionFilter = 'AND s.section_id = ?';
         $sectionParams = [$sectionId];
     } elseif (!isAdmin()) {
-        // Teacher sees only their sections
         $user = currentUser();
         $sectionFilter = 'AND sec.adviser_id = ?';
         $sectionParams = [$user['id']];
     }
 
-    // Total active students
     $sql  = "SELECT COUNT(*) AS cnt FROM students s
              LEFT JOIN sections sec ON s.section_id = sec.id
              WHERE s.is_active = 1 {$sectionFilter}";
@@ -323,7 +310,6 @@ function getDashboardStats(?int $sectionId = null): array {
     $stmt->execute($sectionParams);
     $stats['total_students'] = $stmt->fetch()['cnt'];
 
-    // Today stats
     $sql = "SELECT
                 SUM(a.attendance_type IN ('full_day'))  AS full_day,
                 SUM(a.attendance_type = 'partial')      AS partial,
@@ -343,7 +329,6 @@ function getDashboardStats(?int $sectionId = null): array {
     $stats['late_today']     = (int)($row['late']     ?? 0);
     $stats['present_today']  = $stats['full_day_today'] + $stats['partial_today'];
 
-    // Is today a holiday?
     $stats['is_holiday']     = isHolidayOrNoClass($today);
     $stats['calendar_entry'] = getCalendarEntry($today);
 
@@ -461,7 +446,6 @@ function paginate(int $totalRecords, int $perPage, int $currentPage, string $url
                 <a class='page-link' href='{$url}&page={$prevPage}'>«</a>
               </li>";
 
-    // Show limited page numbers
     $start = max(1, $currentPage - 2);
     $end   = min($totalPages, $currentPage + 2);
 

@@ -89,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         setFlash('success', "Student {$firstName} {$lastName} added successfully!");
-        header('Location: index.php');
+        header('Location: students.php');
         exit;
     }
 }
@@ -107,7 +107,7 @@ include '../includes/sidebar.php';
         </h1>
         <p class="page-subtitle">Enroll a new student</p>
     </div>
-    <a href="index.php" class="btn btn-outline-secondary">
+    <a href="students.php" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left me-1"></i>Back to List
     </a>
 </div>
@@ -264,7 +264,7 @@ include '../includes/sidebar.php';
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-circle me-1"></i>Save Student
                 </button>
-                <a href="index.php" class="btn btn-outline-secondary">Cancel</a>
+                <a href="students.php" class="btn btn-outline-secondary">Cancel</a>
             </div>
         </div>
     </div>

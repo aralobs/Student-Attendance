@@ -13,7 +13,6 @@ requireLogin();
 
 $pageTitle = 'QR Scanner';
 
-// Holiday check
 $today         = date('Y-m-d');
 $calendarEntry = getCalendarEntry($today);
 $isHoliday     = isHolidayOrNoClass($today);
@@ -76,7 +75,6 @@ include '../includes/sidebar.php';
             <div class="card-body p-2">
                 <div id="qr-reader" style="width:100%;border-radius:8px;overflow:hidden"></div>
 
-                <!-- Manual input -->
                 <div class="mt-3">
                     <label class="form-label small fw-600">Manual / Barcode Scanner Input</label>
                     <div class="input-group">
@@ -97,7 +95,6 @@ include '../includes/sidebar.php';
             </div>
         </div>
 
-        <!-- Event legend -->
         <div class="card mt-3">
             <div class="card-body py-2">
                 <div class="row g-2 text-center" style="font-size:0.8rem">
@@ -133,7 +130,6 @@ include '../includes/sidebar.php';
     <!-- Result + Log -->
     <div class="col-lg-6">
 
-        <!-- Scan Result -->
         <div class="card mb-3">
             <div class="card-header">
                 <i class="bi bi-info-circle me-2"></i>Last Scan Result
@@ -147,7 +143,6 @@ include '../includes/sidebar.php';
             </div>
         </div>
 
-        <!-- Today's log -->
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-list-check me-2"></i>Today's Log</span>
@@ -296,7 +291,6 @@ async function processToken(token) {
             document.getElementById('scanCount').textContent = scanCount;
             beep(true);
 
-            // Color per event
             const colors = {
                 am_in:  { bg: '#d1fae5', border: '#10b981', icon: '☀️', label: 'AM In'  },
                 am_out: { bg: '#fef3c7', border: '#f59e0b', icon: '🌤️', label: 'AM Out' },
@@ -305,7 +299,6 @@ async function processToken(token) {
             };
             const c = colors[data.event] || colors.am_in;
 
-            // Build time grid
             const timeGrid = `
                 <div class="row g-1 mt-2 text-center" style="font-size:0.75rem">
                     <div class="col-3">
@@ -334,7 +327,6 @@ async function processToken(token) {
                     </div>
                 </div>`;
 
-            // Remaining events
             const remainingHtml = data.remaining.length > 0
                 ? `<div class="mt-2 small text-muted">
                        Next: <strong>${data.remaining.join(' → ')}</strong>
@@ -395,28 +387,51 @@ async function refreshLog() {
         const tbody = document.getElementById('logBody');
 
         if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">No records yet</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">No students</td></tr>`;
             return;
         }
 
-        tbody.innerHTML = data.map(r => `
-            <tr>
-                <td>
-                    <div class="fw-600 small">${r.name}</div>
-                    <div class="text-muted" style="font-size:0.7rem">${r.grade} — ${r.section}</div>
-                </td>
-                <td class="text-center small">${r.am_in  || '<span class="text-muted">—</span>'}</td>
-                <td class="text-center small">${r.am_out || '<span class="text-muted">—</span>'}</td>
-                <td class="text-center small">${r.pm_in  || '<span class="text-muted">—</span>'}</td>
-                <td class="text-center small">${r.pm_out || '<span class="text-muted">—</span>'}</td>
-                <td>
-                    <span class="badge bg-${r.attendance_type === 'full_day' ? 'success' : (r.attendance_type === 'partial' ? 'warning text-dark' : 'danger')}"
-                          style="font-size:0.65rem">
-                        ${r.attendance_type.replace('_',' ')}
-                    </span>
-                </td>
-            </tr>
-        `).join('');
+        tbody.innerHTML = data.map(r => {
+            const rowClass =
+                r.attendance_type === 'absent'  ? 'table-danger' :
+                r.attendance_type === 'pending' ? 'table-light'  : '';
+
+            const badgeClass =
+                r.attendance_type === 'full_day' ? 'success' :
+                r.attendance_type === 'partial'  ? 'warning text-dark' :
+                r.attendance_type === 'absent'   ? 'danger' :
+                r.attendance_type === 'pending'  ? 'secondary' :
+                                                    'secondary';
+
+            const fmtCell = (time, status) => {
+                if (!time) {
+                    return status === 'absent'
+                        ? '<span class="badge bg-danger" style="font-size:0.6rem">Absent</span>'
+                        : '<span class="text-muted">—</span>';
+                }
+                const late = status === 'late'
+                    ? ' <span class="badge bg-warning text-dark" style="font-size:0.6rem">Late</span>'
+                    : '';
+                return time + late;
+            };
+
+            return `
+                <tr class="${rowClass}">
+                    <td>
+                        <div class="fw-600 small">${r.name}</div>
+                        <div class="text-muted" style="font-size:0.7rem">${r.grade} — ${r.section}</div>
+                    </td>
+                    <td class="text-center small">${fmtCell(r.am_in,  r.am_status)}</td>
+                    <td class="text-center small">${fmtCell(r.am_out, null)}</td>
+                    <td class="text-center small">${fmtCell(r.pm_in,  r.pm_status)}</td>
+                    <td class="text-center small">${fmtCell(r.pm_out, null)}</td>
+                    <td>
+                        <span class="badge bg-${badgeClass}" style="font-size:0.65rem">
+                            ${r.attendance_type.replace('_',' ')}
+                        </span>
+                    </td>
+                </tr>`;
+        }).join('');
     } catch(e) {
         console.warn('Log refresh failed:', e);
     }
@@ -463,21 +478,13 @@ function beep(success) {
 // ── Init ─────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-   
-    // Keep manual input focused when not using camera
     const manualInput = document.getElementById('manualInput');
-
-    // Auto-focus on page load
     manualInput.focus();
-
-    // Re-focus after each scan result
-    // Add this inside processToken() after showing result:
     setTimeout(() => manualInput.focus(), 500);
-    
+
     refreshLog();
     setInterval(refreshLog, 30000);
 
-    // Live clock
     const clock = document.querySelector('.page-subtitle');
     if (clock) {
         const tick = () => {

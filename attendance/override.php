@@ -4,7 +4,7 @@ require_once '../includes/functions.php';
 requireLogin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: index.php');
+    header('Location: attendance.php');
     exit;
 }
 
@@ -21,7 +21,7 @@ $redirectDate = $_POST['redirect_date']     ?? date('Y-m-d');
 
 if ($id <= 0) {
     setFlash('danger', 'Invalid attendance record.');
-    header('Location: index.php?date=' . urlencode($redirectDate));
+    header('Location: attendance.php?date=' . urlencode($redirectDate));
     exit;
 }
 
@@ -40,7 +40,7 @@ $existing = $stmt->fetch();
 
 if (!$existing) {
     setFlash('danger', 'Attendance record not found.');
-    header('Location: index.php?date=' . urlencode($redirectDate));
+    header('Location: attendance.php?date=' . urlencode($redirectDate));
     exit;
 }
 
@@ -70,5 +70,5 @@ $db->prepare("
 ]);
 
 setFlash('success', 'Attendance record updated successfully.');
-header('Location: index.php?date=' . urlencode($redirectDate));
+header('Location: attendance.php?date=' . urlencode($redirectDate));
 exit;

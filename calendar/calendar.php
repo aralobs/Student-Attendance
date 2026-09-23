@@ -300,7 +300,7 @@ include '../includes/sidebar.php';
 
 <!-- Add/Edit Modal -->
 <?php if (isAdmin()): ?>
-<div class="modal fade" id="calendarModal" tabindex="-1">
+<div class="modal fade" id="calendarModal" tabcalendar="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
@@ -370,7 +370,7 @@ function openAddModal(date) {
 
     // If date has existing entry, load it
     if (date) {
-        fetch('index.php', {
+        fetch('calendar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `ajax=1&action=get&date=${encodeURIComponent(date)}`
@@ -410,7 +410,7 @@ async function saveEntry() {
     }
 
     try {
-        const res  = await fetch('index.php', {
+        const res  = await fetch('calendar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `ajax=1&action=add&date=${encodeURIComponent(date)}&title=${encodeURIComponent(title)}&type=${encodeURIComponent(type)}&description=${encodeURIComponent(desc)}`
@@ -437,7 +437,7 @@ async function deleteEntry(date, title) {
     if (!confirm(`Delete entry: "${title}" on ${date}?`)) return;
 
     try {
-        const res  = await fetch('index.php', {
+        const res  = await fetch('calendar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: `ajax=1&action=delete&date=${encodeURIComponent(date)}`

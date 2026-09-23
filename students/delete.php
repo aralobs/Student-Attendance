@@ -10,7 +10,7 @@ $id = (int)($_GET['id'] ?? 0);
 
 if ($id <= 0) {
     setFlash('danger', 'Invalid student ID.');
-    header('Location: index.php');
+    header('Location: students.php');
     exit;
 }
 
@@ -27,5 +27,5 @@ if (!$student) {
     setFlash('success', "Student {$student['first_name']} {$student['last_name']} has been removed.");
 }
 
-header('Location: index.php');
+header('Location: students.php');
 exit;

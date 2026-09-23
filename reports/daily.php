@@ -111,7 +111,7 @@ include '../includes/sidebar.php';
            class="btn btn-success btn-sm">
             <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel
         </a>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">
+        <a href="index_reports.php" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>

@@ -17,7 +17,7 @@ $allowedSections = getAllowedSections();
 
 if (empty($allowedSections)) {
     setFlash('warning', 'You have no sections assigned.');
-    header('Location: index.php');
+    header('Location: attendance.php');
     exit;
 }
 
@@ -28,7 +28,7 @@ $date      = trim($_POST['attendance_date'] ?? $_GET['date'] ?? $today);
 // Validate section access
 if (!canAccessSection($sectionId)) {
     setFlash('danger', 'Access denied to this section.');
-    header('Location: index.php');
+    header('Location: attendance.php');
     exit;
 }
 
@@ -37,7 +37,7 @@ $section = getSection($sectionId);
 
 if (!$section) {
     setFlash('danger', 'Section not found.');
-    header('Location: index.php');
+    header('Location: attendance.php');
     exit;
 }
 
@@ -189,7 +189,7 @@ include '../includes/sidebar.php';
             </span>
         </p>
     </div>
-    <a href="index.php" class="btn btn-outline-secondary">
+    <a href="attendance.php" class="btn btn-outline-secondary">
         <i class="bi bi-arrow-left me-1"></i>Back to Attendance
     </a>
 </div>
@@ -431,7 +431,7 @@ include '../includes/sidebar.php';
             <button type="submit" class="btn btn-primary">
                 <i class="bi bi-save me-1"></i>Save Attendance
             </button>
-            <a href="index.php?date=<?= urlencode($date) ?>"
+            <a href="attendance.php?date=<?= urlencode($date) ?>"
                class="btn btn-outline-secondary">
                 Cancel
             </a>

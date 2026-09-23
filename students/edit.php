@@ -15,7 +15,7 @@ $student = $stmt->fetch();
 
 if (!$student) {
     setFlash('danger', 'Student not found.');
-    header('Location: index.php');
+    header('Location: students.php');
     exit;
 }
 

@@ -21,7 +21,7 @@ $student = $stmt->fetch();
 
 if (!$student) {
     setFlash('danger', 'Student not found.');
-    header('Location: index.php');
+    header('Location: students.php');
     exit;
 }
 
@@ -47,7 +47,7 @@ include '../includes/sidebar.php';
         <a href="qr_download.php?id=<?= $student['id'] ?>" class="btn btn-outline-primary">
             <i class="bi bi-download me-1"></i>Download PNG
         </a>
-        <a href="index.php" class="btn btn-outline-secondary">
+        <a href="students.php" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>
