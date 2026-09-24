@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Database Configuration
  * Automated Student Attendance Monitoring System
@@ -25,7 +26,8 @@ define('BASE_PATH', dirname(__DIR__) . '/');
 /**
  * Create and return a PDO connection (singleton pattern)
  */
-function getDB() {
+function getDB()
+{
     static $pdo = null;
     if ($pdo === null) {
         $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
