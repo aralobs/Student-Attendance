@@ -48,7 +48,7 @@ function getDB()
                     'user'     => DB_USER,
                     'database' => DB_NAME,
                     'pass_set' => (DB_PASS !== ''),
-                    'pdo_error'=> $e->getMessage(),
+                    'pdo_error' => $e->getMessage(),
                 ],
             ]));
         }
