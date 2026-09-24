@@ -3,6 +3,7 @@
         "php": ">=8.1",
         "ext-pdo": "*",
         "ext-pdo_mysql": "*",
+        "ext-calendar": "*",
         "bacon/bacon-qr-code": "^2.0",
         "phpmailer/phpmailer": "^7.1"
     },
