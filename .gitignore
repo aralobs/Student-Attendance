@@ -10,7 +10,8 @@
 !qrcodes/.gitkeep
 
 # Environment / sensitive config
-config/database.php
+# config/database.php is safe to commit — it reads from environment variables
+# config/database.php
 
 # Temp/test files
 test_qr.php
