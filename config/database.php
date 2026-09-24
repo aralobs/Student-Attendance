@@ -40,8 +40,16 @@ function getDB()
             $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
         } catch (PDOException $e) {
             die(json_encode([
-                'error' => true,
-                'message' => 'Database connection failed. Check config/database.php'
+                'error'   => true,
+                'message' => 'Database connection failed. Check config/database.php',
+                'debug'   => [
+                    'host'     => DB_HOST,
+                    'port'     => DB_PORT,
+                    'user'     => DB_USER,
+                    'database' => DB_NAME,
+                    'pass_set' => (DB_PASS !== ''),
+                    'pdo_error'=> $e->getMessage(),
+                ],
             ]));
         }
     }
