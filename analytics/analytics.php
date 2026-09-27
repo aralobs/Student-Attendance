@@ -70,6 +70,11 @@ $attendanceRate = $overall['total'] > 0
     ? round(($overall['attended'] / $overall['total']) * 100, 1)
     : 0;
 
+// ── NEW: Totals for the summary panel ─────────────────────────
+$totalPresent = (int)($overall['attended'] ?? 0);
+$totalAbsent  = (int)($overall['absent']   ?? 0);
+$totalRecords = (int)($overall['total']    ?? 0);
+
 // ── Top 10 most absent students ───────────────────────────────
 $stmt = $db->prepare("
     SELECT s.first_name, s.last_name,
@@ -156,6 +161,98 @@ include '../includes/sidebar.php';
         </select>
         <button type="submit" class="btn btn-sm btn-primary">Apply</button>
     </form>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     NEW: Total Present / Total Absent Summary
+     ══════════════════════════════════════════════════════════════ -->
+<div class="row g-3 mb-4">
+    <!-- Total Present -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon green" style="width:56px;height:56px;font-size:1.5rem">
+                    <i class="bi bi-check-circle-fill"></i>
+                </div>
+                <div>
+                    <div class="text-muted small text-uppercase fw-600">Total Present</div>
+                    <div class="fw-bold" style="font-size:2rem;line-height:1.1">
+                        <?= number_format($totalPresent) ?>
+                    </div>
+                    <div class="text-muted small">
+                        Full Day: <?= number_format($overall['full_day'] ?? 0) ?>
+                        &nbsp;•&nbsp;
+                        Partial: <?= number_format($overall['partial'] ?? 0) ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Absent -->
+    <div class="col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body d-flex align-items-center gap-3">
+                <div class="stat-icon red" style="width:56px;height:56px;font-size:1.5rem">
+                    <i class="bi bi-x-circle-fill"></i>
+                </div>
+                <div>
+                    <div class="text-muted small text-uppercase fw-600">Total Absent</div>
+                    <div class="fw-bold" style="font-size:2rem;line-height:1.1">
+                        <?= number_format($totalAbsent) ?>
+                    </div>
+                    <div class="text-muted small">
+                        Out of <?= number_format($totalRecords) ?> total records
+                        &nbsp;•&nbsp;
+                        <?= $attendanceRate ?>% attendance rate
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     OPTIONAL: Present / Absent as a visual ratio bar
+     ══════════════════════════════════════════════════════════════ -->
+<?php
+    $presentPct = $totalRecords > 0 ? round(($totalPresent / $totalRecords) * 100, 1) : 0;
+    $absentPct  = $totalRecords > 0 ? round(($totalAbsent  / $totalRecords) * 100, 1) : 0;
+?>
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex justify-content-between small fw-600 mb-2">
+                    <span class="text-success">
+                        <i class="bi bi-check-circle-fill me-1"></i>
+                        Present — <?= number_format($totalPresent) ?> (<?= $presentPct ?>%)
+                    </span>
+                    <span class="text-danger">
+                        <?= $absentPct ?>% (<?= number_format($totalAbsent) ?>)
+                        <i class="bi bi-x-circle-fill ms-1"></i>
+                        Absent
+                    </span>
+                </div>
+                <div class="progress" style="height:14px;border-radius:8px;overflow:hidden">
+                    <div class="progress-bar bg-success"
+                         role="progressbar"
+                         style="width:<?= $presentPct ?>%"
+                         aria-valuenow="<?= $presentPct ?>"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                    </div>
+                    <div class="progress-bar bg-danger"
+                         role="progressbar"
+                         style="width:<?= $absentPct ?>%"
+                         aria-valuenow="<?= $absentPct ?>"
+                         aria-valuemin="0"
+                         aria-valuemax="100">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Key Metrics -->

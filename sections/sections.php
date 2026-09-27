@@ -81,6 +81,7 @@ include '../includes/sidebar.php';
                         <th>Section Name</th>
                         <th>Schedule</th>
                         <th>Adviser</th>
+                        <th>Subject Teacher</th>
                         <th>School Year</th>
                         <th>AM Window</th>
                         <th>PM Window</th>
@@ -90,7 +91,7 @@ include '../includes/sidebar.php';
                 <tbody>
                     <?php if (empty($sections)): ?>
                     <tr>
-                        <td colspan="8" class="text-center py-4 text-muted">
+                        <td colspan="9" class="text-center py-4 text-muted">
                             <?= $isArchive
                                 ? 'No archived sections.'
                                 : 'No sections found. Add one to get started.' ?>
@@ -117,6 +118,7 @@ include '../includes/sidebar.php';
                             </span>
                         </td>
                         <td><?= sanitize($s['adviser_name'] ?? '—') ?></td>
+                        <td><?= sanitize($s['subject_teacher'] ?? '—') ?></td>
                         <td><?= sanitize($s['school_year']) ?></td>
                         <td class="small text-muted">
                             <?= $usesAM
@@ -213,7 +215,8 @@ include '../includes/sidebar.php';
                                 <option value="pm_only">🌙 PM Only (Half Day)</option>
                             </select>
                         </div>
-                        <div class="col-md-6">
+
+                        <div class="col-md-4">
                             <label class="form-label">Class Adviser</label>
                             <select name="adviser_id" id="secAdviser" class="form-select">
                                 <option value="">— No Adviser —</option>
@@ -224,7 +227,17 @@ include '../includes/sidebar.php';
                                 <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Subject Teacher</label>
+                            <input type="text" name="subject_teacher" id="secSubjectTeacher"
+                                   class="form-control"
+                                   placeholder="e.g. Mathematics - Mr. Cruz"
+                                   maxlength="100">
+                            <small class="text-muted">
+                                Format: <code>Subject - Teacher Name</code>
+                            </small>
+                        </div>
+                        <div class="col-md-4">
                             <label class="form-label">School Year</label>
                             <input type="text" name="school_year" id="secYear"
                                    class="form-control"
@@ -387,6 +400,7 @@ function openModal(sec) {
     document.getElementById('secName').value    = sec?.section_name ?? '';
     document.getElementById('secAdviser').value = sec?.adviser_id   ?? '';
     document.getElementById('secYear').value    = sec?.school_year  ?? '2026-2027';
+    document.getElementById('secSubjectTeacher').value = sec?.subject_teacher ?? '';
 
     // Populate times
     const t = v => (v ?? '').slice(0, 5);

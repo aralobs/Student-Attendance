@@ -18,12 +18,26 @@ $today = date('Y-m-d');
 $now   = date('H:i:s');
 $user  = currentUser();
 
-// Filter by adviser if teacher
+// ── Role-aware adviser filter ──────────────────────────────
+// Only *teachers* are scoped to sections they actually advise.
+// Admin, user (staff), registrar, etc. see the full log.
 $adviserFilter = '';
 $params        = [$today];
-if (!isAdmin()) {
-    $adviserFilter = 'AND sec.adviser_id = ?';
-    $params[]      = $user['id'];
+
+$role = strtolower($user['role'] ?? '');
+
+if ($role === 'teacher') {
+    // Only apply the filter if this teacher actually advises sections.
+    // If not assigned to any, fall back to showing everything so the
+    // log isn't silently empty.
+    $check = $db->prepare("SELECT COUNT(*) FROM sections WHERE adviser_id = ? AND is_active = 1");
+    $check->execute([$user['id']]);
+    $hasSections = (int)$check->fetchColumn() > 0;
+
+    if ($hasSections) {
+        $adviserFilter = 'AND sec.adviser_id = ?';
+        $params[]      = $user['id'];
+    }
 }
 
 $stmt = $db->prepare("

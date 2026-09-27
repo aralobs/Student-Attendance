@@ -15,12 +15,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-$id           = (int)($_POST['id']            ?? 0);
-$sectionName  = trim($_POST['section_name']   ?? '');
-$gradeLevel   = trim($_POST['grade_level']    ?? '');
-$scheduleType = $_POST['schedule_type']       ?? 'full_day';
-$adviserId    = !empty($_POST['adviser_id']) ? (int)$_POST['adviser_id'] : null;
-$schoolYear   = trim($_POST['school_year']    ?? '2026-2027');
+$id             = (int)($_POST['id']            ?? 0);
+$sectionName    = trim($_POST['section_name']   ?? '');
+$gradeLevel     = trim($_POST['grade_level']    ?? '');
+$scheduleType   = $_POST['schedule_type']       ?? 'full_day';
+$adviserId      = !empty($_POST['adviser_id']) ? (int)$_POST['adviser_id'] : null;
+$subjectTeacher = trim($_POST['subject_teacher'] ?? '');
+$schoolYear     = trim($_POST['school_year']    ?? '2026-2027');
+
+// Normalize subject teacher (empty → null, cap at 100 chars)
+if ($subjectTeacher === '') {
+    $subjectTeacher = null;
+} elseif (mb_strlen($subjectTeacher) > 100) {
+    $subjectTeacher = mb_substr($subjectTeacher, 0, 100);
+}
 
 $allowedGrades    = getGradeLevels();
 $allowedSchedules = ['full_day', 'am_only', 'pm_only'];
@@ -71,6 +79,7 @@ if ($id > 0) {
             grade_level       = ?,
             schedule_type     = ?,
             adviser_id        = ?,
+            subject_teacher   = ?,
             school_year       = ?,
             am_in_start       = ?,
             am_in_end         = ?,
@@ -85,7 +94,7 @@ if ($id > 0) {
         WHERE id = ?
     ");
     $stmt->execute([
-        $sectionName, $gradeLevel, $scheduleType, $adviserId, $schoolYear,
+        $sectionName, $gradeLevel, $scheduleType, $adviserId, $subjectTeacher, $schoolYear,
         $amInStart, $amInEnd, $amLateThreshold, $amOutStart, $amOutEnd,
         $pmInStart, $pmInEnd, $pmLateThreshold, $pmOutStart, $pmOutEnd,
         $id
@@ -96,14 +105,14 @@ if ($id > 0) {
     // ── Insert ──────────────────────────────────────────────
     $stmt = $db->prepare("
         INSERT INTO sections (
-            section_name, grade_level, schedule_type, adviser_id, school_year,
+            section_name, grade_level, schedule_type, adviser_id, subject_teacher, school_year,
             am_in_start, am_in_end, am_late_threshold, am_out_start, am_out_end,
             pm_in_start, pm_in_end, pm_late_threshold, pm_out_start, pm_out_end,
             is_active
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
     ");
     $stmt->execute([
-        $sectionName, $gradeLevel, $scheduleType, $adviserId, $schoolYear,
+        $sectionName, $gradeLevel, $scheduleType, $adviserId, $subjectTeacher, $schoolYear,
         $amInStart, $amInEnd, $amLateThreshold, $amOutStart, $amOutEnd,
         $pmInStart, $pmInEnd, $pmLateThreshold, $pmOutStart, $pmOutEnd,
     ]);
