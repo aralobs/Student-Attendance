@@ -487,3 +487,49 @@ body {
     .day-number  { font-size: 0.75rem; }
     .calendar-day-header { font-size: 0.65rem; padding: 4px 2px; }
 }
+
+/* Data Summary Box */
+.summary-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1rem;
+    height: 100%;
+}
+
+.summary-box .summary-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #1e293b;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.summary-box .summary-subtitle {
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #64748b;
+    margin-bottom: 0.35rem;
+}
+
+.summary-box .summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    padding: 0.2rem 0;
+    color: #475569;
+}
+
+.summary-box .summary-row strong {
+    color: #0f172a;
+    font-weight: 700;
+}
+
+.summary-box hr {
+    border-color: #e2e8f0;
+    opacity: 1;
+}

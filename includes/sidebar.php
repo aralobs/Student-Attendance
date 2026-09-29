@@ -17,7 +17,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
         </div>
         <div class="brand-text">
             <div class="fw-bold text-white lh-1" style="font-size:0.9rem">SPCCS</div>
-            <div class="text-white-50" style="font-size:0.7rem">Kinder Attendance</div>
+            <div class="text-white-50" style="font-size:0.7rem">SPCC Attendance Monitoring</div>
         </div>
         <button class="btn btn-link ms-auto text-white d-lg-none p-0" id="sidebarClose">
             <i class="bi bi-x-lg"></i>
@@ -36,7 +36,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 <div class="text-white fw-semibold" style="font-size:0.8rem; line-height:1.2">
                     <?= sanitize($currentUser['full_name']) ?>
                 </div>
-                <span class="badge bg-<?= isAdmin() ? 'warning' : 'info' ?> text-dark" style="font-size:0.65rem">
+                <span class="badge bg-<?= isAdmin() ? 'warning' : (isUser() ? 'success' : 'info') ?> text-dark" style="font-size:0.65rem">
                     <?= ucfirst($currentUser['role']) ?>
                 </span>
             </div>
@@ -48,112 +48,129 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
     <!-- Navigation -->
     <ul class="nav flex-column px-2 py-2 flex-grow-1">
 
-        <li class="nav-section-label">MAIN</li>
+        <?php if (isUser()): ?>
+            <?php /* ─── USER (Scanner-only) MENU ─── */ ?>
 
-        <li class="nav-item">
-            <a href="<?= BASE_URL ?>dashboard.php"
-               class="nav-link <?= $currentFile === 'dashboard.php' ? 'active' : '' ?>">
-                <i class="bi bi-speedometer2 me-2"></i>Dashboard
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a href="<?= BASE_URL ?>attendance/scanner.php"
-               class="nav-link <?= $currentFile === 'scanner.php' ? 'active' : '' ?>">
-                <i class="bi bi-qr-code-scan me-2"></i>QR Scanner
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a href="<?= BASE_URL ?>attendance/attendance.php"
-               class="nav-link <?= $currentFile === 'attendance.php' ? 'active' : '' ?>">
-                <i class="bi bi-calendar3 me-2"></i>Attendance
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a href="<?= BASE_URL ?>calendar/calendar.php"
-               class="nav-link <?= $currentFile === 'calendar.php' ? 'active' : '' ?>">
-                <i class="bi bi-calendar-event me-2"></i>School Calendar
-            </a>
-        </li>
-
-        <li class="nav-section-label mt-2">MANAGE</li>
-
-        <li class="nav-item">
-            <a href="<?= BASE_URL ?>students/students.php"
-               class="nav-link <?= $currentFile === 'students.php' ? 'active' : '' ?>">
-                <i class="bi bi-people-fill me-2"></i>Students
-            </a>
-        </li>
-
-        <li class="nav-item">
-            <a href="<?= BASE_URL ?>attendance/manual.php"
-               class="nav-link <?= $currentFile === 'manual.php' ? 'active' : '' ?>">
-                <i class="bi bi-pencil-square me-2"></i>Manual Entry
-            </a>
-        </li>
-
-        <?php if (isAdmin()): ?>
-            <li class="nav-section-label mt-2">REPORTS</li>
+            <li class="nav-section-label">SCANNER</li>
 
             <li class="nav-item">
-                <a href="<?= BASE_URL ?>reports/index_reports.php"
-                   class="nav-link <?= $currentFile === 'index_reports.php' ? 'active' : '' ?>">
-                    <i class="bi bi-file-earmark-bar-graph me-2"></i>Reports
+                <a href="<?= BASE_URL ?>attendance/scanner.php"
+                   class="nav-link <?= $currentFile === 'scanner.php' ? 'active' : '' ?>">
+                    <i class="bi bi-qr-code-scan me-2"></i>QR Scanner
+                </a>
+            </li>
+
+        <?php else: ?>
+            <?php /* ─── STAFF (admin + teacher) MENU ─── */ ?>
+
+            <li class="nav-section-label">MAIN</li>
+
+            <li class="nav-item">
+                <a href="<?= BASE_URL ?>dashboard.php"
+                   class="nav-link <?= $currentFile === 'dashboard.php' ? 'active' : '' ?>">
+                    <i class="bi bi-speedometer2 me-2"></i>Dashboard
                 </a>
             </li>
 
             <li class="nav-item">
-                <a href="<?= BASE_URL ?>reports/sf2.php"
-                   class="nav-link <?= $currentFile === 'sf2.php' ? 'active' : '' ?>">
-                    <i class="bi bi-file-earmark-ruled me-2"></i>SF2 Report
+                <a href="<?= BASE_URL ?>attendance/scanner.php"
+                   class="nav-link <?= $currentFile === 'scanner.php' ? 'active' : '' ?>">
+                    <i class="bi bi-qr-code-scan me-2"></i>QR Scanner
                 </a>
             </li>
 
             <li class="nav-item">
-                <a href="<?= BASE_URL ?>reports/sf4.php"
-                   class="nav-link <?= $currentFile === 'sf4.php' ? 'active' : '' ?>">
-                    <i class="bi bi-file-earmark-bar-graph me-2"></i>SF4 Report
+                <a href="<?= BASE_URL ?>attendance/attendance.php"
+                   class="nav-link <?= $currentFile === 'attendance.php' ? 'active' : '' ?>">
+                    <i class="bi bi-calendar3 me-2"></i>Attendance
                 </a>
             </li>
 
             <li class="nav-item">
-                <a href="<?= BASE_URL ?>analytics/analytics.php"
-                   class="nav-link <?= $currentFile === 'analytics.php' ? 'active' : '' ?>">
-                    <i class="bi bi-bar-chart-fill me-2"></i>Analytics
+                <a href="<?= BASE_URL ?>calendar/calendar.php"
+                   class="nav-link <?= $currentFile === 'calendar.php' ? 'active' : '' ?>">
+                    <i class="bi bi-calendar-event me-2"></i>School Calendar
                 </a>
             </li>
 
-            <li class="nav-section-label mt-2">ADMIN</li>
+            <li class="nav-section-label mt-2">MANAGE</li>
 
             <li class="nav-item">
-                <a href="<?= BASE_URL ?>users/users.php"
-                   class="nav-link <?= $currentFile === 'users.php' ? 'active' : '' ?>">
-                    <i class="bi bi-person-gear me-2"></i>Users
-                </a>
-            </li>
-
-            <li class="nav-item">
-                <a href="<?= BASE_URL ?>sections/sections.php"
-                   class="nav-link <?= $currentFile === 'sections.php' ? 'active' : '' ?>">
-                    <i class="bi bi-diagram-3 me-2"></i>Sections
+                <a href="<?= BASE_URL ?>students/students.php"
+                   class="nav-link <?= $currentFile === 'students.php' ? 'active' : '' ?>">
+                    <i class="bi bi-people-fill me-2"></i>Students
                 </a>
             </li>
 
             <li class="nav-item">
-                <a href="<?= BASE_URL ?>sms/logs.php"
-                   class="nav-link <?= $currentFile === 'logs.php' ? 'active' : '' ?>">
-                    <i class="bi bi-chat-dots-fill me-2"></i>SMS Logs
+                <a href="<?= BASE_URL ?>attendance/manual.php"
+                   class="nav-link <?= $currentFile === 'manual.php' ? 'active' : '' ?>">
+                    <i class="bi bi-pencil-square me-2"></i>Manual Entry
                 </a>
             </li>
 
-            <li class="nav-item">
-                <a href="<?= BASE_URL ?>settings/settings.php"
-                   class="nav-link <?= $currentFile === 'settings.php' ? 'active' : '' ?>">
-                    <i class="bi bi-gear-fill me-2"></i>Settings
-                </a>
-            </li>
+            <?php if (isAdmin()): ?>
+                <li class="nav-section-label mt-2">REPORTS</li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>reports/index_reports.php"
+                       class="nav-link <?= $currentFile === 'index_reports.php' ? 'active' : '' ?>">
+                        <i class="bi bi-file-earmark-bar-graph me-2"></i>Reports
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>reports/sf2.php"
+                       class="nav-link <?= $currentFile === 'sf2.php' ? 'active' : '' ?>">
+                        <i class="bi bi-file-earmark-ruled me-2"></i>SF2 Report
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>reports/sf4.php"
+                       class="nav-link <?= $currentFile === 'sf4.php' ? 'active' : '' ?>">
+                        <i class="bi bi-file-earmark-bar-graph me-2"></i>SF4 Report
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>analytics/analytics.php"
+                       class="nav-link <?= $currentFile === 'analytics.php' ? 'active' : '' ?>">
+                        <i class="bi bi-bar-chart-fill me-2"></i>Analytics
+                    </a>
+                </li>
+
+                <li class="nav-section-label mt-2">ADMIN</li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>users/users.php"
+                       class="nav-link <?= $currentFile === 'users.php' ? 'active' : '' ?>">
+                        <i class="bi bi-person-gear me-2"></i>Users
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>sections/sections.php"
+                       class="nav-link <?= $currentFile === 'sections.php' ? 'active' : '' ?>">
+                        <i class="bi bi-diagram-3 me-2"></i>Sections
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>sms/logs.php"
+                       class="nav-link <?= $currentFile === 'logs.php' ? 'active' : '' ?>">
+                        <i class="bi bi-chat-dots-fill me-2"></i>SMS Logs
+                    </a>
+                </li>
+
+                <li class="nav-item">
+                    <a href="<?= BASE_URL ?>settings/settings.php"
+                       class="nav-link <?= $currentFile === 'settings.php' ? 'active' : '' ?>">
+                        <i class="bi bi-gear-fill me-2"></i>Settings
+                    </a>
+                </li>
+            <?php endif; ?>
+
         <?php endif; ?>
 
     </ul>

@@ -208,16 +208,17 @@ include 'includes/sidebar.php';
 </div>
 
 <!-- ============================================================
-     TODAY'S LOG — live absent/partial list
+     TODAY'S LOG — mirrors scanner.php display
+     Shows ALL students with AM/PM In/Out + Late/Absent badges
      ============================================================ -->
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span>
-                    <i class="bi bi-person-x me-2 text-danger"></i>
+                    <i class="bi bi-list-check me-2 text-primary"></i>
                     Today's Log — <span id="todayLogDate"><?= date('F j, Y') ?></span>
-                    <span id="todayLogCount" class="badge bg-danger ms-2">—</span>
+                    <span id="todayLogCount" class="badge bg-primary ms-2">—</span>
                 </span>
                 <div class="d-flex gap-2 align-items-center">
                     <select id="todayLogGrade" class="form-select form-select-sm" style="width:auto">
@@ -227,9 +228,11 @@ include 'includes/sidebar.php';
                         <?php endforeach; ?>
                     </select>
                     <select id="todayLogType" class="form-select form-select-sm" style="width:auto">
-                        <option value="">All (Absent + Partial)</option>
-                        <option value="absent">Absent only</option>
-                        <option value="partial">Partial only</option>
+                        <option value="">All Types</option>
+                        <option value="full_day">Full Day</option>
+                        <option value="partial">Partial</option>
+                        <option value="absent">Absent</option>
+                        <option value="pending">Pending</option>
                     </select>
                     <input type="text"
                            id="todayLogSearch"
@@ -243,10 +246,9 @@ include 'includes/sidebar.php';
             </div>
             <div class="card-body p-0" style="max-height:420px;overflow-y:auto">
                 <table class="table table-sm table-hover mb-0" id="todayLogTable">
-                    <thead class="sticky-top bg-white">
+                    <thead class="sticky-top bg-white" style="z-index:1">
                         <tr>
                             <th>Student</th>
-                            <th>Grade / Section</th>
                             <th class="text-center">AM In</th>
                             <th class="text-center">AM Out</th>
                             <th class="text-center">PM In</th>
@@ -256,7 +258,7 @@ include 'includes/sidebar.php';
                     </thead>
                     <tbody id="todayLogBody">
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">
+                            <td colspan="6" class="text-center text-muted py-4">
                                 <span class="spinner-border spinner-border-sm me-2"></span>
                                 Loading today's log...
                             </td>
@@ -266,7 +268,7 @@ include 'includes/sidebar.php';
             </div>
             <div class="card-footer text-muted small d-flex justify-content-between">
                 <span id="todayLogUpdated">—</span>
-                <span>Only students flagged absent or partial appear here.</span>
+                <span>Showing all students recorded today.</span>
             </div>
         </div>
     </div>
@@ -412,10 +414,10 @@ include 'includes/sidebar.php';
 </div>
 
 <?php
-// JSON data for the Today's Log JS
+// JSON data for the Today's Log JS — mirrors scanner.php's display
 $extraJS = <<<JS
 <script>
-// ── Today's Log ──────────────────────────────────────────────
+// ── Today's Log (mirrors scanner.php layout) ─────────────────
 (function () {
     const tbody      = document.getElementById('todayLogBody');
     const searchBox  = document.getElementById('todayLogSearch');
@@ -435,14 +437,38 @@ $extraJS = <<<JS
             { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]
         ));
     }
-    function timeCell(t) {
-        if (t) return '<span class="text-muted">' + esc(t) + '</span>';
-        return '<span class="text-danger" title="No scan">—</span>';
+
+    // Mirrors scanner.php's fmtCell(): shows time + Late badge, or Absent badge
+    function fmtCell(time, status) {
+        if (!time) {
+            if (status === 'absent') {
+                return '<span class="badge bg-danger" style="font-size:0.6rem">Absent</span>';
+            }
+            return '<span class="text-muted">—</span>';
+        }
+        const late = (status === 'late')
+            ? ' <span class="badge bg-warning text-dark" style="font-size:0.6rem">Late</span>'
+            : '';
+        return esc(time) + late;
     }
+
     function typeBadge(type) {
-        const map = { absent: 'danger', partial: 'warning text-dark', pending: 'secondary' };
+        const map = {
+            full_day: 'success',
+            partial:  'warning text-dark',
+            absent:   'danger',
+            pending:  'secondary'
+        };
         const cls = map[type] || 'secondary';
-        return '<span class="badge bg-' + cls + '">' + esc(type || '—') + '</span>';
+        const label = (type || '—').replace('_', ' ');
+        return '<span class="badge bg-' + cls + '" style="font-size:0.65rem">' +
+               esc(label) + '</span>';
+    }
+
+    function rowClass(type) {
+        if (type === 'absent')  return 'table-danger';
+        if (type === 'pending') return 'table-light';
+        return '';
     }
 
     function render() {
@@ -453,51 +479,56 @@ $extraJS = <<<JS
         const filtered = rows.filter(r => {
             const matchesTerm =
                 term === '' ||
-                r.name.toLowerCase().includes(term) ||
-                r.lrn.toLowerCase().includes(term) ||
-                r.section.toLowerCase().includes(term);
+                (r.name    || '').toLowerCase().includes(term) ||
+                (r.lrn     || '').toLowerCase().includes(term) ||
+                (r.section || '').toLowerCase().includes(term);
             const matchesGrade = grade === '' || r.grade === grade;
             const matchesType  = type  === '' || r.attendance_type === type;
             return matchesTerm && matchesGrade && matchesType;
         });
 
-        countEl.textContent = filtered.length + ' student' + (filtered.length === 1 ? '' : 's');
+        countEl.textContent = filtered.length + ' student' +
+                              (filtered.length === 1 ? '' : 's');
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-success py-4">' +
-                '<i class="bi bi-check-circle me-1"></i>No absences match your filter.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
+                '<i class="bi bi-inbox me-1"></i>No students match your filter.</td></tr>';
             return;
         }
 
         tbody.innerHTML = filtered.map(r => (
-            '<tr>' +
-              '<td class="fw-600 small">' + esc(r.name) +
-                  '<div class="text-muted" style="font-size:.75rem">' + esc(r.lrn) + '</div></td>' +
-              '<td class="small text-muted">' + esc(r.grade) + ' / ' + esc(r.section) + '</td>' +
-              '<td class="text-center small">' + timeCell(r.am_in)  + '</td>' +
-              '<td class="text-center small">' + timeCell(r.am_out) + '</td>' +
-              '<td class="text-center small">' + timeCell(r.pm_in)  + '</td>' +
-              '<td class="text-center small">' + timeCell(r.pm_out) + '</td>' +
+            '<tr class="' + rowClass(r.attendance_type) + '">' +
+              '<td>' +
+                '<div class="fw-600 small">' + esc(r.name) + '</div>' +
+                '<div class="text-muted" style="font-size:0.7rem">' +
+                    esc(r.grade) + ' — ' + esc(r.section) +
+                '</div>' +
+              '</td>' +
+              '<td class="text-center small">' + fmtCell(r.am_in,  r.am_status) + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.am_out, null)         + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.pm_in,  r.pm_status) + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.pm_out, null)         + '</td>' +
               '<td class="text-center">' + typeBadge(r.attendance_type) + '</td>' +
             '</tr>'
         )).join('');
     }
 
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading today\\'s log...</td></tr>';
         try {
             const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const all = await res.json();
             if (!Array.isArray(all)) throw new Error('Invalid response');
-            rows = all.filter(r =>
-                r.attendance_type === 'absent' || r.attendance_type === 'partial'
-            );
+
+            // No filter — show every student, just like scanner.php
+            rows = all;
+
             render();
             updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">' +
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">' +
                 'Failed to load today\\'s log: ' + esc(err.message) + '</td></tr>';
             countEl.textContent = '—';
         }

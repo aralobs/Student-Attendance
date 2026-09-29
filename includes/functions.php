@@ -55,6 +55,66 @@ function currentUser() {
     ];
 }
 
+// ─── Scanner-user role ──────────────────────────────────────
+// A 'user' role account can ONLY access scanner.php and logout.php.
+// Every other page must call requireStaff() to keep them out.
+
+function isUser(): bool {
+    startSession();
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'user';
+}
+
+function isTeacher(): bool {
+    startSession();
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'teacher';
+}
+
+/**
+ * Guard for scanner-only accounts.
+ * Use this at the top of any page that ONLY the 'user' role should reach.
+ */
+function requireUser(): void {
+    requireLogin();
+    if (!isUser()) {
+        header('Location: ' . BASE_URL . 'dashboard.php');
+        exit;
+    }
+}
+
+/**
+ * Guard for scanner access.
+ * Allows admin, teacher, and user roles — blocks everyone else.
+ * Use on scanner.php.
+ */
+function requireScannerAccess(): void {
+    requireLogin();
+    if (!isAdmin() && !isTeacher() && !isUser()) {
+        header('Location: ' . BASE_URL . 'index.php');
+        exit;
+    }
+}
+
+/**
+ * Guard for staff pages (admin + teacher only).
+ * Redirects 'user' role to the scanner.
+ * Use this on EVERY page that isn't scanner.php or logout.php.
+ */
+function requireStaff(): void {
+    requireLogin();
+    if (isUser()) {
+        header('Location: ' . BASE_URL . 'scanner.php');
+        exit;
+    }
+}
+
+/**
+ * Is the current session a scanner-kiosk session?
+ * True only when the logged-in role is 'user'.
+ */
+function isKioskMode(): bool {
+    return isUser();
+}
+
 // ─── Teacher section access ──────────────────────────────────
 
 function getAllowedSections() {
