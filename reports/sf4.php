@@ -107,7 +107,7 @@ if (!empty($sectionIds)) {
     foreach ($monthStmt->fetchAll() as $r) {
         $sid = $r['section_id'];
         if (!isset($monthBySection[$sid])) {
-            $monthBySection[$sid] = ['M' => ['nlp' => 0, 'nl' => 0, 'p' => 0], 'F' => ['nlp' => 0, 'nl' => 0, 'p' => 0]];
+            $monthBySection[$sid] = ['M' => ['nlp'=>0,'nl'=>0,'p'=>0], 'F' => ['nlp'=>0,'nl'=>0,'p'=>0]];
         }
         $g = ($r['gender'] === 'Male') ? 'M' : 'F';
         $monthBySection[$sid][$g]['nlp'] = (int)$r['nlp'];
@@ -143,7 +143,7 @@ if (!empty($sectionIds)) {
     foreach ($cumStmt->fetchAll() as $r) {
         $sid = $r['section_id'];
         if (!isset($cumBySection[$sid])) {
-            $cumBySection[$sid] = ['M' => ['nlp' => 0, 'nl' => 0, 'p' => 0], 'F' => ['nlp' => 0, 'nl' => 0, 'p' => 0]];
+            $cumBySection[$sid] = ['M' => ['nlp'=>0,'nl'=>0,'p'=>0], 'F' => ['nlp'=>0,'nl'=>0,'p'=>0]];
         }
         $g = ($r['gender'] === 'Male') ? 'M' : 'F';
         $cumBySection[$sid][$g]['nlp'] = (int)$r['nlp'];
@@ -154,11 +154,11 @@ if (!empty($sectionIds)) {
     // --- 4. Assemble per-section data ---
     foreach ($allSections as $sec) {
         $sid = $sec['id'];
-        $enr = $enrollBySection[$sid] ?? ['total' => 0, 'male' => 0, 'female' => 0];
-        $mCur = $monthBySection[$sid]['M'] ?? ['nlp' => 0, 'nl' => 0, 'p' => 0];
-        $fCur = $monthBySection[$sid]['F'] ?? ['nlp' => 0, 'nl' => 0, 'p' => 0];
-        $mCum = $cumBySection[$sid]['M']   ?? ['nlp' => 0, 'nl' => 0, 'p' => 0];
-        $fCum = $cumBySection[$sid]['F']   ?? ['nlp' => 0, 'nl' => 0, 'p' => 0];
+        $enr = $enrollBySection[$sid] ?? ['total'=>0,'male'=>0,'female'=>0];
+        $mCur = $monthBySection[$sid]['M'] ?? ['nlp'=>0,'nl'=>0,'p'=>0];
+        $fCur = $monthBySection[$sid]['F'] ?? ['nlp'=>0,'nl'=>0,'p'=>0];
+        $mCum = $cumBySection[$sid]['M']   ?? ['nlp'=>0,'nl'=>0,'p'=>0];
+        $fCum = $cumBySection[$sid]['F']   ?? ['nlp'=>0,'nl'=>0,'p'=>0];
 
         $totalEnrolled = (int)$enr['total'];
         $presentDays   = $mCur['nlp'] + $fCur['nlp'];
@@ -177,22 +177,14 @@ if (!empty($sectionIds)) {
 
             'pct' => $pct,
 
-            'cum_m_nlp' => $mCum['nlp'],
-            'cum_m_nl' => $mCum['nl'],
-            'cum_m_p' => $mCum['p'],
-            'cum_f_nlp' => $fCum['nlp'],
-            'cum_f_nl' => $fCum['nl'],
-            'cum_f_p' => $fCum['p'],
+            'cum_m_nlp' => $mCum['nlp'], 'cum_m_nl' => $mCum['nl'], 'cum_m_p' => $mCum['p'],
+            'cum_f_nlp' => $fCum['nlp'], 'cum_f_nl' => $fCum['nl'], 'cum_f_p' => $fCum['p'],
             'cum_t_nlp' => $mCum['nlp'] + $fCum['nlp'],
             'cum_t_nl'  => $mCum['nl']  + $fCum['nl'],
             'cum_t_p'   => $mCum['p']   + $fCum['p'],
 
-            'm_m_nlp' => $mCur['nlp'],
-            'm_m_nl' => $mCur['nl'],
-            'm_m_p' => $mCur['p'],
-            'm_f_nlp' => $fCur['nlp'],
-            'm_f_nl' => $fCur['nl'],
-            'm_f_p' => $fCur['p'],
+            'm_m_nlp' => $mCur['nlp'], 'm_m_nl' => $mCur['nl'], 'm_m_p' => $mCur['p'],
+            'm_f_nlp' => $fCur['nlp'], 'm_f_nl' => $fCur['nl'], 'm_f_p' => $fCur['p'],
             'm_t_nlp' => $mCur['nlp'] + $fCur['nlp'],
             'm_t_nl'  => $mCur['nl']  + $fCur['nl'],
             'm_t_p'   => $mCur['p']   + $fCur['p'],
@@ -202,30 +194,14 @@ if (!empty($sectionIds)) {
 
 // --- Grand totals ---
 $grand = [
-    'enrolled_total' => 0,
-    'enrolled_male' => 0,
-    'enrolled_female' => 0,
-    'davg_male' => 0,
-    'davg_female' => 0,
-    'davg_total' => 0,
-    'cum_m_nlp' => 0,
-    'cum_m_nl' => 0,
-    'cum_m_p' => 0,
-    'cum_f_nlp' => 0,
-    'cum_f_nl' => 0,
-    'cum_f_p' => 0,
-    'cum_t_nlp' => 0,
-    'cum_t_nl' => 0,
-    'cum_t_p' => 0,
-    'm_m_nlp' => 0,
-    'm_m_nl' => 0,
-    'm_m_p' => 0,
-    'm_f_nlp' => 0,
-    'm_f_nl' => 0,
-    'm_f_p' => 0,
-    'm_t_nlp' => 0,
-    'm_t_nl' => 0,
-    'm_t_p' => 0,
+    'enrolled_total'=>0,'enrolled_male'=>0,'enrolled_female'=>0,
+    'davg_male'=>0,'davg_female'=>0,'davg_total'=>0,
+    'cum_m_nlp'=>0,'cum_m_nl'=>0,'cum_m_p'=>0,
+    'cum_f_nlp'=>0,'cum_f_nl'=>0,'cum_f_p'=>0,
+    'cum_t_nlp'=>0,'cum_t_nl'=>0,'cum_t_p'=>0,
+    'm_m_nlp'=>0,'m_m_nl'=>0,'m_m_p'=>0,
+    'm_f_nlp'=>0,'m_f_nl'=>0,'m_f_p'=>0,
+    'm_t_nlp'=>0,'m_t_nl'=>0,'m_t_p'=>0,
 ];
 foreach ($sectionData as $s) {
     foreach ($grand as $k => $_) $grand[$k] += $s[$k] ?? 0;
@@ -296,7 +272,7 @@ include '../includes/sidebar.php';
         <!-- Header -->
         <div class="sf4-header">
             <img src="<?= BASE_URL ?>assets/img/school_logo.png"
-                class="sf4-logo" alt="School Logo">
+                 class="sf4-logo" alt="School Logo">
             <div class="sf4-header-text">
                 <div class="sf4-republic">Republic of the Philippines</div>
                 <div class="sf4-deped">Department of Education</div>
@@ -307,7 +283,7 @@ include '../includes/sidebar.php';
                 <div class="sf4-sy">S.Y. <?= sanitize($schoolYear) ?></div>
             </div>
             <img src="<?= BASE_URL ?>assets/img/school_logo.png"
-                class="sf4-logo sf4-logo-ghost" alt="DepEd Logo">
+                 class="sf4-logo sf4-logo-ghost" alt="DepEd Logo">
         </div>
 
         <div class="sf4-title-block">
@@ -344,12 +320,8 @@ include '../includes/sidebar.php';
                     </tr>
                     <!-- Row 2 -->
                     <tr>
-                        <th class="grp-enroll">M</th>
-                        <th class="grp-enroll">F</th>
-                        <th class="grp-enroll">T</th>
-                        <th class="grp-davg">M</th>
-                        <th class="grp-davg">F</th>
-                        <th class="grp-davg">T</th>
+                        <th class="grp-enroll">M</th><th class="grp-enroll">F</th><th class="grp-enroll">T</th>
+                        <th class="grp-davg">M</th><th class="grp-davg">F</th><th class="grp-davg">T</th>
                         <th colspan="3" class="grp-cum">NLP</th>
                         <th colspan="3" class="grp-cum">NL</th>
                         <th colspan="3" class="grp-cum">P</th>
@@ -360,14 +332,10 @@ include '../includes/sidebar.php';
                     <!-- Row 3 -->
                     <tr>
                         <?php for ($g = 0; $g < 3; $g++): ?>
-                            <th class="grp-cum">M</th>
-                            <th class="grp-cum">F</th>
-                            <th class="grp-cum">T</th>
+                            <th class="grp-cum">M</th><th class="grp-cum">F</th><th class="grp-cum">T</th>
                         <?php endfor; ?>
                         <?php for ($g = 0; $g < 3; $g++): ?>
-                            <th class="grp-month">M</th>
-                            <th class="grp-month">F</th>
-                            <th class="grp-month">T</th>
+                            <th class="grp-month">M</th><th class="grp-month">F</th><th class="grp-month">T</th>
                         <?php endfor; ?>
                     </tr>
                 </thead>
@@ -380,15 +348,15 @@ include '../includes/sidebar.php';
                             $currentGrade = $s['grade_level'];
                             $rowNum = 0;
                     ?>
-                            <tr class="grade-row">
-                                <td colspan="19">
-                                    <i class="bi bi-bookmark-fill me-2"></i><?= sanitize($currentGrade) ?>
-                                </td>
-                            </tr>
-                        <?php
+                        <tr class="grade-row">
+                            <td colspan="19">
+                                <i class="bi bi-bookmark-fill me-2"></i><?= sanitize($currentGrade) ?>
+                            </td>
+                        </tr>
+                    <?php
                         endif;
                         $rowNum++;
-                        ?>
+                    ?>
                         <tr class="section-row">
                             <td class="c row-num-cell">
                                 <span class="row-num"><?= $rowNum ?></span>
@@ -443,9 +411,9 @@ include '../includes/sidebar.php';
                         <td class="c b grp-enroll"><?= $grand['enrolled_male'] ?></td>
                         <td class="c b grp-enroll"><?= $grand['enrolled_female'] ?></td>
                         <td class="c b grp-enroll"><?= $grand['enrolled_total'] ?></td>
-                        <td class="c b grp-davg"><?= round($grand['davg_male'], 1) ?></td>
-                        <td class="c b grp-davg"><?= round($grand['davg_female'], 1) ?></td>
-                        <td class="c b grp-davg"><?= round($grand['davg_total'], 1) ?></td>
+                        <td class="c b grp-davg"><?= round($grand['davg_male'],1) ?></td>
+                        <td class="c b grp-davg"><?= round($grand['davg_female'],1) ?></td>
+                        <td class="c b grp-davg"><?= round($grand['davg_total'],1) ?></td>
                         <td class="c b col-pct-cell">
                             <span class="rate-pill rate-<?= $grandPct >= 90 ? 'good' : ($grandPct >= 75 ? 'warn' : 'bad') ?>">
                                 <?= $grandPct ?>%
@@ -513,510 +481,346 @@ include '../includes/sidebar.php';
 </div>
 
 <style>
-    /* ============================================================
+/* ============================================================
    SF4 — Enhanced Visual Design
    ============================================================ */
 
-    /* ---------- Filter Card ---------- */
-    .sf4-filter-card {
-        border: none;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        background: #fff;
-    }
-
-    /* ---------- SF4 Document Card ---------- */
-    .sf4-card {
-        border: none;
-        border-radius: 14px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-        background: #fff;
-        overflow: hidden;
-    }
-
-    #sf4Document {
-        padding: 22px !important;
-    }
-
-    /* ---------- Header ---------- */
-    .sf4-header {
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        padding-bottom: 12px;
-        margin-bottom: 14px;
-        border-bottom: 3px double #1e3a8a;
-    }
-
-    .sf4-logo {
-        width: 80px;
-        height: 80px;
-        object-fit: contain;
-        flex-shrink: 0;
-    }
-
-    .sf4-logo-ghost {
-        opacity: 0.15;
-    }
-
-    .sf4-header-text {
-        flex: 1;
-        text-align: center;
-        font-size: 0.82rem;
-        line-height: 1.4;
-    }
-
-    .sf4-republic {
-        font-size: 0.72rem;
-        color: #555;
-    }
-
-    .sf4-deped {
-        font-weight: 700;
-        font-size: 0.9rem;
-        color: #1e3a8a;
-    }
-
-    .sf4-school {
-        font-weight: 800;
-        font-size: 0.95rem;
-    }
-
-    .sf4-address {
-        font-size: 0.75rem;
-        color: #555;
-    }
-
-    .sf4-sy {
-        font-size: 0.75rem;
-        color: #555;
-    }
-
-    /* ---------- Title Block ---------- */
-    .sf4-title-block {
-        text-align: center;
-        margin-bottom: 14px;
-    }
-
-    .sf4-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: linear-gradient(135deg, #1e3a8a, #2563eb);
-        color: #fff;
-        padding: 6px 20px;
-        border-radius: 8px;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        font-size: 0.9rem;
-        box-shadow: 0 3px 10px rgba(30, 58, 138, 0.30);
-    }
-
-    .sf4-subtitle {
-        font-weight: 700;
-        font-size: 0.85rem;
-        margin-top: 8px;
-        color: #1f2937;
-        letter-spacing: 0.04em;
-    }
-
-    .sf4-meta {
-        font-size: 0.78rem;
-        margin-top: 6px;
-        color: #374151;
-    }
-
-    .sf4-sep {
-        margin: 0 8px;
-        color: #9ca3af;
-    }
-
-    /* ---------- Table Wrapper ---------- */
-    .sf4-table-wrap {
-        overflow-x: auto;
-        border-radius: 8px;
-        border: 1px solid #d1d5db;
-    }
-
-    /* ---------- SF4 Table ---------- */
-    .sf4-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-        font-size: 0.65rem;
-        table-layout: fixed;
-    }
-
-    .sf4-table th,
-    .sf4-table td {
-        border-right: 1px solid #cbd5e1;
-        border-bottom: 1px solid #cbd5e1;
-        padding: 5px 4px;
-        vertical-align: middle;
-        line-height: 1.35;
-        word-wrap: break-word;
-    }
-
-    .sf4-table th:last-child,
-    .sf4-table td:last-child {
-        border-right: none;
-    }
-
-    .sf4-table tbody tr:last-child td {
-        border-bottom: none;
-    }
-
-    .sf4-table thead th {
-        background: #e8eef7;
-        text-align: center;
-        font-weight: 700;
-        color: #1e293b;
-        font-size: 0.62rem;
-        border-bottom: 2px solid #1e3a8a;
-    }
-
-    .sf4-table thead tr:nth-child(2) th {
-        background: #dde7f5;
-    }
-
-    /* ---------- Grade Header Row ---------- */
-    .sf4-table .grade-row td {
-        background: linear-gradient(90deg, #1e3a8a, #3b82f6);
-        color: #fff;
-        padding: 6px 12px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        font-size: 0.72rem;
-        font-weight: 700;
-    }
-
-    /* ---------- Zebra Striping + Hover ---------- */
-    .sf4-table tbody tr.section-row:nth-of-type(even) {
-        background: #fafbfd;
-    }
-
-    .sf4-table tbody tr.section-row:hover {
-        background: #fef9e7;
-        transition: background 0.15s ease;
-    }
-
-    /* ---------- Column Group Colors ---------- */
-    .sf4-table .grp-enroll {
-        background: #eff6ff;
-    }
-
-    .sf4-table .grp-davg {
-        background: #f0fdf4;
-    }
-
-    .sf4-table .grp-cum {
-        background: #faf5ff;
-    }
-
-    .sf4-table .grp-month {
-        background: #fef2f2;
-    }
-
-    /* Keep the header colors saturated */
-    .sf4-table thead .grp-enroll {
-        background: #dbeafe !important;
-    }
-
-    .sf4-table thead .grp-davg {
-        background: #dcfce7 !important;
-    }
-
-    .sf4-table thead .grp-cum {
-        background: #f3e8ff !important;
-    }
-
-    .sf4-table thead .grp-month {
-        background: #fee2e2 !important;
-    }
-
-    /* Preserve group color on hover */
-    .sf4-table tbody tr.section-row:hover .grp-enroll {
-        background: #dbeafe;
-    }
-
-    .sf4-table tbody tr.section-row:hover .grp-davg {
-        background: #dcfce7;
-    }
-
-    .sf4-table tbody tr.section-row:hover .grp-cum {
-        background: #f3e8ff;
-    }
-
-    .sf4-table tbody tr.section-row:hover .grp-month {
-        background: #fee2e2;
-    }
-
-    /* ---------- Cell Modifiers ---------- */
-    .sf4-table .c {
-        text-align: center;
-    }
-
-    .sf4-table .r {
-        text-align: right;
-    }
-
-    .sf4-table .b {
-        font-weight: 700;
-    }
-
-    .sf4-table .section-cell {
-        font-weight: 700;
-        color: #1e293b;
-        padding-left: 8px;
-    }
-
-    .sf4-table .adviser-cell {
-        color: #374151;
-        padding-left: 8px;
-    }
-
-    .sf4-table .row-num-cell {
-        padding: 3px;
-    }
-
-    /* ---------- Row Number Chip ---------- */
-    .row-num {
-        display: inline-block;
-        background: #e5e7eb;
-        color: #374151;
-        border-radius: 999px;
-        padding: 1px 7px;
-        font-size: 0.6rem;
-        font-weight: 700;
-        min-width: 18px;
-    }
-
-    /* ---------- Percentage Column ---------- */
-    .col-pct-cell {
-        padding: 3px !important;
-    }
-
-    .rate-pill {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 999px;
-        font-weight: 700;
-        font-size: 0.62rem;
-        white-space: nowrap;
-    }
-
-    .rate-good {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    .rate-warn {
-        background: #fef3c7;
-        color: #92400e;
-    }
-
-    .rate-bad {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    /* ---------- Grand Total Row ---------- */
-    .sf4-table tfoot .grand-row td {
-        background: #e0e7ff !important;
-        border-top: 2px solid #1e3a8a;
-        font-weight: 800;
-        color: #1e293b;
-        padding: 6px 4px;
-    }
-
-    /* ---------- Column Widths (landscape A4 fit) ---------- */
-    .sf4-table .col-grade {
-        width: 62px;
-    }
-
-    .sf4-table .col-section {
-        width: 110px;
-    }
-
-    .sf4-table .col-adviser {
-        width: 130px;
-    }
-
-    .sf4-table .col-pct {
-        width: 52px;
-    }
-
-    /* ---------- Legend ---------- */
-    .sf4-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 14px;
-        font-size: 0.7rem;
-        color: #374151;
-        margin-top: 10px;
-        padding: 8px 10px;
-        background: #f9fafb;
-        border-radius: 8px;
-        border: 1px dashed #d1d5db;
-    }
-
-    .legend-chip {
-        white-space: nowrap;
-    }
-
-    /* ---------- Certification ---------- */
-    .sf4-cert {
-        font-size: 0.78rem;
-        margin-top: 18px;
-        color: #374151;
-        line-height: 1.5;
-    }
-
-    /* ---------- Signature Block ---------- */
-    .signature-block {
-        display: flex;
-        justify-content: space-between;
-        gap: 40px;
-        margin-top: 36px;
-        font-size: 0.78rem;
-    }
-
-    .sig-line {
-        flex: 1;
-        text-align: center;
-    }
-
-    .sig-line .line {
-        height: 32px;
-        border-bottom: 1.5px solid #000;
-        margin-bottom: 4px;
-        max-width: 260px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    .sig-line .name {
-        font-weight: 700;
-        font-size: 0.78rem;
-    }
-
-    .sig-line .name.principal-name {
-        font-weight: 800;
-        font-size: 0.82rem;
-        color: #1e293b;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-    }
-
-    .sig-line .role {
-        font-size: 0.72rem;
-        color: #555;
-    }
-
-    .sig-line .role.muted {
-        color: #9ca3af;
-    }
-
-    /* ============================================================
+/* ---------- Filter Card ---------- */
+.sf4-filter-card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    background: #fff;
+}
+
+/* ---------- SF4 Document Card ---------- */
+.sf4-card {
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    background: #fff;
+    overflow: hidden;
+}
+#sf4Document {
+    padding: 22px !important;
+}
+
+/* ---------- Header ---------- */
+.sf4-header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 3px double #1e3a8a;
+}
+.sf4-logo {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.sf4-logo-ghost { opacity: 0.15; }
+.sf4-header-text {
+    flex: 1;
+    text-align: center;
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+.sf4-republic { font-size: 0.72rem; color: #555; }
+.sf4-deped    { font-weight: 700; font-size: 0.9rem; color: #1e3a8a; }
+.sf4-school   { font-weight: 800; font-size: 0.95rem; }
+.sf4-address  { font-size: 0.75rem; color: #555; }
+.sf4-sy       { font-size: 0.75rem; color: #555; }
+
+/* ---------- Title Block ---------- */
+.sf4-title-block {
+    text-align: center;
+    margin-bottom: 14px;
+}
+.sf4-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: #fff;
+    padding: 6px 20px;
+    border-radius: 8px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    font-size: 0.9rem;
+    box-shadow: 0 3px 10px rgba(30,58,138,0.30);
+}
+.sf4-subtitle {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-top: 8px;
+    color: #1f2937;
+    letter-spacing: 0.04em;
+}
+.sf4-meta {
+    font-size: 0.78rem;
+    margin-top: 6px;
+    color: #374151;
+}
+.sf4-sep { margin: 0 8px; color: #9ca3af; }
+
+/* ---------- Table Wrapper ---------- */
+.sf4-table-wrap {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+}
+
+/* ---------- SF4 Table ---------- */
+.sf4-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.65rem;
+    table-layout: fixed;
+}
+.sf4-table th,
+.sf4-table td {
+    border-right: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+    padding: 5px 4px;
+    vertical-align: middle;
+    line-height: 1.35;
+    word-wrap: break-word;
+}
+.sf4-table th:last-child,
+.sf4-table td:last-child { border-right: none; }
+.sf4-table tbody tr:last-child td { border-bottom: none; }
+
+.sf4-table thead th {
+    background: #e8eef7;
+    text-align: center;
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 0.62rem;
+    border-bottom: 2px solid #1e3a8a;
+}
+.sf4-table thead tr:nth-child(2) th { background: #dde7f5; }
+
+/* ---------- Grade Header Row ---------- */
+.sf4-table .grade-row td {
+    background: linear-gradient(90deg, #1e3a8a, #3b82f6);
+    color: #fff;
+    padding: 6px 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+/* ---------- Zebra Striping + Hover ---------- */
+.sf4-table tbody tr.section-row:nth-of-type(even) {
+    background: #fafbfd;
+}
+.sf4-table tbody tr.section-row:hover {
+    background: #fef9e7;
+    transition: background 0.15s ease;
+}
+
+/* ---------- Column Group Colors ---------- */
+.sf4-table .grp-enroll { background: #eff6ff; }
+.sf4-table .grp-davg   { background: #f0fdf4; }
+.sf4-table .grp-cum    { background: #faf5ff; }
+.sf4-table .grp-month  { background: #fef2f2; }
+
+/* Keep the header colors saturated */
+.sf4-table thead .grp-enroll { background: #dbeafe !important; }
+.sf4-table thead .grp-davg   { background: #dcfce7 !important; }
+.sf4-table thead .grp-cum    { background: #f3e8ff !important; }
+.sf4-table thead .grp-month  { background: #fee2e2 !important; }
+
+/* Preserve group color on hover */
+.sf4-table tbody tr.section-row:hover .grp-enroll { background: #dbeafe; }
+.sf4-table tbody tr.section-row:hover .grp-davg   { background: #dcfce7; }
+.sf4-table tbody tr.section-row:hover .grp-cum    { background: #f3e8ff; }
+.sf4-table tbody tr.section-row:hover .grp-month  { background: #fee2e2; }
+
+/* ---------- Cell Modifiers ---------- */
+.sf4-table .c { text-align: center; }
+.sf4-table .r { text-align: right; }
+.sf4-table .b { font-weight: 700; }
+
+.sf4-table .section-cell {
+    font-weight: 700;
+    color: #1e293b;
+    padding-left: 8px;
+}
+.sf4-table .adviser-cell {
+    color: #374151;
+    padding-left: 8px;
+}
+.sf4-table .row-num-cell { padding: 3px; }
+
+/* ---------- Row Number Chip ---------- */
+.row-num {
+    display: inline-block;
+    background: #e5e7eb;
+    color: #374151;
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    min-width: 18px;
+}
+
+/* ---------- Percentage Column ---------- */
+.col-pct-cell { padding: 3px !important; }
+.rate-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.62rem;
+    white-space: nowrap;
+}
+.rate-good { background: #d1fae5; color: #065f46; }
+.rate-warn { background: #fef3c7; color: #92400e; }
+.rate-bad  { background: #fee2e2; color: #991b1b; }
+
+/* ---------- Grand Total Row ---------- */
+.sf4-table tfoot .grand-row td {
+    background: #e0e7ff !important;
+    border-top: 2px solid #1e3a8a;
+    font-weight: 800;
+    color: #1e293b;
+    padding: 6px 4px;
+}
+
+/* ---------- Column Widths (landscape A4 fit) ---------- */
+.sf4-table .col-grade   { width: 62px; }
+.sf4-table .col-section { width: 110px; }
+.sf4-table .col-adviser { width: 130px; }
+.sf4-table .col-pct     { width: 52px; }
+
+/* ---------- Legend ---------- */
+.sf4-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: 0.7rem;
+    color: #374151;
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px dashed #d1d5db;
+}
+.legend-chip { white-space: nowrap; }
+
+/* ---------- Certification ---------- */
+.sf4-cert {
+    font-size: 0.78rem;
+    margin-top: 18px;
+    color: #374151;
+    line-height: 1.5;
+}
+
+/* ---------- Signature Block ---------- */
+.signature-block {
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+    margin-top: 36px;
+    font-size: 0.78rem;
+}
+.sig-line {
+    flex: 1;
+    text-align: center;
+}
+.sig-line .line {
+    height: 32px;
+    border-bottom: 1.5px solid #000;
+    margin-bottom: 4px;
+    max-width: 260px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.sig-line .name { font-weight: 700; font-size: 0.78rem; }
+.sig-line .name.principal-name {
+    font-weight: 800;
+    font-size: 0.82rem;
+    color: #1e293b;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+.sig-line .role { font-size: 0.72rem; color: #555; }
+.sig-line .role.muted { color: #9ca3af; }
+
+/* ============================================================
    PRINT STYLES — A4 Landscape
    ============================================================ */
-    @media print {
-        @page {
-            size: A4 landscape;
-            margin: 8mm;
-        }
-
-        .no-print,
-        .sidebar,
-        .top-navbar,
-        .page-header,
-        .sf4-filter-card {
-            display: none !important;
-        }
-
-        .main-content,
-        .content-area {
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        .card,
-        .sf4-card {
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-        }
-
-        #sf4Document {
-            padding: 0 !important;
-        }
-
-        body {
-            font-size: 8px;
-        }
-
-        /* Preserve ALL colors when printing */
-        *,
-        *::before,
-        *::after {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-
-        /* Table: header repeat + row page-break control */
-        .sf4-table {
-            font-size: 0.58rem;
-        }
-
-        .sf4-table thead {
-            display: table-header-group;
-        }
-
-        .sf4-table tfoot {
-            display: table-footer-group;
-        }
-
-        .sf4-table tr {
-            page-break-inside: avoid;
-        }
-
-        .sf4-table tbody tr.section-row:hover {
-            background: inherit !important;
-        }
-
-        /* Flatten gradient for cleaner ink */
-        .sf4-table .grade-row td {
-            background: #1e3a8a !important;
-            color: #fff !important;
-        }
-
-        .sf4-badge {
-            background: #1e3a8a !important;
-            box-shadow: none !important;
-        }
-
-        .signature-block {
-            margin-top: 20px;
-        }
-
-        .sf4-legend {
-            font-size: 0.65rem;
-            padding: 4px 6px;
-        }
-
-        .sf4-cert {
-            font-size: 0.7rem;
-            margin-top: 10px;
-        }
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
     }
+
+    .no-print,
+    .sidebar,
+    .top-navbar,
+    .page-header,
+    .sf4-filter-card {
+        display: none !important;
+    }
+
+    .main-content,
+    .content-area {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .card,
+    .sf4-card {
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+
+    #sf4Document { padding: 0 !important; }
+
+    body { font-size: 8px; }
+
+    /* Preserve ALL colors when printing */
+    *, *::before, *::after {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Table: header repeat + row page-break control */
+    .sf4-table { font-size: 0.58rem; }
+    .sf4-table thead { display: table-header-group; }
+    .sf4-table tfoot { display: table-footer-group; }
+    .sf4-table tr    { page-break-inside: avoid; }
+    .sf4-table tbody tr.section-row:hover { background: inherit !important; }
+
+    /* Flatten gradient for cleaner ink */
+    .sf4-table .grade-row td {
+        background: #1e3a8a !important;
+        color: #fff !important;
+    }
+    .sf4-badge {
+        background: #1e3a8a !important;
+        box-shadow: none !important;
+    }
+
+    .signature-block { margin-top: 20px; }
+    .sf4-legend { font-size: 0.65rem; padding: 4px 6px; }
+    .sf4-cert   { font-size: 0.7rem; margin-top: 10px; }
+}
 </style>
 
 <script>
-    // Loading spinner on Generate
-    document.getElementById('sf4FilterForm')?.addEventListener('submit', function() {
-        document.getElementById('genSpin')?.classList.remove('d-none');
-        document.getElementById('genBtn').disabled = true;
-    });
+// Loading spinner on Generate
+document.getElementById('sf4FilterForm')?.addEventListener('submit', function () {
+    document.getElementById('genSpin')?.classList.remove('d-none');
+    document.getElementById('genBtn').disabled = true;
+});
 </script>
 
 <?php include '../includes/footer.php'; ?>

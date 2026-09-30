@@ -194,7 +194,7 @@ include '../includes/sidebar.php';
         <!-- DepEd Header -->
         <div class="sf2-header">
             <img src="<?= BASE_URL ?>assets/img/school_logo.png"
-                class="sf2-logo" alt="School Logo">
+                 class="sf2-logo" alt="School Logo">
             <div class="sf2-header-text">
                 <div class="sf2-republic">Republic of the Philippines</div>
                 <div class="sf2-deped">Department of Education</div>
@@ -203,7 +203,7 @@ include '../includes/sidebar.php';
                 <div class="sf2-sy">S.Y. <?= sanitize($schoolYear) ?></div>
             </div>
             <img src="<?= BASE_URL ?>assets/img/school_logo.png"
-                class="sf2-logo sf2-logo-ghost" alt="DepEd Logo">
+                 class="sf2-logo sf2-logo-ghost" alt="DepEd Logo">
         </div>
 
         <div class="sf2-title-block">
@@ -417,7 +417,8 @@ include '../includes/sidebar.php';
                                     class="sf2-remark"
                                     data-student-id="<?= $stu['id'] ?>"
                                     rows="1"
-                                    placeholder="Add remark..."></textarea>
+                                    placeholder="Add remark..."
+                                ></textarea>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -500,793 +501,578 @@ include '../includes/sidebar.php';
 </div>
 
 <style>
-    /* ============================================================
+/* ============================================================
    SF2 — Enhanced Visual Design (matched to SF4) — FIXED
    ============================================================ */
 
-    /* ---------- Filter Card ---------- */
-    .sf2-filter-card {
-        border: none;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-        background: #fff;
-    }
+/* ---------- Filter Card ---------- */
+.sf2-filter-card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    background: #fff;
+}
 
-    /* ---------- SF2 Document Card ---------- */
-    .sf2-card {
-        border: none;
-        border-radius: 14px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-        background: #fff;
-        overflow: hidden;
-    }
+/* ---------- SF2 Document Card ---------- */
+.sf2-card {
+    border: none;
+    border-radius: 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    background: #fff;
+    overflow: hidden;
+}
+#sf2Document {
+    padding: 22px !important;
+    font-family: Arial, Helvetica, sans-serif;
+    color: #000;
+    background: #fff;
+}
 
-    #sf2Document {
-        padding: 22px !important;
-        font-family: Arial, Helvetica, sans-serif;
-        color: #000;
-        background: #fff;
-    }
+/* ---------- Guidelines Block ---------- */
+.sf2-guidelines {
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #1e3a8a;
+    background: #f8fafc;
+    padding: 10px 14px;
+    font-size: 0.68rem;
+    line-height: 1.5;
+    color: #334155;
+    border-radius: 6px;
+    margin-bottom: 10px;
+}
+.sf2-guidelines-title {
+    font-weight: 700;
+    color: #1e3a8a;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+}
+.sf2-indent { padding-left: 16px; }
+.sf2-guidelines-note {
+    font-style: italic;
+    margin-top: 4px;
+    color: #64748b;
+}
+.sf2-guidelines-sign {
+    text-align: center;
+    font-weight: 700;
+    margin-top: 6px;
+    color: #1e293b;
+    letter-spacing: 0.03em;
+}
+.sf2-guidelines-sub {
+    text-align: center;
+    font-size: 0.62rem;
+    color: #64748b;
+}
 
-    /* ---------- Guidelines Block ---------- */
-    .sf2-guidelines {
-        border: 1px solid #cbd5e1;
-        border-left: 4px solid #1e3a8a;
-        background: #f8fafc;
-        padding: 10px 14px;
-        font-size: 0.68rem;
-        line-height: 1.5;
-        color: #334155;
-        border-radius: 6px;
-        margin-bottom: 10px;
-    }
+/* ---------- Meta Table (School ID / SY / Month) ---------- */
+.sf2-meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+    margin-bottom: 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    overflow: hidden;
+}
+.sf2-meta-table td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 10px;
+    background: #f8fafc;
+}
 
-    .sf2-guidelines-title {
-        font-weight: 700;
-        color: #1e3a8a;
-        letter-spacing: 0.06em;
-        margin-bottom: 4px;
-        text-transform: uppercase;
-    }
+/* ---------- Header ---------- */
+.sf2-header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+    border-bottom: 3px double #1e3a8a;
+}
+.sf2-logo {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.sf2-logo-ghost { opacity: 0.15; }
+.sf2-header-text {
+    flex: 1;
+    text-align: center;
+    font-size: 0.82rem;
+    line-height: 1.4;
+}
+.sf2-republic { font-size: 0.72rem; color: #555; }
+.sf2-deped    { font-weight: 700; font-size: 0.9rem; color: #1e3a8a; }
+.sf2-school   { font-weight: 800; font-size: 0.95rem; }
+.sf2-section  { font-size: 0.78rem; color: #374151; }
+.sf2-sy       { font-size: 0.75rem; color: #555; }
 
-    .sf2-indent {
-        padding-left: 16px;
-    }
+/* ---------- Title Block ---------- */
+.sf2-title-block {
+    text-align: center;
+    margin-bottom: 14px;
+}
+.sf2-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, #1e3a8a, #2563eb);
+    color: #fff;
+    padding: 6px 20px;
+    border-radius: 8px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    font-size: 0.9rem;
+    box-shadow: 0 3px 10px rgba(30,58,138,0.30);
+}
+.sf2-subtitle {
+    font-weight: 700;
+    font-size: 0.85rem;
+    margin-top: 8px;
+    color: #1f2937;
+    letter-spacing: 0.04em;
+}
+.sf2-meta {
+    font-size: 0.78rem;
+    margin-top: 6px;
+    color: #374151;
+}
+.sf2-sep { margin: 0 8px; color: #9ca3af; }
 
-    .sf2-guidelines-note {
-        font-style: italic;
-        margin-top: 4px;
-        color: #64748b;
-    }
+/* ---------- Table Wrapper ---------- */
+.sf2-table-wrap {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+}
 
-    .sf2-guidelines-sign {
-        text-align: center;
-        font-weight: 700;
-        margin-top: 6px;
-        color: #1e293b;
-        letter-spacing: 0.03em;
-    }
-
-    .sf2-guidelines-sub {
-        text-align: center;
-        font-size: 0.62rem;
-        color: #64748b;
-    }
-
-    /* ---------- Meta Table (School ID / SY / Month) ---------- */
-    .sf2-meta-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.75rem;
-        margin-bottom: 12px;
-        border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        overflow: hidden;
-    }
-
-    .sf2-meta-table td {
-        border: 1px solid #cbd5e1;
-        padding: 6px 10px;
-        background: #f8fafc;
-    }
-
-    /* ---------- Header ---------- */
-    .sf2-header {
-        display: flex;
-        align-items: center;
-        gap: 18px;
-        padding-bottom: 12px;
-        margin-bottom: 14px;
-        border-bottom: 3px double #1e3a8a;
-    }
-
-    .sf2-logo {
-        width: 80px;
-        height: 80px;
-        object-fit: contain;
-        flex-shrink: 0;
-    }
-
-    .sf2-logo-ghost {
-        opacity: 0.15;
-    }
-
-    .sf2-header-text {
-        flex: 1;
-        text-align: center;
-        font-size: 0.82rem;
-        line-height: 1.4;
-    }
-
-    .sf2-republic {
-        font-size: 0.72rem;
-        color: #555;
-    }
-
-    .sf2-deped {
-        font-weight: 700;
-        font-size: 0.9rem;
-        color: #1e3a8a;
-    }
-
-    .sf2-school {
-        font-weight: 800;
-        font-size: 0.95rem;
-    }
-
-    .sf2-section {
-        font-size: 0.78rem;
-        color: #374151;
-    }
-
-    .sf2-sy {
-        font-size: 0.75rem;
-        color: #555;
-    }
-
-    /* ---------- Title Block ---------- */
-    .sf2-title-block {
-        text-align: center;
-        margin-bottom: 14px;
-    }
-
-    .sf2-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        background: linear-gradient(135deg, #1e3a8a, #2563eb);
-        color: #fff;
-        padding: 6px 20px;
-        border-radius: 8px;
-        font-weight: 800;
-        letter-spacing: 0.08em;
-        font-size: 0.9rem;
-        box-shadow: 0 3px 10px rgba(30, 58, 138, 0.30);
-    }
-
-    .sf2-subtitle {
-        font-weight: 700;
-        font-size: 0.85rem;
-        margin-top: 8px;
-        color: #1f2937;
-        letter-spacing: 0.04em;
-    }
-
-    .sf2-meta {
-        font-size: 0.78rem;
-        margin-top: 6px;
-        color: #374151;
-    }
-
-    .sf2-sep {
-        margin: 0 8px;
-        color: #9ca3af;
-    }
-
-    /* ---------- Table Wrapper ---------- */
-    .sf2-table-wrap {
-        overflow-x: auto;
-        border-radius: 8px;
-        border: 1px solid #d1d5db;
-    }
-
-    /* ============================================================
+/* ============================================================
    SF2 TABLE — Fixed layout fix
    ============================================================ */
-    .sf2-table {
-        width: 100%;
-        border-collapse: separate;
-        border-spacing: 0;
-        font-size: 0.65rem;
-        table-layout: auto;
-        /* was: fixed — lets day + metric columns size naturally */
-        min-width: 100%;
-    }
-
-    /* All cells: prevent mid-word breaking */
-    .sf2-table th,
-    .sf2-table td {
-        border-right: 1px solid #cbd5e1;
-        border-bottom: 1px solid #cbd5e1;
-        padding: 4px 3px;
-        vertical-align: middle;
-        line-height: 1.3;
-        overflow-wrap: normal;
-        word-break: normal;
-        /* keep words intact */
-        hyphens: none;
-    }
-
-    .sf2-table th:last-child,
-    .sf2-table td:last-child {
-        border-right: none;
-    }
-
-    .sf2-table tbody tr:last-child td {
-        border-bottom: none;
-    }
-
-    /* ---------- Table Header ---------- */
-    .sf2-table thead th {
-        background: #e8eef7;
-        text-align: center;
-        font-weight: 700;
-        color: #1e293b;
-        font-size: 0.62rem;
-        border-bottom: 2px solid #1e3a8a;
-        white-space: nowrap;
-        /* keep "Present"/"Late" etc. on one line */
-        padding: 5px 4px;
-    }
-
-    .sf2-table thead tr:nth-child(2) th {
-        background: #dde7f5;
-    }
-
-    /* Day headers — narrow, fixed */
-    .sf2-table .day-header {
-        width: 24px;
-        min-width: 22px;
-        max-width: 28px;
-    }
-
-    .sf2-table .day-subheader {
-        font-size: 0.58rem;
-        padding: 1px;
-        width: 24px;
-        min-width: 22px;
-    }
-
-    .sf2-table .day-off {
-        background: #d0d0d0 !important;
-        color: #666 !important;
-    }
-
-    /* ---------- Column Width Hints ---------- */
-    .sf2-table .col-idx {
-        width: 28px;
-        min-width: 28px;
-    }
-
-    .sf2-table .col-name {
-        width: 170px;
-        min-width: 170px;
-        text-align: left;
-        padding-left: 8px;
-        white-space: normal;
-    }
-
-    .sf2-table .mfc {
-        width: 22px;
-        min-width: 22px;
-    }
-
-    .sf2-table .col-pct {
-        min-width: 58px;
-    }
-
-    .sf2-table .col-ada {
-        min-width: 70px;
-    }
-
-    .sf2-table .col-pctatt {
-        min-width: 74px;
-    }
-
-    .sf2-table .col-remarks {
-        min-width: 160px;
-        width: 160px;
-    }
-
-    /* ---------- Column Group Headers ---------- */
-    .sf2-table thead .grp-enroll {
-        background: #dbeafe !important;
-    }
-
-    .sf2-table thead .grp-present {
-        background: #dcfce7 !important;
-    }
-
-    .sf2-table thead .grp-late {
-        background: #fef3c7 !important;
-    }
-
-    .sf2-table thead .grp-absent {
-        background: #fee2e2 !important;
-    }
-
-    .sf2-table thead .grp-metric {
-        background: #f3e8ff !important;
-    }
-
-    /* Multi-line metric headers: allow controlled wrap so labels fit */
-    .sf2-table thead .col-ada,
-    .sf2-table thead .col-pctatt,
-    .sf2-table thead .col-pct,
-    .sf2-table thead .col-remarks {
-        white-space: normal;
-        line-height: 1.15;
-        font-size: 0.6rem;
-        padding: 4px 3px;
-    }
-
-    /* ---------- Body Cell Colors ---------- */
-    .sf2-table tbody .grp-enroll {
-        background: #eff6ff;
-    }
-
-    .sf2-table tbody .grp-present {
-        background: #f0fdf4;
-    }
-
-    .sf2-table tbody .grp-late {
-        background: #fffbeb;
-    }
-
-    .sf2-table tbody .grp-absent {
-        background: #fef2f2;
-    }
-
-    .sf2-table tbody .grp-metric {
-        background: #faf5ff;
-    }
-
-    /* ---------- Zebra + Hover ---------- */
-    .sf2-table tbody tr.student-row:nth-of-type(even) {
-        background: #fafbfd;
-    }
-
-    .sf2-table tbody tr.student-row:hover {
-        background: #fef9e7;
-        transition: background 0.15s ease;
-    }
-
-    .sf2-table tbody tr.student-row:hover td {
-        background: inherit;
-    }
-
-    .sf2-table tbody tr.student-row:hover .grp-enroll {
-        background: #dbeafe;
-    }
-
-    .sf2-table tbody tr.student-row:hover .grp-present {
-        background: #dcfce7;
-    }
-
-    .sf2-table tbody tr.student-row:hover .grp-late {
-        background: #fef3c7;
-    }
-
-    .sf2-table tbody tr.student-row:hover .grp-absent {
-        background: #fee2e2;
-    }
-
-    .sf2-table tbody tr.student-row:hover .grp-metric {
-        background: #f3e8ff;
-    }
-
-    /* ---------- Cell Modifiers ---------- */
-    .sf2-table .c {
-        text-align: center;
-    }
-
-    .sf2-table .r {
-        text-align: right;
-    }
-
-    .sf2-table .b {
-        font-weight: 700;
-    }
-
-    .sf2-table .name-cell {
-        font-weight: 600;
-        color: #1e293b;
-        padding-left: 8px;
-        white-space: normal;
-    }
-
-    .sf2-table .row-num-cell {
-        padding: 3px;
-    }
-
-    /* Row number chip */
-    .row-num {
-        display: inline-block;
-        background: #e5e7eb;
-        color: #374151;
-        border-radius: 999px;
-        padding: 1px 7px;
-        font-size: 0.6rem;
-        font-weight: 700;
-        min-width: 18px;
-    }
-
-    /* ---------- Daily Cells ---------- */
-    .sf2-table .day-cell {
-        text-align: center;
-        padding: 1px;
-        font-size: 0.62rem;
-        font-weight: 700;
-    }
-
-    .sf2-table .day-cell.day-off {
-        background: #d0d0d0 !important;
-        color: #666 !important;
-        font-weight: 400;
-    }
-
-    .sf2-table .full-day-cell {
-        padding: 0;
-        vertical-align: top;
-    }
-
-    .sf2-table .am-cell,
-    .sf2-table .pm-cell {
-        min-height: 0.9em;
-        text-align: center;
-        font-size: 0.58rem;
-        font-weight: 700;
-        line-height: 1.1;
-        padding: 1px 0;
-    }
-
-    .sf2-table .am-cell {
-        border-bottom: 0.5px solid #94a3b8;
-    }
-
-    /* Marks */
-    .mark-present {
-        color: #15803d;
-    }
-
-    .mark-late {
-        color: #d97706;
-    }
-
-    .mark-absent {
-        color: #dc2626;
-    }
-
-    /* ---------- Metric Pills ---------- */
-    .rate-pill {
-        display: inline-block;
-        padding: 2px 7px;
-        border-radius: 999px;
-        font-weight: 700;
-        font-size: 0.62rem;
-        white-space: nowrap;
-    }
-
-    .rate-good {
-        background: #d1fae5;
-        color: #065f46;
-    }
-
-    .rate-warn {
-        background: #fef3c7;
-        color: #92400e;
-    }
-
-    .rate-bad {
-        background: #fee2e2;
-        color: #991b1b;
-    }
-
-    .rate-neutral {
-        background: #e0e7ff;
-        color: #3730a3;
-    }
-
-    .ada-pill {
-        display: inline-block;
-        padding: 2px 7px;
-        border-radius: 999px;
-        background: #ede9fe;
-        color: #5b21b6;
-        font-weight: 700;
-        font-size: 0.62rem;
-        white-space: nowrap;
-    }
-
-    /* ---------- Grand Total Row ---------- */
-    .sf2-table tfoot .grand-row td {
-        background: #e0e7ff !important;
-        border-top: 2px solid #1e3a8a;
-        font-weight: 800;
-        color: #1e293b;
-        padding: 5px 3px;
-    }
-
-    /* ---------- Remarks Cell ---------- */
-    .sf2-table .remark-cell {
-        padding: 0;
-        vertical-align: top;
-        background: #fff;
-    }
-
-    .sf2-remark {
-        width: 100%;
-        border: none;
-        outline: none;
-        resize: vertical;
-        font-size: 0.66rem;
-        font-family: Arial, Helvetica, sans-serif;
-        padding: 3px 5px;
-        background: transparent;
-        min-height: 24px;
-        box-sizing: border-box;
-        color: #1e293b;
-    }
-
-    .sf2-remark:focus {
-        background: #fef9e7;
-        box-shadow: inset 0 0 0 2px #fbbf24;
-    }
-
-    /* ---------- Legend ---------- */
-    .sf2-legend {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px 14px;
-        font-size: 0.7rem;
-        color: #374151;
-        margin-top: 10px;
-        padding: 8px 12px;
-        background: #f9fafb;
-        border-radius: 8px;
-        border: 1px dashed #d1d5db;
-    }
-
-    .legend-chip {
-        white-space: nowrap;
-    }
-
-    /* ---------- Certification ---------- */
-    .sf2-cert {
-        font-size: 0.78rem;
-        margin-top: 18px;
-        color: #374151;
-    }
-
-    /* ---------- Signature Block ---------- */
-    .signature-block {
-        display: flex;
-        justify-content: space-between;
-        gap: 40px;
-        margin-top: 36px;
-        font-size: 0.78rem;
-    }
-
-    .sig-line {
-        flex: 1;
-        text-align: center;
-    }
-
-    .sig-line .line {
-        height: 32px;
-        border-bottom: 1.5px solid #000;
-        margin-bottom: 4px;
-        max-width: 260px;
-        margin-left: auto;
-        margin-right: auto;
-    }
-
-    .sig-line .name {
-        font-weight: 700;
-        font-size: 0.78rem;
-    }
-
-    .sig-line .name.principal-name {
-        font-weight: 800;
-        font-size: 0.82rem;
-        color: #1e293b;
-        letter-spacing: 0.03em;
-        text-transform: uppercase;
-    }
-
-    .sig-line .role {
-        font-size: 0.72rem;
-        color: #555;
-    }
-
-    /* ---------- Footer Note ---------- */
-    .sf2-footer-note {
-        margin-top: 14px;
-        text-align: center;
-        font-size: 0.65rem;
-        font-style: italic;
-        color: #64748b;
-    }
-
-    /* ============================================================
+.sf2-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.65rem;
+    table-layout: auto;          /* was: fixed — lets day + metric columns size naturally */
+    min-width: 100%;
+}
+
+/* All cells: prevent mid-word breaking */
+.sf2-table th,
+.sf2-table td {
+    border-right: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+    padding: 4px 3px;
+    vertical-align: middle;
+    line-height: 1.3;
+    overflow-wrap: normal;
+    word-break: normal;          /* keep words intact */
+    hyphens: none;
+}
+.sf2-table th:last-child,
+.sf2-table td:last-child { border-right: none; }
+.sf2-table tbody tr:last-child td { border-bottom: none; }
+
+/* ---------- Table Header ---------- */
+.sf2-table thead th {
+    background: #e8eef7;
+    text-align: center;
+    font-weight: 700;
+    color: #1e293b;
+    font-size: 0.62rem;
+    border-bottom: 2px solid #1e3a8a;
+    white-space: nowrap;         /* keep "Present"/"Late" etc. on one line */
+    padding: 5px 4px;
+}
+.sf2-table thead tr:nth-child(2) th { background: #dde7f5; }
+
+/* Day headers — narrow, fixed */
+.sf2-table .day-header {
+    width: 24px;
+    min-width: 22px;
+    max-width: 28px;
+}
+.sf2-table .day-subheader {
+    font-size: 0.58rem;
+    padding: 1px;
+    width: 24px;
+    min-width: 22px;
+}
+.sf2-table .day-off {
+    background: #d0d0d0 !important;
+    color: #666 !important;
+}
+
+/* ---------- Column Width Hints ---------- */
+.sf2-table .col-idx      { width: 28px; min-width: 28px; }
+.sf2-table .col-name     { width: 170px; min-width: 170px; text-align: left; padding-left: 8px; white-space: normal; }
+.sf2-table .mfc          { width: 22px; min-width: 22px; }
+.sf2-table .col-pct      { min-width: 58px; }
+.sf2-table .col-ada      { min-width: 70px; }
+.sf2-table .col-pctatt   { min-width: 74px; }
+.sf2-table .col-remarks  { min-width: 160px; width: 160px; }
+
+/* ---------- Column Group Headers ---------- */
+.sf2-table thead .grp-enroll  { background: #dbeafe !important; }
+.sf2-table thead .grp-present { background: #dcfce7 !important; }
+.sf2-table thead .grp-late    { background: #fef3c7 !important; }
+.sf2-table thead .grp-absent  { background: #fee2e2 !important; }
+.sf2-table thead .grp-metric  { background: #f3e8ff !important; }
+
+/* Multi-line metric headers: allow controlled wrap so labels fit */
+.sf2-table thead .col-ada,
+.sf2-table thead .col-pctatt,
+.sf2-table thead .col-pct,
+.sf2-table thead .col-remarks {
+    white-space: normal;
+    line-height: 1.15;
+    font-size: 0.6rem;
+    padding: 4px 3px;
+}
+
+/* ---------- Body Cell Colors ---------- */
+.sf2-table tbody .grp-enroll  { background: #eff6ff; }
+.sf2-table tbody .grp-present { background: #f0fdf4; }
+.sf2-table tbody .grp-late    { background: #fffbeb; }
+.sf2-table tbody .grp-absent  { background: #fef2f2; }
+.sf2-table tbody .grp-metric  { background: #faf5ff; }
+
+/* ---------- Zebra + Hover ---------- */
+.sf2-table tbody tr.student-row:nth-of-type(even) {
+    background: #fafbfd;
+}
+.sf2-table tbody tr.student-row:hover {
+    background: #fef9e7;
+    transition: background 0.15s ease;
+}
+.sf2-table tbody tr.student-row:hover td {
+    background: inherit;
+}
+.sf2-table tbody tr.student-row:hover .grp-enroll  { background: #dbeafe; }
+.sf2-table tbody tr.student-row:hover .grp-present { background: #dcfce7; }
+.sf2-table tbody tr.student-row:hover .grp-late    { background: #fef3c7; }
+.sf2-table tbody tr.student-row:hover .grp-absent  { background: #fee2e2; }
+.sf2-table tbody tr.student-row:hover .grp-metric  { background: #f3e8ff; }
+
+/* ---------- Cell Modifiers ---------- */
+.sf2-table .c { text-align: center; }
+.sf2-table .r { text-align: right; }
+.sf2-table .b { font-weight: 700; }
+
+.sf2-table .name-cell {
+    font-weight: 600;
+    color: #1e293b;
+    padding-left: 8px;
+    white-space: normal;
+}
+.sf2-table .row-num-cell { padding: 3px; }
+
+/* Row number chip */
+.row-num {
+    display: inline-block;
+    background: #e5e7eb;
+    color: #374151;
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    min-width: 18px;
+}
+
+/* ---------- Daily Cells ---------- */
+.sf2-table .day-cell {
+    text-align: center;
+    padding: 1px;
+    font-size: 0.62rem;
+    font-weight: 700;
+}
+.sf2-table .day-cell.day-off {
+    background: #d0d0d0 !important;
+    color: #666 !important;
+    font-weight: 400;
+}
+.sf2-table .full-day-cell {
+    padding: 0;
+    vertical-align: top;
+}
+.sf2-table .am-cell,
+.sf2-table .pm-cell {
+    min-height: 0.9em;
+    text-align: center;
+    font-size: 0.58rem;
+    font-weight: 700;
+    line-height: 1.1;
+    padding: 1px 0;
+}
+.sf2-table .am-cell {
+    border-bottom: 0.5px solid #94a3b8;
+}
+
+/* Marks */
+.mark-present { color: #15803d; }
+.mark-late    { color: #d97706; }
+.mark-absent  { color: #dc2626; }
+
+/* ---------- Metric Pills ---------- */
+.rate-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.62rem;
+    white-space: nowrap;
+}
+.rate-good    { background: #d1fae5; color: #065f46; }
+.rate-warn    { background: #fef3c7; color: #92400e; }
+.rate-bad     { background: #fee2e2; color: #991b1b; }
+.rate-neutral { background: #e0e7ff; color: #3730a3; }
+
+.ada-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #ede9fe;
+    color: #5b21b6;
+    font-weight: 700;
+    font-size: 0.62rem;
+    white-space: nowrap;
+}
+
+/* ---------- Grand Total Row ---------- */
+.sf2-table tfoot .grand-row td {
+    background: #e0e7ff !important;
+    border-top: 2px solid #1e3a8a;
+    font-weight: 800;
+    color: #1e293b;
+    padding: 5px 3px;
+}
+
+/* ---------- Remarks Cell ---------- */
+.sf2-table .remark-cell {
+    padding: 0;
+    vertical-align: top;
+    background: #fff;
+}
+.sf2-remark {
+    width: 100%;
+    border: none;
+    outline: none;
+    resize: vertical;
+    font-size: 0.66rem;
+    font-family: Arial, Helvetica, sans-serif;
+    padding: 3px 5px;
+    background: transparent;
+    min-height: 24px;
+    box-sizing: border-box;
+    color: #1e293b;
+}
+.sf2-remark:focus {
+    background: #fef9e7;
+    box-shadow: inset 0 0 0 2px #fbbf24;
+}
+
+/* ---------- Legend ---------- */
+.sf2-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: 0.7rem;
+    color: #374151;
+    margin-top: 10px;
+    padding: 8px 12px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px dashed #d1d5db;
+}
+.legend-chip { white-space: nowrap; }
+
+/* ---------- Certification ---------- */
+.sf2-cert {
+    font-size: 0.78rem;
+    margin-top: 18px;
+    color: #374151;
+}
+
+/* ---------- Signature Block ---------- */
+.signature-block {
+    display: flex;
+    justify-content: space-between;
+    gap: 40px;
+    margin-top: 36px;
+    font-size: 0.78rem;
+}
+.sig-line {
+    flex: 1;
+    text-align: center;
+}
+.sig-line .line {
+    height: 32px;
+    border-bottom: 1.5px solid #000;
+    margin-bottom: 4px;
+    max-width: 260px;
+    margin-left: auto;
+    margin-right: auto;
+}
+.sig-line .name { font-weight: 700; font-size: 0.78rem; }
+.sig-line .name.principal-name {
+    font-weight: 800;
+    font-size: 0.82rem;
+    color: #1e293b;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+.sig-line .role { font-size: 0.72rem; color: #555; }
+
+/* ---------- Footer Note ---------- */
+.sf2-footer-note {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 0.65rem;
+    font-style: italic;
+    color: #64748b;
+}
+
+/* ============================================================
    PRINT STYLES — A4 Landscape
    ============================================================ */
-    @media print {
-        @page {
-            size: A4 landscape;
-            margin: 8mm;
-        }
-
-        .no-print,
-        .sidebar,
-        .top-navbar,
-        .page-header,
-        .sf2-filter-card {
-            display: none !important;
-        }
-
-        .main-content,
-        .content-area {
-            margin: 0 !important;
-            padding: 0 !important;
-        }
-
-        .card,
-        .sf2-card {
-            border: none !important;
-            box-shadow: none !important;
-            border-radius: 0 !important;
-        }
-
-        #sf2Document {
-            padding: 0 !important;
-        }
-
-        body {
-            font-size: 9px;
-        }
-
-        .sf2-table-wrap {
-            overflow: visible !important;
-            border: none !important;
-        }
-
-        .sf2-table {
-            min-width: 0 !important;
-        }
-
-        /* Preserve ALL colors when printing */
-        *,
-        *::before,
-        *::after {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-        }
-
-        /* Table: header repeat + row page-break control */
-        .sf2-table {
-            font-size: 0.58rem;
-        }
-
-        .sf2-table thead {
-            display: table-header-group;
-        }
-
-        .sf2-table tfoot {
-            display: table-footer-group;
-        }
-
-        .sf2-table tr {
-            page-break-inside: avoid;
-        }
-
-        /* Flatten gradient for cleaner ink */
-        .sf2-badge {
-            background: #1e3a8a !important;
-            box-shadow: none !important;
-        }
-
-        /* Remarks print like plain text */
-        .sf2-remark {
-            border: none !important;
-            overflow: visible !important;
-            resize: none !important;
-            height: auto !important;
-            min-height: 0 !important;
-            white-space: pre-wrap !important;
-            word-wrap: break-word !important;
-            padding: 0 !important;
-            background: transparent !important;
-            box-shadow: none !important;
-        }
-
-        .sf2-guidelines {
-            font-size: 0.62rem;
-        }
-
-        .signature-block {
-            margin-top: 20px;
-        }
-
-        .sf2-legend {
-            font-size: 0.65rem;
-            padding: 4px 6px;
-        }
-
-        .sf2-footer-note {
-            font-size: 0.6rem;
-        }
+@media print {
+    @page {
+        size: A4 landscape;
+        margin: 8mm;
     }
+
+    .no-print,
+    .sidebar,
+    .top-navbar,
+    .page-header,
+    .sf2-filter-card {
+        display: none !important;
+    }
+
+    .main-content,
+    .content-area {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .card,
+    .sf2-card {
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+    }
+
+    #sf2Document { padding: 0 !important; }
+
+    body { font-size: 9px; }
+
+    .sf2-table-wrap {
+        overflow: visible !important;
+        border: none !important;
+    }
+    .sf2-table { min-width: 0 !important; }
+
+    /* Preserve ALL colors when printing */
+    *, *::before, *::after {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Table: header repeat + row page-break control */
+    .sf2-table { font-size: 0.58rem; }
+    .sf2-table thead { display: table-header-group; }
+    .sf2-table tfoot { display: table-footer-group; }
+    .sf2-table tr    { page-break-inside: avoid; }
+
+    /* Flatten gradient for cleaner ink */
+    .sf2-badge {
+        background: #1e3a8a !important;
+        box-shadow: none !important;
+    }
+
+    /* Remarks print like plain text */
+    .sf2-remark {
+        border: none !important;
+        overflow: visible !important;
+        resize: none !important;
+        height: auto !important;
+        min-height: 0 !important;
+        white-space: pre-wrap !important;
+        word-wrap: break-word !important;
+        padding: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+    }
+
+    .sf2-guidelines { font-size: 0.62rem; }
+    .signature-block { margin-top: 20px; }
+    .sf2-legend { font-size: 0.65rem; padding: 4px 6px; }
+    .sf2-footer-note { font-size: 0.6rem; }
+}
 </style>
 
 <script>
-    (function() {
-        // Unique storage key per section + month + year
-        const STORAGE_KEY = 'sf2_remarks_<?= (int)$sectionId ?>_<?= (int)$month ?>_<?= (int)$year ?>';
-        const textareas = document.querySelectorAll('.sf2-remark');
+(function () {
+    // Unique storage key per section + month + year
+    const STORAGE_KEY = 'sf2_remarks_<?= (int)$sectionId ?>_<?= (int)$month ?>_<?= (int)$year ?>';
+    const textareas   = document.querySelectorAll('.sf2-remark');
 
-        // 1. Load saved remarks
-        let saved = {};
+    // 1. Load saved remarks
+    let saved = {};
+    try {
+        saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    } catch (e) {
+        saved = {};
+    }
+
+    // 2. Populate
+    textareas.forEach(function (ta) {
+        const id = ta.dataset.studentId;
+        if (saved[id]) {
+            ta.value = saved[id];
+            autoGrow(ta);
+        }
+    });
+
+    // 3. Save on input (debounced) + auto-grow
+    let saveTimer = null;
+    textareas.forEach(function (ta) {
+        ta.addEventListener('input', function () {
+            autoGrow(ta);
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(persist, 400);
+        });
+        ta.addEventListener('blur', persist);
+    });
+
+    function persist() {
+        const data = {};
+        textareas.forEach(function (ta) {
+            const v = ta.value.trim();
+            if (v) data[ta.dataset.studentId] = v;
+        });
         try {
-            saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         } catch (e) {
-            saved = {};
+            console.warn('Could not save remarks:', e);
         }
+    }
 
-        // 2. Populate
-        textareas.forEach(function(ta) {
-            const id = ta.dataset.studentId;
-            if (saved[id]) {
-                ta.value = saved[id];
-                autoGrow(ta);
-            }
-        });
+    function autoGrow(el) {
+        el.style.height = 'auto';
+        el.style.height = (el.scrollHeight) + 'px';
+    }
 
-        // 3. Save on input (debounced) + auto-grow
-        let saveTimer = null;
-        textareas.forEach(function(ta) {
-            ta.addEventListener('input', function() {
-                autoGrow(ta);
-                clearTimeout(saveTimer);
-                saveTimer = setTimeout(persist, 400);
-            });
-            ta.addEventListener('blur', persist);
-        });
-
-        function persist() {
-            const data = {};
-            textareas.forEach(function(ta) {
-                const v = ta.value.trim();
-                if (v) data[ta.dataset.studentId] = v;
-            });
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-            } catch (e) {
-                console.warn('Could not save remarks:', e);
-            }
-        }
-
-        function autoGrow(el) {
-            el.style.height = 'auto';
-            el.style.height = (el.scrollHeight) + 'px';
-        }
-
-        // Loading spinner on Generate
-        document.getElementById('sf2FilterForm')?.addEventListener('submit', function() {
-            document.getElementById('genSpin')?.classList.remove('d-none');
-            document.getElementById('genBtn').disabled = true;
-        });
-    })();
+    // Loading spinner on Generate
+    document.getElementById('sf2FilterForm')?.addEventListener('submit', function () {
+        document.getElementById('genSpin')?.classList.remove('d-none');
+        document.getElementById('genBtn').disabled = true;
+    });
+})();
 </script>
 
 <?php include '../includes/footer.php'; ?>
