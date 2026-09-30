@@ -113,9 +113,22 @@ foreach ($rows as $r) {
         else                            $attendanceType = 'pending';
     }
 
+    // ── NEW: determine the most recent event scanned today ──
+    // Priority order follows the real-world sequence of the day.
+    // Each later event can't exist without the earlier one, so
+    // simply overwriting as we walk forward yields the last one.
+    $lastEvent     = null;
+    $lastEventTime = null;
+
+    if ($amIn)  { $lastEvent = 'am_in';  $lastEventTime = $amIn;  }
+    if ($amOut) { $lastEvent = 'am_out'; $lastEventTime = $amOut; }
+    if ($pmIn)  { $lastEvent = 'pm_in';  $lastEventTime = $pmIn;  }
+    if ($pmOut) { $lastEvent = 'pm_out'; $lastEventTime = $pmOut; }
+
     $result[] = [
+        'student_id'      => (int)$r['student_id'],
         'name'            => htmlspecialchars($r['first_name'] . ' ' . $r['last_name']),
-        'lrn'             => htmlspecialchars($r['lrn']),
+        'lrn'             => htmlspecialchars($r['lrn'] ?? ''),
         'grade'           => htmlspecialchars($r['grade_level'] ?? ''),
         'section'         => htmlspecialchars($r['section_name'] ?? ''),
         'am_in'           => $amIn  ? date('h:i A', strtotime($amIn))  : null,
@@ -127,6 +140,10 @@ foreach ($rows as $r) {
         'am_absent'       => $amAbsent,
         'pm_absent'       => $pmAbsent,
         'attendance_type' => $attendanceType,
+        'last_event'      => $lastEvent,
+        'last_event_time' => $lastEventTime
+            ? date('h:i A', strtotime($lastEventTime))
+            : null,
     ];
 }
 

@@ -159,12 +159,13 @@ include '../includes/sidebar.php';
                             <th class="text-center">AM Out</th>
                             <th class="text-center">PM In</th>
                             <th class="text-center">PM Out</th>
+                            <th>Last Event</th>
                             <th>Type</th>
                         </tr>
                     </thead>
                     <tbody id="logBody">
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-3">
+                            <td colspan="7" class="text-center text-muted py-3">
                                 Loading...
                             </td>
                         </tr>
@@ -183,6 +184,7 @@ let qrScanner  = null;
 let scanCount  = 0;
 let cooldown   = false;
 let lastToken  = '';
+let lastScannedId = null;
 
 // ── Scanner lifecycle ──────────────────────────────────────
 
@@ -291,6 +293,8 @@ async function processToken(token) {
             document.getElementById('scanCount').textContent = scanCount;
             beep(true);
 
+            if (data.student_id) lastScannedId = data.student_id;
+
             const colors = {
                 am_in:  { bg: '#d1fae5', border: '#10b981', icon: '☀️', label: 'AM In'  },
                 am_out: { bg: '#fef3c7', border: '#f59e0b', icon: '🌤️', label: 'AM Out' },
@@ -327,13 +331,16 @@ async function processToken(token) {
                     </div>
                 </div>`;
 
-            const remainingHtml = data.remaining.length > 0
+            const remaining = Array.isArray(data.remaining) ? data.remaining : [];
+            const remainingHtml = remaining.length > 0
                 ? `<div class="mt-2 small text-muted">
-                       Next: <strong>${data.remaining.join(' → ')}</strong>
+                       Next: <strong>${remaining.join(' → ')}</strong>
                    </div>`
                 : `<div class="mt-2 small text-success fw-bold">
                        ✅ All events completed for today
                    </div>`;
+
+            const attendanceType = data.attendance_type || 'pending';
 
             document.getElementById('resultArea').innerHTML = `
                 <div style="background:${c.bg};border:2px solid ${c.border};
@@ -349,8 +356,8 @@ async function processToken(token) {
                             <div class="mt-1">
                                 <span class="badge bg-dark">${c.label}</span>
                                 <span class="badge bg-secondary ms-1">${data.time}</span>
-                                <span class="badge bg-${data.attendance_type === 'full_day' ? 'success' : (data.attendance_type === 'partial' ? 'warning text-dark' : 'danger')} ms-1">
-                                    ${data.attendance_type.replace('_',' ').toUpperCase()}
+                                <span class="badge bg-${attendanceType === 'full_day' ? 'success' : (attendanceType === 'partial' ? 'warning text-dark' : 'danger')} ms-1">
+                                    ${attendanceType.replace('_',' ').toUpperCase()}
                                 </span>
                             </div>
                             ${timeGrid}
@@ -368,8 +375,19 @@ async function processToken(token) {
 
             refreshLog();
         } else {
-            showResult('danger', '❌ Scan Rejected', data.message);
-            beep(false);
+            // Soft "already scanned" handling — no duration disclosed
+            const msg = (data.message || '').trim();
+            const isAlreadyScanned = /already scanned/i.test(msg);
+
+            if (isAlreadyScanned) {
+                showResult('warning', '↩️ Already Scanned',
+                    `<div class="fw-600">You're already scanned</div>
+                     <div class="small text-muted mt-1">Please wait a moment before scanning again.</div>`);
+                beep(false);
+            } else {
+                showResult('danger', '❌ Scan Rejected', msg || 'Unknown error');
+                beep(false);
+            }
         }
     } catch (err) {
         showResult('danger', '⚠️ Network Error',
@@ -381,17 +399,55 @@ async function processToken(token) {
 // ── Log ──────────────────────────────────────────────────
 
 async function refreshLog() {
-    try {
-        const res  = await fetch('get_today_log.php');
-        const data = await res.json();
-        const tbody = document.getElementById('logBody');
+    const tbody = document.getElementById('logBody');
 
-        if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">No students</td></tr>`;
+    try {
+        const res = await fetch('get_today_log.php');
+
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} ${res.statusText}`);
+        }
+
+        const raw = await res.text();
+        let data;
+        try {
+            data = JSON.parse(raw);
+        } catch (parseErr) {
+            console.error('get_today_log.php returned non-JSON:', raw.slice(0, 500));
+            throw new Error('Server did not return JSON (check console)');
+        }
+
+        if (!Array.isArray(data)) {
+            throw new Error('Unexpected response shape');
+        }
+
+        if (data.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">No students</td></tr>`;
             return;
         }
 
+        const eventStyle = {
+            am_in:  { label: 'AM In',  bg: '#d1fae5', color: '#065f46', icon: '☀️' },
+            am_out: { label: 'AM Out', bg: '#fef3c7', color: '#92400e', icon: '🌤️' },
+            pm_in:  { label: 'PM In',  bg: '#dbeafe', color: '#1e40af', icon: '🌙' },
+            pm_out: { label: 'PM Out', bg: '#f3e8ff', color: '#6b21a8', icon: '🚪' },
+        };
+
+        const lastEventCell = (r) => {
+            if (!r.last_event || !eventStyle[r.last_event]) {
+                return `<span class="text-muted" style="font-size:0.7rem">—</span>`;
+            }
+            const e = eventStyle[r.last_event];
+            return `
+                <span class="badge" style="background:${e.bg};color:${e.color};font-size:0.65rem">
+                    ${e.icon} ${e.label}
+                </span>
+                <div class="text-muted" style="font-size:0.65rem">${r.last_event_time || ''}</div>`;
+        };
+
         tbody.innerHTML = data.map(r => {
+            const isNew = lastScannedId != null && r.student_id == lastScannedId;
+
             const rowClass =
                 r.attendance_type === 'absent'  ? 'table-danger' :
                 r.attendance_type === 'pending' ? 'table-light'  : '';
@@ -415,8 +471,11 @@ async function refreshLog() {
                 return time + late;
             };
 
+            const typeLabel = (r.attendance_type || '').replace('_', ' ');
+
             return `
-                <tr class="${rowClass}">
+                <tr class="${rowClass} ${isNew ? 'table-warning' : ''}"
+                    style="${isNew ? 'animation:pulse 1.2s ease 2' : ''}">
                     <td>
                         <div class="fw-600 small">${r.name}</div>
                         <div class="text-muted" style="font-size:0.7rem">${r.grade} — ${r.section}</div>
@@ -425,15 +484,24 @@ async function refreshLog() {
                     <td class="text-center small">${fmtCell(r.am_out, null)}</td>
                     <td class="text-center small">${fmtCell(r.pm_in,  r.pm_status)}</td>
                     <td class="text-center small">${fmtCell(r.pm_out, null)}</td>
+                    <td>${lastEventCell(r)}</td>
                     <td>
                         <span class="badge bg-${badgeClass}" style="font-size:0.65rem">
-                            ${r.attendance_type.replace('_',' ')}
+                            ${typeLabel}
                         </span>
                     </td>
                 </tr>`;
         }).join('');
-    } catch(e) {
-        console.warn('Log refresh failed:', e);
+
+        if (lastScannedId != null) {
+            setTimeout(() => { lastScannedId = null; }, 2500);
+        }
+
+    } catch (e) {
+        console.error('refreshLog failed:', e);
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">
+            Failed to load log: ${e.message}
+        </td></tr>`;
     }
 }
 
@@ -479,8 +547,10 @@ function beep(success) {
 
 document.addEventListener('DOMContentLoaded', () => {
     const manualInput = document.getElementById('manualInput');
-    manualInput.focus();
-    setTimeout(() => manualInput.focus(), 500);
+    if (manualInput) {
+        manualInput.focus();
+        setTimeout(() => manualInput.focus(), 500);
+    }
 
     refreshLog();
     setInterval(refreshLog, 30000);
@@ -502,7 +572,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const style = document.createElement('style');
-    style.textContent = `@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}`;
+    style.textContent = `
+        @keyframes fadeIn { from { opacity:0; transform:translateY(8px);} to { opacity:1; transform:none;} }
+        @keyframes pulse  { 0%,100% { background:#fff7ed; } 50% { background:#fed7aa; } }
+    `;
     document.head.appendChild(style);
 });
 </script>

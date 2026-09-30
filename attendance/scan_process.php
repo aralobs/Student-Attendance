@@ -3,6 +3,7 @@
  * Scan Process — AJAX endpoint
  * 4-event attendance: AM IN → AM OUT → PM IN → PM OUT
  * Time-aware event selection (fixes PM-scan-recorded-as-AM bug).
+ * Includes 5-minute anti-double-scan lock.
  */
 error_reporting(E_ALL & ~E_DEPRECATED);
 ini_set('display_errors', 0);
@@ -85,6 +86,35 @@ if ($scheduleType === 'pm_only' && !$isPastNoon) {
 $existStmt = $db->prepare("SELECT * FROM attendance WHERE student_id = ? AND date = ?");
 $existStmt->execute([$student['id'], $today]);
 $existing = $existStmt->fetch() ?: null;
+
+// ── 5-MINUTE ANTI-DOUBLE-SCAN LOCK ───────────────────────────
+// If this student already scanned within the last 5 minutes,
+// refuse politely without disclosing the cooldown duration.
+if ($existing) {
+    $recentTimes = array_filter([
+        $existing['am_in']  ?? null,
+        $existing['am_out'] ?? null,
+        $existing['pm_in']  ?? null,
+        $existing['pm_out'] ?? null,
+    ]);
+
+    if (!empty($recentTimes)) {
+        // Convert each stored 'HH:MM:SS' to a Unix timestamp on today's date
+        $latestTs = 0;
+        foreach ($recentTimes as $t) {
+            $ts = strtotime($today . ' ' . $t);
+            if ($ts > $latestTs) $latestTs = $ts;
+        }
+
+        if ($latestTs > 0 && (time() - $latestTs) < 300) {   // 300s = 5 minutes
+            echo json_encode([
+                'success' => false,
+                'message' => "You're already scanned",
+            ]);
+            exit;
+        }
+    }
+}
 
 // ── Section array for helpers ────────────────────────────────
 $section = [

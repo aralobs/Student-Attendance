@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Global Helper Functions
  * SPCCS Elementary Attendance System v2.0
@@ -14,30 +15,35 @@ require_once __DIR__ . '/../config/database.php';
 
 // ─── Session ────────────────────────────────────────────────
 
-function startSession() {
+function startSession()
+{
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
     }
 }
 
-function isLoggedIn() {
+function isLoggedIn()
+{
     startSession();
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
-function requireLogin() {
+function requireLogin()
+{
     if (!isLoggedIn()) {
         header('Location: ' . BASE_URL . 'index.php');
         exit;
     }
 }
 
-function isAdmin() {
+function isAdmin()
+{
     startSession();
     return isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
 }
 
-function requireAdmin() {
+function requireAdmin()
+{
     requireLogin();
     if (!isAdmin()) {
         header('Location: ' . BASE_URL . 'dashboard.php');
@@ -45,7 +51,8 @@ function requireAdmin() {
     }
 }
 
-function currentUser() {
+function currentUser()
+{
     startSession();
     return [
         'id'        => $_SESSION['user_id']   ?? null,
@@ -59,12 +66,14 @@ function currentUser() {
 // A 'user' role account can ONLY access scanner.php and logout.php.
 // Every other page must call requireStaff() to keep them out.
 
-function isUser(): bool {
+function isUser(): bool
+{
     startSession();
     return isset($_SESSION['role']) && $_SESSION['role'] === 'user';
 }
 
-function isTeacher(): bool {
+function isTeacher(): bool
+{
     startSession();
     return isset($_SESSION['role']) && $_SESSION['role'] === 'teacher';
 }
@@ -73,7 +82,8 @@ function isTeacher(): bool {
  * Guard for scanner-only accounts.
  * Use this at the top of any page that ONLY the 'user' role should reach.
  */
-function requireUser(): void {
+function requireUser(): void
+{
     requireLogin();
     if (!isUser()) {
         header('Location: ' . BASE_URL . 'dashboard.php');
@@ -86,7 +96,8 @@ function requireUser(): void {
  * Allows admin, teacher, and user roles — blocks everyone else.
  * Use on scanner.php.
  */
-function requireScannerAccess(): void {
+function requireScannerAccess(): void
+{
     requireLogin();
     if (!isAdmin() && !isTeacher() && !isUser()) {
         header('Location: ' . BASE_URL . 'index.php');
@@ -99,7 +110,8 @@ function requireScannerAccess(): void {
  * Redirects 'user' role to the scanner.
  * Use this on EVERY page that isn't scanner.php or logout.php.
  */
-function requireStaff(): void {
+function requireStaff(): void
+{
     requireLogin();
     if (isUser()) {
         header('Location: ' . BASE_URL . 'scanner.php');
@@ -111,13 +123,15 @@ function requireStaff(): void {
  * Is the current session a scanner-kiosk session?
  * True only when the logged-in role is 'user'.
  */
-function isKioskMode(): bool {
+function isKioskMode(): bool
+{
     return isUser();
 }
 
 // ─── Teacher section access ──────────────────────────────────
 
-function getAllowedSections() {
+function getAllowedSections()
+{
     $db   = getDB();
     $user = currentUser();
 
@@ -144,7 +158,8 @@ function getAllowedSections() {
     return $stmt->fetchAll();
 }
 
-function canAccessSection(int $sectionId): bool {
+function canAccessSection(int $sectionId): bool
+{
     if (isAdmin()) return true;
     $db   = getDB();
     $user = currentUser();
@@ -155,12 +170,14 @@ function canAccessSection(int $sectionId): bool {
 
 // ─── Flash messages ─────────────────────────────────────────
 
-function setFlash(string $type, string $message) {
+function setFlash(string $type, string $message)
+{
     startSession();
     $_SESSION['flash'] = ['type' => $type, 'message' => $message];
 }
 
-function getFlash() {
+function getFlash()
+{
     startSession();
     if (isset($_SESSION['flash'])) {
         $flash = $_SESSION['flash'];
@@ -170,7 +187,8 @@ function getFlash() {
     return null;
 }
 
-function showFlash() {
+function showFlash()
+{
     $flash = getFlash();
     if ($flash) {
         $type = htmlspecialchars($flash['type']);
@@ -184,7 +202,8 @@ function showFlash() {
 
 // ─── Settings ────────────────────────────────────────────────
 
-function getSetting(string $key): ?string {
+function getSetting(string $key): ?string
+{
     $db   = getDB();
     $stmt = $db->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
     $stmt->execute([$key]);
@@ -192,7 +211,8 @@ function getSetting(string $key): ?string {
     return $row ? $row['setting_value'] : null;
 }
 
-function updateSetting(string $key, string $value) {
+function updateSetting(string $key, string $value)
+{
     $db   = getDB();
     $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value)
                           VALUES (?, ?)
@@ -202,26 +222,30 @@ function updateSetting(string $key, string $value) {
 
 // ─── School Calendar ─────────────────────────────────────────
 
-function getCalendarEntry(string $date): ?array {
+function getCalendarEntry(string $date): ?array
+{
     $db   = getDB();
     $stmt = $db->prepare("SELECT * FROM school_calendar WHERE date = ?");
     $stmt->execute([$date]);
     return $stmt->fetch() ?: null;
 }
 
-function isSchoolDay(string $date): bool {
+function isSchoolDay(string $date): bool
+{
     $entry = getCalendarEntry($date);
     if (!$entry) return true;
     return $entry['type'] === 'school_day';
 }
 
-function isHolidayOrNoClass(string $date): bool {
+function isHolidayOrNoClass(string $date): bool
+{
     $entry = getCalendarEntry($date);
     if (!$entry) return false;
     return in_array($entry['type'], ['holiday', 'no_class']);
 }
 
-function getCalendarMonth(int $month, int $year): array {
+function getCalendarMonth(int $month, int $year): array
+{
     $db   = getDB();
     $stmt = $db->prepare("
         SELECT * FROM school_calendar
@@ -239,7 +263,8 @@ function getCalendarMonth(int $month, int $year): array {
 
 // ─── Section helpers ─────────────────────────────────────────
 
-function getSection(int $sectionId): ?array {
+function getSection(int $sectionId): ?array
+{
     $db   = getDB();
     $stmt = $db->prepare("
         SELECT s.*, u.full_name AS adviser_name
@@ -251,8 +276,9 @@ function getSection(int $sectionId): ?array {
     return $stmt->fetch() ?: null;
 }
 
-function getGradeLevels(): array {
-    return ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
+function getGradeLevels(): array
+{
+    return ['Kinder', 'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6'];
 }
 
 // ─── Attendance event detection ──────────────────────────────
@@ -266,7 +292,8 @@ function getGradeLevels(): array {
  *
  * Returns: 'am_in' | 'am_out' | 'pm_in' | 'pm_out' | 'complete'
  */
-function getNextAttendanceEvent(?array $existing = null, array $section, ?string $now = null): string {
+function getNextAttendanceEvent(?array $existing = null, array $section, ?string $now = null): string
+{
     $scheduleType = $section['schedule_type'] ?? 'full_day';
     $now          = $now ?: date('H:i:s');
 
@@ -309,7 +336,8 @@ function getNextAttendanceEvent(?array $existing = null, array $section, ?string
  * Determine AM or PM status (present/late) based on section's late threshold.
  * Falls back to 'present' if no threshold is set.
  */
-function getSessionStatus(string $time, string $thresholdKey, array $section): string {
+function getSessionStatus(string $time, string $thresholdKey, array $section): string
+{
     $threshold = $section[$thresholdKey] ?? null;
     if (!$threshold) return 'present';
     return strtotime($time) > strtotime($threshold) ? 'late' : 'present';
@@ -319,7 +347,8 @@ function getSessionStatus(string $time, string $thresholdKey, array $section): s
  * Compute overall attendance_type from all 4 events.
  * Handles all three schedule types (full_day, am_only, pm_only).
  */
-function computeAttendanceType(array $record, array $section): string {
+function computeAttendanceType(array $record, array $section): string
+{
     $scheduleType = $section['schedule_type'] ?? 'full_day';
 
     $amIn  = !empty($record['am_in']);
@@ -347,7 +376,8 @@ function computeAttendanceType(array $record, array $section): string {
 
 // ─── Dashboard stats ─────────────────────────────────────────
 
-function getDashboardStats(?int $sectionId = null): array {
+function getDashboardStats(?int $sectionId = null): array
+{
     $db    = getDB();
     $today = date('Y-m-d');
     $stats = [];
@@ -397,19 +427,22 @@ function getDashboardStats(?int $sectionId = null): array {
 
 // ─── QR Token generator ──────────────────────────────────────
 
-function generateQRToken(string $lrn): string {
+function generateQRToken(string $lrn): string
+{
     return 'STU-' . $lrn . '-' . strtoupper(substr(md5(uniqid($lrn, true)), 0, 6));
 }
 
 // ─── Sanitize ────────────────────────────────────────────────
 
-function sanitize($input): string {
+function sanitize($input): string
+{
     return htmlspecialchars(strip_tags(trim((string)$input)));
 }
 
 // ─── Format phone ────────────────────────────────────────────
 
-function formatPhone(string $number): string {
+function formatPhone(string $number): string
+{
     $number = preg_replace('/\D/', '', $number);
     if (substr($number, 0, 2) === '09') {
         return '+63' . substr($number, 1);
@@ -422,7 +455,8 @@ function formatPhone(string $number): string {
 
 // ─── SMS via UniSMS ──────────────────────────────────────────
 
-function sendSMS(string $number, string $message, int $studentId, string $type): bool {
+function sendSMS(string $number, string $message, int $studentId, string $type): bool
+{
     $db     = getDB();
     $apiKey = getSetting('unisms_api_key');
 
@@ -430,7 +464,7 @@ function sendSMS(string $number, string $message, int $studentId, string $type):
         $db->prepare("INSERT INTO sms_logs
             (student_id, recipient_number, message, type, status, api_response)
             VALUES (?, ?, ?, ?, 'failed', 'No API key configured')")
-           ->execute([$studentId, $number, $message, $type]);
+            ->execute([$studentId, $number, $message, $type]);
         return false;
     }
 
@@ -472,14 +506,15 @@ function sendSMS(string $number, string $message, int $studentId, string $type):
     $db->prepare("INSERT INTO sms_logs
         (student_id, recipient_number, message, type, status, api_response)
         VALUES (?, ?, ?, ?, ?, ?)")
-       ->execute([$studentId, $phone, $message, $type, $status, $apiResponse]);
+        ->execute([$studentId, $phone, $message, $type, $status, $apiResponse]);
 
     return $status === 'sent';
 }
 
 // ─── SMS message builder ─────────────────────────────────────
 
-function buildSMSMessage(string $templateKey, array $student): string {
+function buildSMSMessage(string $templateKey, array $student): string
+{
     $template = getSetting($templateKey) ?? '';
     return str_replace(
         ['{student_name}', '{time}', '{date}'],
@@ -494,7 +529,8 @@ function buildSMSMessage(string $templateKey, array $student): string {
 
 // ─── Pagination ──────────────────────────────────────────────
 
-function paginate(int $totalRecords, int $perPage, int $currentPage, string $url): string {
+function paginate(int $totalRecords, int $perPage, int $currentPage, string $url): string
+{
     $totalPages = (int)ceil($totalRecords / $perPage);
     if ($totalPages <= 1) return '';
 
@@ -538,14 +574,16 @@ function paginate(int $totalRecords, int $perPage, int $currentPage, string $url
 
 // ─── Grade level sort order ───────────────────────────────────
 
-function gradeLevelOrderSQL(string $column = 'grade_level'): string {
+function gradeLevelOrderSQL(string $column = 'grade_level'): string
+{
     return "FIELD({$column},'Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6')";
 }
 
 // ─── Attendance type badge ────────────────────────────────────
 
-function attendanceTypeBadge(string $type): string {
-    return match($type) {
+function attendanceTypeBadge(string $type): string
+{
+    return match ($type) {
         'full_day' => '<span class="status-badge badge-present">Full Day</span>',
         'partial'  => '<span class="status-badge badge-partial">Partial</span>',
         'absent'   => '<span class="status-badge badge-absent">Absent</span>',
@@ -554,9 +592,10 @@ function attendanceTypeBadge(string $type): string {
     };
 }
 
-function sessionStatusBadge(?string $status): string {
+function sessionStatusBadge(?string $status): string
+{
     if (!$status) return '<span class="text-muted small">—</span>';
-    return match($status) {
+    return match ($status) {
         'present' => '<span class="status-badge badge-present">Present</span>',
         'late'    => '<span class="status-badge badge-late">Late</span>',
         'absent'  => '<span class="status-badge badge-absent">Absent</span>',
@@ -566,8 +605,9 @@ function sessionStatusBadge(?string $status): string {
 
 // ─── Calendar helpers ─────────────────────────────────────────
 
-function entryColor(string $type): string {
-    return match($type) {
+function entryColor(string $type): string
+{
+    return match ($type) {
         'holiday'       => 'danger',
         'no_class'      => 'warning',
         'special_event' => 'info',

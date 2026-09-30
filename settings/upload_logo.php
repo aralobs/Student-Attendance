@@ -32,7 +32,7 @@ if (!move_uploaded_file($_FILES['logo']['tmp_name'], $dest)) {
 }
 
 // If uploaded as jpg/jpeg, also save a copy as .png using GD
-if (in_array($ext, ['jpg','jpeg']) && extension_loaded('gd')) {
+if (in_array($ext, ['jpg', 'jpeg']) && extension_loaded('gd')) {
     $src = imagecreatefromjpeg($dest);
     imagepng($src, BASE_PATH . 'assets/img/school_logo.png');
 }
