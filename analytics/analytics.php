@@ -2,6 +2,9 @@
 /**
  * Attendance Analytics Dashboard v2
  * Uses am_status, pm_status, attendance_type columns
+ *
+ * Key Metrics row is driven by TODAY's log (via get_today_log.php),
+ * not by yearly totals.
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
@@ -12,9 +15,8 @@ $db        = getDB();
 $year      = (int)($_GET['year'] ?? date('Y'));
 
 // Endpoint URL — resolved by PHP so it works regardless of folder moves.
-// analytics.php lives in /Attendance_System/analytics/, the endpoint in /Attendance_System/attendance/.
-$endpointUrl = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/')
-             . '/../attendance/get_today_log.php';
+$endpointUrl = dirname(dirname($_SERVER['SCRIPT_NAME']))
+             . '/attendance/get_today_log.php';
 
 // Build section filter for teachers
 $sectionFilter = '';
@@ -28,28 +30,7 @@ if (!isAdmin()) {
     $sectionParams   = $ids;
 }
 
-// ── Monthly attendance totals ─────────────────────────────────
-$monthly = [];
-for ($m = 1; $m <= 12; $m++) {
-    $stmt = $db->prepare("
-        SELECT
-            SUM(a.attendance_type IN ('full_day','partial')) AS present,
-            SUM(a.attendance_type = 'absent')                AS absent
-        FROM attendance a
-        JOIN students s ON a.student_id = s.id
-        WHERE MONTH(a.date) = ? AND YEAR(a.date) = ?
-        AND s.is_active = 1 {$sectionFilter}
-    ");
-    $stmt->execute(array_merge([$m, $year], $sectionParams));
-    $row = $stmt->fetch();
-    $monthly[] = [
-        'month'   => date('M', mktime(0,0,0,$m,1)),
-        'present' => (int)($row['present'] ?? 0),
-        'absent'  => (int)($row['absent']  ?? 0),
-    ];
-}
-
-// ── Overall attendance rate ───────────────────────────────────
+// ── Overall attendance rate (YEAR — still used for Total Present/Absent cards) ──
 $stmt = $db->prepare("
     SELECT
         COUNT(*)                                         AS total,
@@ -66,14 +47,13 @@ $stmt = $db->prepare("
 $stmt->execute(array_merge([$year], $sectionParams));
 $overall = $stmt->fetch();
 
-$attendanceRate = $overall['total'] > 0
-    ? round(($overall['attended'] / $overall['total']) * 100, 1)
+$totalRecords = (int)($overall['total'] ?? 0);
+$attendanceRate = $totalRecords > 0
+    ? round(($overall['attended'] / $totalRecords) * 100, 1)
     : 0;
 
-// ── Totals for the summary panel ─────────────────────────────
 $totalPresent = (int)($overall['attended'] ?? 0);
 $totalAbsent  = (int)($overall['absent']   ?? 0);
-$totalRecords = (int)($overall['total']    ?? 0);
 
 // ── Top 10 most absent students ───────────────────────────────
 $stmt = $db->prepare("
@@ -86,7 +66,7 @@ $stmt = $db->prepare("
     WHERE a.attendance_type = 'absent'
     AND YEAR(a.date) = ?
     AND s.is_active = 1 {$sectionFilter}
-    GROUP BY a.student_id
+    GROUP BY a.student_id, s.first_name, s.last_name, sec.section_name, sec.grade_level
     ORDER BY absent_count DESC
     LIMIT 10
 ");
@@ -116,8 +96,8 @@ foreach (getGradeLevels() as $grade) {
     ];
 }
 
-// ── Section attendance rates (for chart) ─────────────────────
-$allowedSecs = getAllowedSections();
+// ── Section attendance rates ──────────────────────────────────
+$allowedSecs  = getAllowedSections();
 $sectionRates = [];
 foreach ($allowedSecs as $sec) {
     $stmt = $db->prepare("
@@ -151,7 +131,12 @@ include '../includes/sidebar.php';
         <h1 class="page-title">
             <i class="bi bi-bar-chart-fill me-2 text-primary"></i>Analytics
         </h1>
-        <p class="page-subtitle">Attendance statistics and insights — <?= $year ?></p>
+        <p class="page-subtitle">
+            Attendance statistics and insights — <?= $year ?>
+            <span class="text-muted small ms-2">
+                (Key Metrics reflect <strong>today</strong>)
+            </span>
+        </p>
     </div>
     <form method="GET" class="d-flex gap-2">
         <select name="year" class="form-select form-select-sm" style="width:auto">
@@ -164,182 +149,106 @@ include '../includes/sidebar.php';
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
-     Total Present / Total Absent Summary
+     KEY METRICS — driven by TODAY's log (populated via JS)
      ══════════════════════════════════════════════════════════════ -->
 <div class="row g-3 mb-4">
-    <!-- Total Present -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="stat-icon green" style="width:56px;height:56px;font-size:1.5rem">
-                    <i class="bi bi-check-circle-fill"></i>
-                </div>
-                <div>
-                    <div class="text-muted small text-uppercase fw-600">Total Present</div>
-                    <div class="fw-bold" style="font-size:2rem;line-height:1.1">
-                        <?= number_format($totalPresent) ?>
-                    </div>
-                    <div class="text-muted small">
-                        Full Day: <?= number_format($overall['full_day'] ?? 0) ?>
-                        &nbsp;•&nbsp;
-                        Partial: <?= number_format($overall['partial'] ?? 0) ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Total Absent -->
-    <div class="col-md-6">
-        <div class="card border-0 shadow-sm h-100">
-            <div class="card-body d-flex align-items-center gap-3">
-                <div class="stat-icon red" style="width:56px;height:56px;font-size:1.5rem">
-                    <i class="bi bi-x-circle-fill"></i>
-                </div>
-                <div>
-                    <div class="text-muted small text-uppercase fw-600">Total Absent</div>
-                    <div class="fw-bold" style="font-size:2rem;line-height:1.1">
-                        <?= number_format($totalAbsent) ?>
-                    </div>
-                    <div class="text-muted small">
-                        Out of <?= number_format($totalRecords) ?> total records
-                        &nbsp;•&nbsp;
-                        <?= $attendanceRate ?>% attendance rate
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- ══════════════════════════════════════════════════════════════
-     Present / Absent ratio bar
-     ══════════════════════════════════════════════════════════════ -->
-<?php
-    $presentPct = $totalRecords > 0 ? round(($totalPresent / $totalRecords) * 100, 1) : 0;
-    $absentPct  = $totalRecords > 0 ? round(($totalAbsent  / $totalRecords) * 100, 1) : 0;
-?>
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex justify-content-between small fw-600 mb-2">
-                    <span class="text-success">
-                        <i class="bi bi-check-circle-fill me-1"></i>
-                        Present — <?= number_format($totalPresent) ?> (<?= $presentPct ?>%)
-                    </span>
-                    <span class="text-danger">
-                        <?= $absentPct ?>% (<?= number_format($totalAbsent) ?>)
-                        <i class="bi bi-x-circle-fill ms-1"></i>
-                        Absent
-                    </span>
-                </div>
-                <div class="progress" style="height:14px;border-radius:8px;overflow:hidden">
-                    <div class="progress-bar bg-success"
-                         role="progressbar"
-                         style="width:<?= $presentPct ?>%"
-                         aria-valuenow="<?= $presentPct ?>"
-                         aria-valuemin="0"
-                         aria-valuemax="100">
-                    </div>
-                    <div class="progress-bar bg-danger"
-                         role="progressbar"
-                         style="width:<?= $absentPct ?>%"
-                         aria-valuenow="<?= $absentPct ?>"
-                         aria-valuemin="0"
-                         aria-valuemax="100">
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Key Metrics -->
-<div class="row g-3 mb-4">
-    <div class="col-6 col-md-2">
-        <div class="stat-card green py-2">
-            <div class="stat-icon green" style="width:38px;height:38px;font-size:1rem">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="stat-card green py-2 h-100">
+            <div class="stat-icon green flex-shrink-0"
+                 style="width:38px;height:38px;font-size:1rem">
                 <i class="bi bi-graph-up-arrow"></i>
             </div>
-            <div>
-                <div class="stat-number" style="font-size:1.4rem"><?= $attendanceRate ?>%</div>
-                <div class="stat-label">Attend. Rate</div>
+            <div class="min-w-0">
+                <div class="stat-number text-truncate"
+                     style="font-size:1.4rem"
+                     id="kpiRate">—</div>
+                <div class="stat-label text-truncate">Attend. Rate</div>
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-2">
-        <div class="stat-card blue py-2">
-            <div class="stat-icon blue" style="width:38px;height:38px;font-size:1rem">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="stat-card blue py-2 h-100">
+            <div class="stat-icon blue flex-shrink-0"
+                 style="width:38px;height:38px;font-size:1rem">
                 <i class="bi bi-check-circle-fill"></i>
             </div>
-            <div>
-                <div class="stat-number" style="font-size:1.4rem">
-                    <?= number_format($overall['full_day'] ?? 0) ?>
-                </div>
-                <div class="stat-label">Full Day</div>
+            <div class="min-w-0">
+                <div class="stat-number text-truncate"
+                     style="font-size:1.4rem"
+                     id="kpiFullDay">—</div>
+                <div class="stat-label text-truncate">Full Day</div>
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-2">
-        <div class="stat-card orange py-2">
-            <div class="stat-icon orange" style="width:38px;height:38px;font-size:1rem">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="stat-card orange py-2 h-100">
+            <div class="stat-icon orange flex-shrink-0"
+                 style="width:38px;height:38px;font-size:1rem">
                 <i class="bi bi-clock-history"></i>
             </div>
-            <div>
-                <div class="stat-number" style="font-size:1.4rem">
-                    <?= number_format($overall['partial'] ?? 0) ?>
-                </div>
-                <div class="stat-label">Partial</div>
+            <div class="min-w-0">
+                <div class="stat-number text-truncate"
+                     style="font-size:1.4rem"
+                     id="kpiPartial">—</div>
+                <div class="stat-label text-truncate">Partial</div>
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-2">
-        <div class="stat-card red py-2">
-            <div class="stat-icon red" style="width:38px;height:38px;font-size:1rem">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="stat-card red py-2 h-100">
+            <div class="stat-icon red flex-shrink-0"
+                 style="width:38px;height:38px;font-size:1rem">
                 <i class="bi bi-x-circle-fill"></i>
             </div>
-            <div>
-                <div class="stat-number" style="font-size:1.4rem">
-                    <?= number_format($overall['absent'] ?? 0) ?>
-                </div>
-                <div class="stat-label">Absent</div>
+            <div class="min-w-0">
+                <div class="stat-number text-truncate"
+                     style="font-size:1.4rem"
+                     id="kpiAbsent">—</div>
+                <div class="stat-label text-truncate">Absent</div>
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-2">
-        <div class="stat-card orange py-2">
-            <div class="stat-icon orange" style="width:38px;height:38px;font-size:1rem">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="stat-card orange py-2 h-100">
+            <div class="stat-icon orange flex-shrink-0"
+                 style="width:38px;height:38px;font-size:1rem">
                 <i class="bi bi-sun"></i>
             </div>
-            <div>
-                <div class="stat-number" style="font-size:1.4rem">
-                    <?= number_format($overall['am_late'] ?? 0) ?>
-                </div>
-                <div class="stat-label">AM Late</div>
+            <div class="min-w-0">
+                <div class="stat-number text-truncate"
+                     style="font-size:1.4rem"
+                     id="kpiAmLate">—</div>
+                <div class="stat-label text-truncate">AM Late</div>
             </div>
         </div>
     </div>
-    <div class="col-6 col-md-2">
-        <div class="stat-card orange py-2">
-            <div class="stat-icon orange" style="width:38px;height:38px;font-size:1rem">
+    <div class="col-6 col-md-4 col-lg-2">
+        <div class="stat-card orange py-2 h-100">
+            <div class="stat-icon orange flex-shrink-0"
+                 style="width:38px;height:38px;font-size:1rem">
                 <i class="bi bi-moon"></i>
             </div>
-            <div>
-                <div class="stat-number" style="font-size:1.4rem">
-                    <?= number_format($overall['pm_late'] ?? 0) ?>
-                </div>
-                <div class="stat-label">PM Late</div>
+            <div class="min-w-0">
+                <div class="stat-number text-truncate"
+                     style="font-size:1.4rem"
+                     id="kpiPmLate">—</div>
+                <div class="stat-label text-truncate">PM Late</div>
             </div>
         </div>
     </div>
 </div>
 
 <!-- ══════════════════════════════════════════════════════════════
-     TODAY'S LOG — mirrors scanner.php display
-     Shows ALL students with AM/PM In/Out + Late/Absent badges
+     Total Present / Total Absent Summary (still YEAR-based)
      ══════════════════════════════════════════════════════════════ -->
-<!-- CHANGED -->
+
+
+<!-- Present / Absent ratio bar (YEAR) -->
+
+
+<!-- ══════════════════════════════════════════════════════════════
+     TODAY'S LOG — chart + table, drives Key Metrics
+     ══════════════════════════════════════════════════════════════ -->
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="card">
@@ -373,6 +282,46 @@ include '../includes/sidebar.php';
                     </button>
                 </div>
             </div>
+
+            <!-- Embedded breakdown chart -->
+            <div class="card-body pb-2">
+                <div class="row g-3 align-items-center">
+                    <div class="col-md-7">
+                        <div style="height:220px">
+                            <canvas id="todayLogChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="border rounded p-2 text-center">
+                                    <div class="text-muted small text-uppercase fw-600">Full Day</div>
+                                    <div class="fw-bold fs-5 text-success" id="todayStatFull">0</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-2 text-center">
+                                    <div class="text-muted small text-uppercase fw-600">Partial</div>
+                                    <div class="fw-bold fs-5 text-warning" id="todayStatPartial">0</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-2 text-center">
+                                    <div class="text-muted small text-uppercase fw-600">Absent</div>
+                                    <div class="fw-bold fs-5 text-danger" id="todayStatAbsent">0</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-2 text-center">
+                                    <div class="text-muted small text-uppercase fw-600">Pending</div>
+                                    <div class="fw-bold fs-5 text-secondary" id="todayStatPending">0</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div class="card-body p-0" style="max-height:480px;overflow-y:auto">
                 <table class="table table-sm table-hover mb-0" id="todayLogTable">
                     <thead class="sticky-top bg-white" style="z-index:1">
@@ -403,44 +352,31 @@ include '../includes/sidebar.php';
     </div>
 </div>
 
-<!-- Monthly Chart + Grade Rates -->
+<!-- Grade Level Rates (full width) -->
 <div class="row g-3 mb-4">
-    <div class="col-lg-8">
-        <div class="card h-100">
-            <div class="card-header">
-                <i class="bi bi-bar-chart me-2 text-primary"></i>
-                Monthly Attendance — <?= $year ?>
-            </div>
-            <div class="card-body">
-                <div class="chart-container">
-                    <canvas id="monthlyChart"></canvas>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-lg-4">
+    <div class="col-12">
         <div class="card h-100">
             <div class="card-header">
                 <i class="bi bi-diagram-3 me-2 text-primary"></i>
-                By Grade Level
+                By Grade Level — <?= $year ?>
             </div>
             <div class="card-body">
-                <?php foreach ($gradeRates as $grade => $data): ?>
-                <div class="mb-2">
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span class="fw-600"><?= sanitize($grade) ?></span>
-                        <span class="text-<?= $data['rate'] >= 90 ? 'success' : ($data['rate'] >= 75 ? 'warning' : 'danger') ?>">
-                            <?= $data['rate'] ?>%
-                        </span>
-                    </div>
-                    <div class="progress" style="height:7px;border-radius:4px">
-                        <div class="progress-bar bg-<?= $data['rate'] >= 90 ? 'success' : ($data['rate'] >= 75 ? 'warning' : 'danger') ?>"
-                             style="width:<?= $data['rate'] ?>%;border-radius:4px">
+                <div class="row">
+                    <?php foreach ($gradeRates as $grade => $data): ?>
+                    <div class="col-md-6 mb-2">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span class="fw-600"><?= sanitize($grade) ?></span>
+                            <span class="text-<?= $data['rate'] >= 90 ? 'success' : ($data['rate'] >= 75 ? 'warning' : 'danger') ?>">
+                                <?= $data['rate'] ?>%
+                            </span>
+                        </div>
+                        <div class="progress" style="height:7px;border-radius:4px">
+                            <div class="progress-bar bg-<?= $data['rate'] >= 90 ? 'success' : ($data['rate'] >= 75 ? 'warning' : 'danger') ?>"
+                                 style="width:<?= $data['rate'] ?>%;border-radius:4px"></div>
                         </div>
                     </div>
+                    <?php endforeach; ?>
                 </div>
-                <?php endforeach; ?>
             </div>
         </div>
     </div>
@@ -499,7 +435,6 @@ include '../includes/sidebar.php';
         </div>
     </div>
 
-    <!-- Most Absent -->
     <div class="col-lg-6">
         <div class="card h-100">
             <div class="card-header">
@@ -561,39 +496,10 @@ include '../includes/sidebar.php';
 </div>
 
 <?php
-$monthlyLabels  = json_encode(array_column($monthly, 'month'));
-$monthlyPresent = json_encode(array_column($monthly, 'present'));
-$monthlyAbsent  = json_encode(array_column($monthly, 'absent'));
+$endpointJs = json_encode($endpointUrl);
 
 $extraJS = <<<JS
 <script>
-new Chart(document.getElementById('monthlyChart').getContext('2d'), {
-    type: 'bar',
-    data: {
-        labels: {$monthlyLabels},
-        datasets: [
-            {
-                label: 'Present/Partial',
-                data: {$monthlyPresent},
-                backgroundColor: 'rgba(14,159,110,0.75)',
-                borderRadius: 5
-            },
-            {
-                label: 'Absent',
-                data: {$monthlyAbsent},
-                backgroundColor: 'rgba(224,36,36,0.65)',
-                borderRadius: 5
-            }
-        ]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
-    }
-});
-
 // ── Section Attendance Rates filter ──────────────────────────
 (function () {
     const searchInput = document.getElementById('sectionSearch');
@@ -632,7 +538,7 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
     gradeSelect.addEventListener('change', applyFilter);
 })();
 
-// ── Today's Log (mirrors scanner.php layout) ─────────────────
+// ── Today's Log (drives Key Metrics + embedded chart) ────────
 (function () {
     const tbody      = document.getElementById('todayLogBody');
     const searchBox  = document.getElementById('todayLogSearch');
@@ -642,10 +548,26 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
     const updatedEl  = document.getElementById('todayLogUpdated');
     const countEl    = document.getElementById('todayLogCount');
 
+    // Embedded chart tiles
+    const statFull    = document.getElementById('todayStatFull');
+    const statPartial = document.getElementById('todayStatPartial');
+    const statAbsent  = document.getElementById('todayStatAbsent');
+    const statPending = document.getElementById('todayStatPending');
+    const chartCanvas = document.getElementById('todayLogChart');
+
+    // Key Metrics row
+    const kpiRate    = document.getElementById('kpiRate');
+    const kpiFullDay = document.getElementById('kpiFullDay');
+    const kpiPartial = document.getElementById('kpiPartial');
+    const kpiAbsent  = document.getElementById('kpiAbsent');
+    const kpiAmLate  = document.getElementById('kpiAmLate');
+    const kpiPmLate  = document.getElementById('kpiPmLate');
+
     if (!tbody) return;
 
-    const ENDPOINT = '{$endpointUrl}';
+    const ENDPOINT = {$endpointJs};
     let rows = [];
+    let chart = null;
 
     function esc(s) {
         return String(s ?? '').replace(/[&<>"']/g, c => (
@@ -653,7 +575,6 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
         ));
     }
 
-    // Mirrors scanner.php's fmtCell(): shows time + Late badge, or Absent badge
     function fmtCell(time, status) {
         if (!time) {
             if (status === 'absent') {
@@ -686,6 +607,104 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
         return '';
     }
 
+    // ── Compute today's stats ────────────────────────────────
+    function computeStats(list) {
+        const s = {
+            total:    0,
+            present:  0,   // full_day + partial
+            full_day: 0,
+            partial:  0,
+            absent:   0,
+            pending:  0,
+            am_late:  0,
+            pm_late:  0
+        };
+
+        list.forEach(r => {
+            s.total++;
+
+            const t = r.attendance_type || 'pending';
+            if (t === 'full_day')      { s.full_day++; s.present++; }
+            else if (t === 'partial')  { s.partial++;  s.present++; }
+            else if (t === 'absent')   { s.absent++; }
+            else                       { s.pending++; }
+
+            if (r.am_status === 'late') s.am_late++;
+            if (r.pm_status === 'late') s.pm_late++;
+        });
+
+        return s;
+    }
+
+    function updateKeyMetrics(stats) {
+        const rate = stats.total > 0
+            ? ((stats.present / stats.total) * 100).toFixed(1)
+            : '0.0';
+
+        if (kpiRate)    kpiRate.textContent    = rate + '%';
+        if (kpiFullDay) kpiFullDay.textContent = stats.full_day;
+        if (kpiPartial) kpiPartial.textContent = stats.partial;
+        if (kpiAbsent)  kpiAbsent.textContent  = stats.absent;
+        if (kpiAmLate)  kpiAmLate.textContent  = stats.am_late;
+        if (kpiPmLate)  kpiPmLate.textContent  = stats.pm_late;
+    }
+
+    function updateChartTiles(stats) {
+        if (statFull)    statFull.textContent    = stats.full_day;
+        if (statPartial) statPartial.textContent = stats.partial;
+        if (statAbsent)  statAbsent.textContent  = stats.absent;
+        if (statPending) statPending.textContent = stats.pending;
+    }
+
+    function updateChart(stats) {
+        const data = {
+            labels: ['Full Day', 'Partial', 'Absent', 'Pending'],
+            datasets: [{
+                data: [
+                    stats.full_day,
+                    stats.partial,
+                    stats.absent,
+                    stats.pending
+                ],
+                backgroundColor: [
+                    'rgba(14,159,110,0.85)',
+                    'rgba(245,158,11,0.85)',
+                    'rgba(224,36,36,0.75)',
+                    'rgba(156,163,175,0.75)'
+                ],
+                borderWidth: 0
+            }]
+        };
+
+        if (chart) {
+            chart.data = data;
+            chart.update();
+        } else if (chartCanvas) {
+            chart = new Chart(chartCanvas.getContext('2d'), {
+                type: 'bar',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: {
+                            display: true,
+                            text: "Today's Attendance Breakdown",
+                            font: { size: 13 }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0, stepSize: 1 }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
     function render() {
         const term  = (searchBox.value || '').toLowerCase().trim();
         const grade = gradeSel.value;
@@ -704,6 +723,12 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
 
         countEl.textContent = filtered.length + ' student' +
                               (filtered.length === 1 ? '' : 's');
+
+        // Compute once, feed everyone
+        const stats = computeStats(filtered);
+        updateKeyMetrics(stats);
+        updateChartTiles(stats);
+        updateChart(stats);
 
         if (filtered.length === 0) {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
@@ -738,7 +763,6 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
             const all = await res.json();
             if (!Array.isArray(all)) throw new Error('Invalid response');
 
-            // No filter — show every student, just like scanner.php
             rows = all;
 
             render();
@@ -747,6 +771,13 @@ new Chart(document.getElementById('monthlyChart').getContext('2d'), {
             tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">' +
                 'Failed to load today\\'s log: ' + esc(err.message) + '</td></tr>';
             countEl.textContent = '—';
+
+            // Clear metrics on failure
+            ['kpiRate','kpiFullDay','kpiPartial','kpiAbsent','kpiAmLate','kpiPmLate']
+                .forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = '—';
+                });
         }
     }
 

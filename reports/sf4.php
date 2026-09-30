@@ -4,13 +4,22 @@
  * DepEd School Form 4 (SF4) — Revised
  * Monthly Learner Movement and Attendance Report
  * Aligned to official DepEd template + enhanced visual design
+ *
+ * Access: admin + teacher
+ *   - admin   : sees all sections
+ *   - teacher : sees only sections where they are the adviser
  */
 error_reporting(E_ALL & ~E_DEPRECATED);
 ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireAdmin();
+
+// ── Allow both admin and teacher ──────────────────────────
+if (!isAdmin() && !isTeacher()) {
+    header('Location: ' . BASE_URL . 'dashboard.php');
+    exit;
+}
 
 $pageTitle     = 'SF4 — Monthly Learner Movement and Attendance Report';
 $db            = getDB();
@@ -42,15 +51,30 @@ $syStartYear    = ($month >= 6) ? $year : ($year - 1);
 $cumulativeFrom = sprintf('%04d-06-01', $syStartYear);
 $cumulativeTo   = sprintf('%04d-%02d-01', $year, $month);
 
-// --- Fetch all sections ---
-$allSections = $db->query("
-    SELECT s.id, s.section_name, s.grade_level, s.schedule_type,
-           u.full_name AS adviser_name
-    FROM sections s
-    LEFT JOIN users u ON s.adviser_id = u.id
-    WHERE s.is_active = 1
-    ORDER BY " . gradeLevelOrderSQL('s.grade_level') . ", s.section_name
-")->fetchAll();
+// --- Fetch sections (scoped by role) ---
+if (isAdmin()) {
+    // Admin — see all active sections
+    $allSections = $db->query("
+        SELECT s.id, s.section_name, s.grade_level, s.schedule_type,
+               u.full_name AS adviser_name
+        FROM sections s
+        LEFT JOIN users u ON s.adviser_id = u.id
+        WHERE s.is_active = 1
+        ORDER BY " . gradeLevelOrderSQL('s.grade_level') . ", s.section_name
+    ")->fetchAll();
+} else {
+    // Teacher — only sections where they are the adviser
+    $secStmt = $db->prepare("
+        SELECT s.id, s.section_name, s.grade_level, s.schedule_type,
+               u.full_name AS adviser_name
+        FROM sections s
+        LEFT JOIN users u ON s.adviser_id = u.id
+        WHERE s.is_active = 1 AND s.adviser_id = ?
+        ORDER BY " . gradeLevelOrderSQL('s.grade_level') . ", s.section_name
+    ");
+    $secStmt->execute([$currentUser['id']]);
+    $allSections = $secStmt->fetchAll();
+}
 
 $sectionData = [];
 $sectionIds  = array_column($allSections, 'id');
