@@ -14,9 +14,8 @@ $pageTitle = 'Analytics';
 $db        = getDB();
 $year      = (int)($_GET['year'] ?? date('Y'));
 
-// Endpoint URL — resolved by PHP so it works regardless of folder moves.
-$endpointUrl = dirname(dirname($_SERVER['SCRIPT_NAME']))
-             . '/attendance/get_today_log.php';
+// Endpoint URL — relative from /analytics/ so it works in any deployment.
+$endpointUrl = '../attendance/get_today_log.php';
 
 // Build section filter for teachers
 $sectionFilter = '';
