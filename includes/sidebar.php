@@ -1,6 +1,13 @@
 <?php
 /**
  * Sidebar Navigation — static active detection
+ * Includes its own embedded sidebar styles.
+ * Logout stays pinned to bottom via margin-top:auto (no rigid column split).
+ *
+ * Roles:
+ *   - admin   : full access (Main, Manage, Reports, Admin)
+ *   - teacher : Main, Manage, Reports (SF2 + SF4 only)
+ *   - user    : Scanner only
  */
 
 // Current script + folder, resolved ONCE
@@ -8,8 +15,202 @@ $currentFile = basename($_SERVER['PHP_SELF']);                 // e.g. attendanc
 $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slashes
 ?>
 
-<!-- Sidebar -->
+<!-- ══════════════════════════════════════════════════════════
+     Sidebar Styles (embedded)
+     ══════════════════════════════════════════════════════════ -->
+<style>
+    :root {
+        --sidebar-bg: #1e3a5f;
+        --sidebar-w:  260px;
+        --sidebar-primary: #1a56db;
+        --sidebar-radius: 0.5rem;
+    }
+
+    /* ── Sidebar container ─────────────────────── */
+    #sidebar.sidebar {
+        width: var(--sidebar-w);
+        height: 100vh;                 /* locked to viewport */
+        background: var(--sidebar-bg);
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;        /* natural vertical flow */
+        overflow-y: auto;              /* whole sidebar scrolls as one unit */
+        overflow-x: hidden;
+        transition: transform 0.3s ease;
+        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08);
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.15) transparent;
+    }
+
+    /* ── Brand ─────────────────────────────────── */
+    #sidebar .sidebar-brand {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    #sidebar .brand-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    /* ── User info ─────────────────────────────── */
+    #sidebar .sidebar-user {
+        padding-top: 0.75rem;
+        padding-bottom: 0.75rem;
+    }
+
+    #sidebar .avatar-sm {
+        width: 38px;
+        height: 38px;
+        min-width: 38px;
+        font-size: 0.9rem;
+        background: var(--sidebar-primary) !important;
+    }
+
+    /* ── Nav links ─────────────────────────────── */
+    #sidebar .nav-link {
+        color: rgba(255, 255, 255, 0.75);
+        padding: 0.55rem 0.85rem;
+        border-radius: var(--sidebar-radius);
+        margin-bottom: 2px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+    }
+
+    #sidebar .nav-link i {
+        width: 20px;
+        text-align: center;
+        font-size: 1rem;
+    }
+
+    #sidebar .nav-link:hover {
+        background: rgba(255, 255, 255, 0.10);
+        color: #fff;
+        transform: translateX(2px);
+    }
+
+    #sidebar .nav-link.active {
+        background: var(--sidebar-primary);
+        color: #fff !important;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(26, 86, 219, 0.4);
+    }
+
+    #sidebar .nav-link.active:hover {
+        transform: none;
+    }
+
+    /* ── Section labels ────────────────────────── */
+    #sidebar .nav-section-label {
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(255, 255, 255, 0.35);
+        padding: 0.65rem 0.85rem 0.3rem;
+        list-style: none;
+        user-select: none;
+    }
+
+    /* ── Divider ───────────────────────────────── */
+    #sidebar hr {
+        border-color: rgba(255, 255, 255, 0.08);
+        opacity: 1;
+    }
+
+    /* ── Logout wrapper — pushes to bottom ─────── */
+    #sidebar .sidebar-logout {
+        margin-top: auto;              /* pushes it down in flex column */
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        background: var(--sidebar-bg); /* covers content scrolling behind */
+    }
+
+    /* ── Logout button ─────────────────────────── */
+    #sidebar .btn-outline-danger {
+        border-color: rgba(224, 36, 36, 0.6);
+        color: #fca5a5;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+    #sidebar .btn-outline-danger:hover {
+        background: #e02424;
+        border-color: #e02424;
+        color: #fff;
+    }
+
+    /* ── Scrollbar ─────────────────────────────── */
+    #sidebar.sidebar::-webkit-scrollbar {
+        width: 6px;
+    }
+    #sidebar.sidebar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    #sidebar.sidebar::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 3px;
+    }
+    #sidebar.sidebar::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
+
+    /* ── Main content offset ───────────────────── */
+    .main-content {
+        margin-left: var(--sidebar-w);
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        transition: margin 0.3s ease;
+    }
+
+    /* ── Top navbar ────────────────────────────── */
+    .top-navbar {
+        background: #fff;
+        border-bottom: 1px solid #e5e7eb;
+        position: sticky;
+        top: 0;
+        z-index: 1040;
+        height: 56px;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+    }
+
+    /* ── Responsive ────────────────────────────── */
+    @media (max-width: 991.98px) {
+        #sidebar.sidebar {
+            transform: translateX(-100%);
+        }
+        #sidebar.sidebar.show {
+            transform: translateX(0);
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+        }
+        .main-content {
+            margin-left: 0 !important;
+        }
+    }
+
+    /* ── Print ─────────────────────────────────── */
+    @media print {
+        #sidebar.sidebar,
+        .top-navbar,
+        .no-print {
+            display: none !important;
+        }
+        .main-content {
+            margin-left: 0 !important;
+        }
+    }
+</style>
+
+<!-- ══════════════════════════════════════════════════════════
+     Sidebar
+     ══════════════════════════════════════════════════════════ -->
 <nav id="sidebar" class="sidebar d-flex flex-column">
+
     <!-- Brand -->
     <div class="sidebar-brand d-flex align-items-center px-3 py-3">
         <div class="brand-logo me-2">
@@ -46,7 +247,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
     <hr class="border-secondary mx-3 my-0">
 
     <!-- Navigation -->
-    <ul class="nav flex-column px-2 py-2 flex-grow-1">
+    <ul class="nav flex-column px-2 py-2">
 
         <?php if (isUser()): ?>
             <?php /* ─── USER (Scanner-only) MENU ─── */ ?>
@@ -109,27 +310,30 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 </a>
             </li>
 
+            <?php /* ─── REPORTS (admin + teacher) ─── */ ?>
+            <li class="nav-section-label mt-2">REPORTS</li>
+
+            <li class="nav-item">
+                <a href="<?= BASE_URL ?>reports/sf2.php"
+                   class="nav-link <?= $currentFile === 'sf2.php' ? 'active' : '' ?>">
+                    <i class="bi bi-file-earmark-ruled me-2"></i>SF2 Report
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a href="<?= BASE_URL ?>reports/sf4.php"
+                   class="nav-link <?= $currentFile === 'sf4.php' ? 'active' : '' ?>">
+                    <i class="bi bi-file-earmark-bar-graph me-2"></i>SF4 Report
+                </a>
+            </li>
+
             <?php if (isAdmin()): ?>
-                <li class="nav-section-label mt-2">REPORTS</li>
+                <?php /* ─── ADMIN-ONLY REPORTS ─── */ ?>
 
                 <li class="nav-item">
                     <a href="<?= BASE_URL ?>reports/index_reports.php"
                        class="nav-link <?= $currentFile === 'index_reports.php' ? 'active' : '' ?>">
                         <i class="bi bi-file-earmark-bar-graph me-2"></i>Reports
-                    </a>
-                </li>
-
-                <li class="nav-item">
-                    <a href="<?= BASE_URL ?>reports/sf2.php"
-                       class="nav-link <?= $currentFile === 'sf2.php' ? 'active' : '' ?>">
-                        <i class="bi bi-file-earmark-ruled me-2"></i>SF2 Report
-                    </a>
-                </li>
-
-                <li class="nav-item">
-                    <a href="<?= BASE_URL ?>reports/sf4.php"
-                       class="nav-link <?= $currentFile === 'sf4.php' ? 'active' : '' ?>">
-                        <i class="bi bi-file-earmark-bar-graph me-2"></i>SF4 Report
                     </a>
                 </li>
 
@@ -175,8 +379,8 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
 
     </ul>
 
-    <!-- Logout -->
-    <div class="px-3 py-3 mt-auto">
+    <!-- Logout (pinned to bottom via margin-top:auto) -->
+    <div class="sidebar-logout px-3 py-3">
         <a href="<?= BASE_URL ?>logout.php"
             class="btn btn-outline-danger btn-sm w-100"
             onclick="return confirm('Are you sure you want to logout?')">
