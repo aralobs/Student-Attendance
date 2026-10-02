@@ -4,10 +4,12 @@
 # Uploaded files (don't commit student photos/QR codes)
 /uploads/students/*
 /qrcodes/*
+/storage/sessions/*
 
 # Keep the folders but not the files
 !uploads/students/.gitkeep
 !qrcodes/.gitkeep
+!storage/sessions/.gitkeep
 
 # Environment / sensitive config
 # config/database.php is safe to commit — it reads from environment variables
@@ -17,6 +19,7 @@
 test_qr.php
 uppass.php
 genhash.php
+config/attendance_system.sql
 
 # OS files
 .DS_Store

@@ -4,6 +4,7 @@
  * SPCCS Elementary Attendance System v2.0
  * Covers Kinder through Grade 6
  * Supports 4-event attendance: AM IN, AM OUT, PM IN, PM OUT
+ * Includes single-session enforcement (one active browser per account)
  */
 
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
@@ -11,6 +12,28 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../config/database.php';
+
+// Idle timeout in seconds for admin/teacher accounts (0 = disabled).
+// Scanner 'user' accounts are exempt so kiosks don't log themselves out.
+if (!defined('SESSION_IDLE_TIMEOUT')) define('SESSION_IDLE_TIMEOUT', 0);
+
+// ─── Anti-cache headers ─────────────────────────────────────
+/**
+ * Send no-store headers so browsers never serve a cached page
+ * after the session has been invalidated by another login.
+ * Safe to call multiple times — only sends headers once.
+ */
+function sendNoCacheHeaders(): void {
+    static $sent = false;
+    if ($sent || headers_sent()) return;
+    $sent = true;
+
+    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+    header('Cache-Control: post-check=0, pre-check=0', false);
+    header('Pragma: no-cache');
+    header('Expires: Sat, 01 Jan 2000 00:00:00 GMT');
+    header('Vary: Cookie');
+}
 
 // ─── Session ────────────────────────────────────────────────
 
@@ -20,15 +43,182 @@ function startSession() {
     }
 }
 
+/**
+ * Create a fresh token, store it in the DB and in $_SESSION.
+ * Overwriting the DB value is what invalidates any other browser.
+ *
+ * Throws RuntimeException if the DB write didn't affect a row.
+ */
+function registerSession(int $userId): string {
+    startSession();
+    $token = bin2hex(random_bytes(32));
+
+    $db = getDB();
+    $stmt = $db->prepare("
+        UPDATE users
+        SET session_token       = ?,
+            session_user_agent  = ?,
+            session_ip          = ?,
+            session_last_activity = NOW()
+        WHERE id = ? AND is_active = 1
+    ");
+    $stmt->execute([
+        $token,
+        substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255),
+        $_SERVER['REMOTE_ADDR'] ?? null,
+        $userId,
+    ]);
+
+    if ($stmt->rowCount() === 0) {
+        error_log("registerSession: 0 rows updated for user_id={$userId}");
+        throw new RuntimeException('Could not register session — user not found or inactive.');
+    }
+
+    $_SESSION['session_token'] = $token;
+    return $token;
+}
+
+/**
+ * Returns null if the session is valid, otherwise a reason string:
+ * 'invalid' | 'session_taken' | 'timeout'
+ *
+ * FAILS CLOSED: if the DB token is NULL/empty/mismatched, the session
+ * is rejected — never silently allowed through.
+ */
+function checkSession(): ?string {
+    startSession();
+
+    if (empty($_SESSION['user_id']) || empty($_SESSION['session_token'])) {
+        return 'invalid';
+    }
+
+    try {
+        $db   = getDB();
+        $stmt = $db->prepare("
+            SELECT session_token, role,
+                   TIMESTAMPDIFF(SECOND, session_last_activity, NOW()) AS idle_seconds
+            FROM users
+            WHERE id = ? AND is_active = 1
+            LIMIT 1
+        ");
+        $stmt->execute([$_SESSION['user_id']]);
+        $row = $stmt->fetch();
+    } catch (Throwable $e) {
+        error_log('checkSession error: ' . $e->getMessage());
+        return null; // fail open on transient DB error
+    }
+
+    if (!$row) {
+        return 'invalid';
+    }
+
+    // DB token was wiped (logged out elsewhere / kicked) → reject
+    if (empty($row['session_token'])) {
+        return 'invalid';
+    }
+
+    // Token mismatch → another browser logged in with the same account
+    if (!hash_equals((string)$row['session_token'], (string)$_SESSION['session_token'])) {
+        return 'session_taken';
+    }
+
+    // Optional idle timeout (not for scanner kiosks)
+    $idle = (int)($row['idle_seconds'] ?? 0);
+    if (SESSION_IDLE_TIMEOUT > 0 && $row['role'] !== 'user' && $idle > SESSION_IDLE_TIMEOUT) {
+        return 'timeout';
+    }
+
+    // Touch session_last_activity, throttled to once per minute
+    if ($idle >= 60) {
+        try {
+            $db->prepare("
+                UPDATE users
+                SET session_last_activity = NOW(),
+                    session_ip = ?
+                WHERE id = ?
+            ")->execute([
+                $_SERVER['REMOTE_ADDR'] ?? null,
+                $_SESSION['user_id'],
+            ]);
+        } catch (Throwable $e) {
+            error_log('checkSession touch error: ' . $e->getMessage());
+        }
+    }
+
+    return null;
+}
+
+/** Wipe the local session and send the browser back to login. */
+function terminateSession(string $reason): void {
+    startSession();
+
+    // Wipe local session
+    $_SESSION = [];
+
+    if (ini_get('session.use_cookies')) {
+        $p = session_get_cookie_params();
+        if (PHP_VERSION_ID >= 70300) {
+            setcookie(session_name(), '', [
+                'expires'  => time() - 42000,
+                'path'     => $p['path']   ?: '/',
+                'domain'   => $p['domain'] ?: '',
+                'secure'   => (bool)$p['secure'],
+                'httponly' => (bool)$p['httponly'],
+                'samesite' => $p['samesite'] ?? 'Lax',
+            ]);
+        } else {
+            setcookie(
+                session_name(), '',
+                time() - 42000,
+                $p['path'], $p['domain'], $p['secure'], $p['httponly']
+            );
+        }
+    }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_destroy();
+    }
+
+    // Build the login URL
+    $base = defined('BASE_URL') ? BASE_URL : '/';
+    $url  = rtrim($base, '/') . '/index.php?reason=' . urlencode($reason);
+
+    sendNoCacheHeaders();
+
+    // AJAX / fetch callers get JSON instead of a redirect
+    $isAjax = (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest')
+           || str_contains($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json');
+    if ($isAjax) {
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success'  => false,
+            'error'    => 'session_invalid',
+            'reason'   => $reason,
+            'redirect' => $url,
+        ]);
+        exit;
+    }
+
+    header('Location: ' . $url);
+    exit;
+}
+
 function isLoggedIn() {
     startSession();
-    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+    return !empty($_SESSION['user_id']) && checkSession() === null;
 }
 
 function requireLogin() {
-    if (!isLoggedIn()) {
+    startSession();
+    sendNoCacheHeaders();
+
+    if (empty($_SESSION['user_id'])) {
         header('Location: ' . BASE_URL . 'index.php');
         exit;
+    }
+    $reason = checkSession();
+    if ($reason !== null) {
+        terminateSession($reason);
     }
 }
 
@@ -56,8 +246,6 @@ function currentUser() {
 }
 
 // ─── Scanner-user role ──────────────────────────────────────
-// A 'user' role account can ONLY access scanner.php and logout.php.
-// Every other page must call requireStaff() to keep them out.
 
 function isUser(): bool {
     startSession();
@@ -69,10 +257,6 @@ function isTeacher(): bool {
     return isset($_SESSION['role']) && $_SESSION['role'] === 'teacher';
 }
 
-/**
- * Guard for scanner-only accounts.
- * Use this at the top of any page that ONLY the 'user' role should reach.
- */
 function requireUser(): void {
     requireLogin();
     if (!isUser()) {
@@ -81,11 +265,6 @@ function requireUser(): void {
     }
 }
 
-/**
- * Guard for scanner access.
- * Allows admin, teacher, and user roles — blocks everyone else.
- * Use on scanner.php.
- */
 function requireScannerAccess(): void {
     requireLogin();
     if (!isAdmin() && !isTeacher() && !isUser()) {
@@ -94,23 +273,14 @@ function requireScannerAccess(): void {
     }
 }
 
-/**
- * Guard for staff pages (admin + teacher only).
- * Redirects 'user' role to the scanner.
- * Use this on EVERY page that isn't scanner.php or logout.php.
- */
 function requireStaff(): void {
     requireLogin();
     if (isUser()) {
-        header('Location: ' . BASE_URL . 'scanner.php');
+        header('Location: ' . BASE_URL . 'attendance/scanner.php');
         exit;
     }
 }
 
-/**
- * Is the current session a scanner-kiosk session?
- * True only when the logged-in role is 'user'.
- */
 function isKioskMode(): bool {
     return isUser();
 }
@@ -257,27 +427,17 @@ function getGradeLevels(): array {
 
 // ─── Attendance event detection ──────────────────────────────
 
-/**
- * Determine which attendance event to record next.
- *
- * TIME-AWARE: If the current time is at/after noon, prefer PM events
- * even if AM events are empty — this prevents late-afternoon scans from
- * being stored as AM In/Out when the student never scanned in the morning.
- *
- * Returns: 'am_in' | 'am_out' | 'pm_in' | 'pm_out' | 'complete'
- */
-function getNextAttendanceEvent(?array $existing = null, array $section, ?string $now = null): string {
+function getNextAttendanceEvent(?array $existing, array $section, ?string $now = null): string {
     $scheduleType = $section['schedule_type'] ?? 'full_day';
     $now          = $now ?: date('H:i:s');
 
     $usesAM = in_array($scheduleType, ['full_day', 'am_only'], true);
     $usesPM = in_array($scheduleType, ['full_day', 'pm_only'], true);
 
-    // No record yet — decide based on time of day
     if (!$existing) {
         if ($usesAM && $now < '12:00:00') return 'am_in';
         if ($usesPM)                      return 'pm_in';
-        if ($usesAM)                      return 'am_in'; // fallback for am_only past noon
+        if ($usesAM)                      return 'am_in';
         return 'complete';
     }
 
@@ -286,17 +446,14 @@ function getNextAttendanceEvent(?array $existing = null, array $section, ?string
     $pmIn  = !empty($existing['pm_in']);
     $pmOut = !empty($existing['pm_out']);
 
-    // Whether we're in the PM window (for full_day sections)
     $isPMTime = $usesPM && $now >= '12:00:00';
 
-    // ── AM sequence (only if currently AM-time, or section is am_only) ──
     if ($usesAM && !$isPMTime) {
         if (!$amIn)  return 'am_in';
         if (!$amOut) return 'am_out';
         if ($scheduleType === 'am_only') return 'complete';
     }
 
-    // ── PM sequence ─────────────────────────────────────────
     if ($usesPM) {
         if (!$pmIn)  return 'pm_in';
         if (!$pmOut) return 'pm_out';
@@ -305,20 +462,12 @@ function getNextAttendanceEvent(?array $existing = null, array $section, ?string
     return 'complete';
 }
 
-/**
- * Determine AM or PM status (present/late) based on section's late threshold.
- * Falls back to 'present' if no threshold is set.
- */
 function getSessionStatus(string $time, string $thresholdKey, array $section): string {
     $threshold = $section[$thresholdKey] ?? null;
     if (!$threshold) return 'present';
     return strtotime($time) > strtotime($threshold) ? 'late' : 'present';
 }
 
-/**
- * Compute overall attendance_type from all 4 events.
- * Handles all three schedule types (full_day, am_only, pm_only).
- */
 function computeAttendanceType(array $record, array $section): string {
     $scheduleType = $section['schedule_type'] ?? 'full_day';
 
@@ -339,7 +488,6 @@ function computeAttendanceType(array $record, array $section): string {
         return 'absent';
     }
 
-    // full_day
     if ($amIn && $amOut && $pmIn && $pmOut) return 'full_day';
     if ($amIn || $amOut || $pmIn || $pmOut) return 'partial';
     return 'absent';

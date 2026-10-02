@@ -4,9 +4,18 @@
  * Focused on TODAY + recent activity.
  * Yearly/aggregate analytics live in analytics.php
  */
+
 require_once 'config/database.php';
 require_once 'includes/functions.php';
-requireLogin();
+
+// ── Session guard ──────────────────────────────────────────
+// requireStaff() → requireLogin() → checkSession().
+// If another browser has logged into this account, checkSession()
+// returns 'session_taken' and this request is immediately redirected
+// to index.php?reason=session_taken.
+// requireLogin() also sends no-cache headers, so the browser never
+// serves a stale dashboard from its own cache.
+requireStaff();
 
 $pageTitle = 'Dashboard';
 $db        = getDB();
@@ -518,6 +527,20 @@ $extraJS = <<<JS
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading today\\'s log...</td></tr>';
         try {
             const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
+
+            // 401 => session was killed by another browser login
+            if (res.status === 401) {
+                try {
+                    const data = await res.json();
+                    if (data && data.redirect) {
+                        window.location.href = data.redirect;
+                        return;
+                    }
+                } catch (e) { /* fall through */ }
+                window.location.href = 'index.php?reason=session_taken';
+                return;
+            }
+
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const all = await res.json();
             if (!Array.isArray(all)) throw new Error('Invalid response');
@@ -540,7 +563,40 @@ $extraJS = <<<JS
     refreshBtn.addEventListener('click', load);
 
     load();
-    setInterval(load, 60000);
+
+    // 🔄 Table auto-refresh every 30 seconds (no flicker, keeps filters)
+    setInterval(load, 30000);
+})();
+
+// ── Full dashboard soft-refresh every 2 minutes ──────────────
+// Updates stat cards, 7-day trend, and upcoming events.
+// Preserves scroll position and pauses while the user is
+// typing in a filter box or has a modal open.
+(function () {
+    const REFRESH_MS = 120000;   // 2 minutes
+    const KEY = 'dashboardScrollY';
+
+    // Restore scroll position after reload
+    const saved = sessionStorage.getItem(KEY);
+    if (saved !== null) {
+        window.scrollTo(0, parseInt(saved, 10));
+        sessionStorage.removeItem(KEY);
+    }
+
+    setInterval(function () {
+        // Don't interrupt the user if they're typing in a filter
+        const active = document.activeElement;
+        if (active && (active.tagName === 'INPUT' || active.tagName === 'SELECT')) {
+            return;
+        }
+        // Don't reload if a modal / offcanvas is open
+        if (document.querySelector('.modal.show, .offcanvas.show')) {
+            return;
+        }
+        // Save scroll position and reload the page
+        sessionStorage.setItem(KEY, String(window.scrollY));
+        window.location.reload();
+    }, REFRESH_MS);
 })();
 </script>
 JS;

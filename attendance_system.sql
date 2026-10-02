@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 29, 2026 at 01:58 AM
+-- Generation Time: Oct 02, 2026 at 07:04 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.0.30
 
@@ -54,7 +54,11 @@ INSERT INTO `attendance` (`id`, `student_id`, `date`, `am_in`, `am_out`, `am_sta
 (3, 7, '2026-09-02', NULL, NULL, 'present', NULL, NULL, NULL, 'absent', '', 1, '2026-09-02 11:39:30', '2026-09-02 11:39:30'),
 (4, 9, '2026-09-02', NULL, NULL, 'present', NULL, NULL, NULL, 'absent', '', 1, '2026-09-02 11:39:30', '2026-09-02 11:39:30'),
 (5, 65, '2026-09-21', '17:31:08', '18:36:00', 'late', '18:36:06', NULL, 'late', 'full_day', NULL, 1, '2026-09-21 09:31:08', '2026-09-21 10:36:06'),
-(6, 28, '2026-09-23', NULL, NULL, NULL, '16:59:33', NULL, 'late', 'partial', NULL, 1, '2026-09-23 08:59:33', '2026-09-23 08:59:33');
+(6, 28, '2026-09-23', NULL, NULL, NULL, '16:59:33', NULL, 'late', 'partial', NULL, 1, '2026-09-23 08:59:33', '2026-09-23 08:59:33'),
+(7, 11, '2026-09-30', '08:54:25', '08:54:32', 'late', '08:54:36', '08:54:39', 'present', 'full_day', NULL, 1, '2026-09-30 00:54:25', '2026-09-30 00:54:39'),
+(8, 51, '2026-09-30', '09:01:21', '09:05:37', 'late', '09:10:05', '09:13:19', 'present', 'full_day', NULL, 1, '2026-09-30 01:01:21', '2026-09-30 01:13:19'),
+(9, 28, '2026-09-30', '09:20:51', NULL, 'late', NULL, NULL, NULL, 'partial', NULL, 1, '2026-09-30 01:20:51', '2026-09-30 01:20:51'),
+(10, 28, '2026-10-02', '08:25:50', NULL, 'late', NULL, NULL, NULL, 'partial', NULL, 1, '2026-10-02 00:25:50', '2026-10-02 00:25:50');
 
 -- --------------------------------------------------------
 
@@ -189,7 +193,17 @@ INSERT INTO `sms_logs` (`id`, `student_id`, `recipient_number`, `message`, `type
 (2, 8, '09171234568', 'Hello Ma\'am/Sir, your child Gabrielle Castro was absent from SPCCS on September 2, 2026. Please contact the school if needed.', 'absence', 'failed', 'No API key configured', '2026-09-02 11:39:30'),
 (3, 7, '09171234567', 'Hello Ma\'am/Sir, your child Rafael Flores was absent from SPCCS on September 2, 2026. Please contact the school if needed.', 'absence', 'failed', 'No API key configured', '2026-09-02 11:39:30'),
 (4, 9, '09171234569', 'Hello Ma\'am/Sir, your child Marco Ramos was absent from SPCCS on September 2, 2026. Please contact the school if needed.', 'absence', 'failed', 'No API key configured', '2026-09-02 11:39:30'),
-(5, 28, '09171234588', 'Hello Ma\'am/Sir, your child Amelia Bautista arrived at SPCCS this afternoon at 04:59 PM. Thank you.', 'pm_arrival', 'failed', 'No API key configured', '2026-09-23 08:59:33');
+(5, 28, '09171234588', 'Hello Ma\'am/Sir, your child Amelia Bautista arrived at SPCCS this afternoon at 04:59 PM. Thank you.', 'pm_arrival', 'failed', 'No API key configured', '2026-09-23 08:59:33'),
+(6, 11, '09171234571', 'Hello Ma\'am/Sir, your child Diego Aquino arrived at SPCCS this morning at 08:54 AM. Thank you.', 'am_arrival', 'failed', 'No API key configured', '2026-09-30 00:54:25'),
+(7, 11, '09171234571', 'Hello Ma\'am/Sir, your child Diego Aquino left SPCCS this morning at 08:54 AM. Thank you.', 'am_departure', 'failed', 'No API key configured', '2026-09-30 00:54:32'),
+(8, 11, '09171234571', 'Hello Ma\'am/Sir, your child Diego Aquino arrived at SPCCS this afternoon at 08:54 AM. Thank you.', 'pm_arrival', 'failed', 'No API key configured', '2026-09-30 00:54:36'),
+(9, 11, '09171234571', 'Hello Ma\'am/Sir, your child Diego Aquino left SPCCS this afternoon at 08:54 AM. Safe travels.', 'pm_departure', 'failed', 'No API key configured', '2026-09-30 00:54:39'),
+(10, 51, '09171234611', 'Hello Ma\'am/Sir, your child Owen Bautista arrived at SPCCS this morning at 09:01 AM. Thank you.', 'am_arrival', 'failed', 'No API key configured', '2026-09-30 01:01:21'),
+(11, 51, '09171234611', 'Hello Ma\'am/Sir, your child Owen Bautista left SPCCS this morning at 09:05 AM. Thank you.', 'am_departure', 'failed', 'No API key configured', '2026-09-30 01:05:37'),
+(12, 51, '09171234611', 'Hello Ma\'am/Sir, your child Owen Bautista arrived at SPCCS this afternoon at 09:10 AM. Thank you.', 'pm_arrival', 'failed', 'No API key configured', '2026-09-30 01:10:05'),
+(13, 51, '09171234611', 'Hello Ma\'am/Sir, your child Owen Bautista left SPCCS this afternoon at 09:13 AM. Safe travels.', 'pm_departure', 'failed', 'No API key configured', '2026-09-30 01:13:19'),
+(14, 28, '09171234588', 'Hello Ma\'am/Sir, your child Amelia Bautista arrived at SPCCS this morning at 09:20 AM. Thank you.', 'am_arrival', 'failed', 'No API key configured', '2026-09-30 01:20:51'),
+(15, 28, '09171234588', 'Hello Ma\'am/Sir, your child Amelia Bautista arrived at SPCCS this morning at 08:25 AM. Thank you.', 'am_arrival', 'failed', 'No API key configured', '2026-10-02 00:25:50');
 
 -- --------------------------------------------------------
 
@@ -354,6 +368,10 @@ CREATE TABLE `users` (
   `email` varchar(100) DEFAULT NULL,
   `role` enum('admin','teacher','user') NOT NULL DEFAULT 'teacher',
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `session_token` varchar(255) DEFAULT NULL,
+  `session_user_agent` varchar(255) DEFAULT NULL,
+  `session_ip` varchar(45) DEFAULT NULL,
+  `session_last_activity` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -362,16 +380,16 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `email`, `role`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 'admin', '$2y$12$FweEHtJtKYVaUW2nF1s0VuGkpsPi91k6.zcq5N4vJQAkNrCBFlLM.', 'System Administrator', 'admin@spccs.edu.ph', 'admin', 1, '2026-08-27 14:21:13', '2026-08-27 14:37:29'),
-(2, 'teacher1', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Maria Santos', 'msantos@spccs.edu.ph', 'teacher', 1, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
-(3, 'teacher2', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Jose Reyes', 'jreyes@spccs.edu.ph', 'teacher', 1, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
-(4, 'teacher3', '$2y$10$YQOMt5MqutN2w3wxqmFTs.S35z3L56Z9UoYnc6.BuCvN7AF9Br/pG', 'Ana Cruz', 'acruz@spccs.edu.ph', 'teacher', 2, '2026-08-27 14:21:13', '2026-09-18 10:50:56'),
-(5, 'teacher4', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Pedro Dela Cruz', 'pdelacruz@spccs.edu.ph', 'teacher', 1, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
-(6, 'teacher5', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Rosa Bautista', 'rbautista@spccs.edu.ph', 'teacher', 1, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
-(7, 'teacher6', '$2y$10$XoFVxeGpFQ8esmsUSlsh4.e0EauN0YLq53uuvMIhrHg6SJDegurn2', 'Carlos Mendoza', 'cmendoza@spccs.edu.ph', 'teacher', 1, '2026-08-27 14:21:13', '2026-09-18 10:52:48'),
-(8, 'teacher7', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Elena Torres', 'etorres@spccs.edu.ph', 'teacher', 2, '2026-08-27 14:21:13', '2026-09-18 10:47:31'),
-(10, 'user', '$2y$10$LBIe1VL7VbzFbAfTiJLMuesDQkhQSZcbv4cGw8oEJ6CwacySBRNYS', 'user', 'user@gmail.com', 'user', 1, '2026-09-25 11:39:19', '2026-09-25 11:39:19');
+INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `email`, `role`, `is_active`, `session_token`, `session_user_agent`, `session_ip`, `session_last_activity`, `created_at`, `updated_at`) VALUES
+(1, 'admin', '$2y$12$FweEHtJtKYVaUW2nF1s0VuGkpsPi91k6.zcq5N4vJQAkNrCBFlLM.', 'System Administrator', 'admin@spccs.edu.ph', 'admin', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-08-27 14:37:29'),
+(2, 'teacher1', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Maria Santos', 'msantos@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
+(3, 'teacher2', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Jose Reyes', 'jreyes@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
+(4, 'teacher3', '$2y$10$YQOMt5MqutN2w3wxqmFTs.S35z3L56Z9UoYnc6.BuCvN7AF9Br/pG', 'Ana Cruz', 'acruz@spccs.edu.ph', 'teacher', 2, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-09-18 10:50:56'),
+(5, 'teacher4', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Pedro Dela Cruz', 'pdelacruz@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
+(6, 'teacher5', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Rosa Bautista', 'rbautista@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
+(7, 'teacher6', '$2y$10$XoFVxeGpFQ8esmsUSlsh4.e0EauN0YLq53uuvMIhrHg6SJDegurn2', 'Carlos Mendoza', 'cmendoza@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-09-18 10:52:48'),
+(8, 'teacher7', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Elena Torres', 'etorres@spccs.edu.ph', 'teacher', 2, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-09-18 10:47:31'),
+(10, 'user', '$2y$10$LBIe1VL7VbzFbAfTiJLMuesDQkhQSZcbv4cGw8oEJ6CwacySBRNYS', 'user', 'user@gmail.com', 'user', 1, NULL, NULL, NULL, NULL, '2026-09-25 11:39:19', '2026-09-25 11:39:19');
 
 --
 -- Indexes for dumped tables
@@ -441,7 +459,8 @@ ALTER TABLE `system_settings`
 --
 ALTER TABLE `users`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `username` (`username`);
+  ADD UNIQUE KEY `username` (`username`),
+  ADD UNIQUE KEY `uniq_session_token` (`session_token`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -451,7 +470,7 @@ ALTER TABLE `users`
 -- AUTO_INCREMENT for table `attendance`
 --
 ALTER TABLE `attendance`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `school_calendar`
@@ -469,7 +488,7 @@ ALTER TABLE `sections`
 -- AUTO_INCREMENT for table `sms_logs`
 --
 ALTER TABLE `sms_logs`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
 -- AUTO_INCREMENT for table `students`
