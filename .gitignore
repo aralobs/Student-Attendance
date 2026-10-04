@@ -3,6 +3,7 @@
 
 # Uploaded files (don't commit student photos/QR codes)
 /uploads/students/*
+/uploads/Downloads/*
 /qrcodes/*
 /storage/sessions/*
 
