@@ -31,6 +31,7 @@ $year  = max(2020, min(2100, (int)($_GET['year'] ?? date('Y'))));
 $schoolName    = getSetting('school_name')    ?? 'San Pablo City Central School';
 $schoolAddress = getSetting('school_address') ?? '';
 $schoolYear    = getSetting('school_year')    ?? '';
+$schoolHead    = getSetting('school_head')    ?? '';
 $monthLabel    = date('F Y', mktime(0, 0, 0, $month, 1, $year));
 $daysInMonth   = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 
@@ -40,7 +41,7 @@ $schoolDates = [];
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0, 0, 0, $month, $d, $year));
-    if (!in_array($dow, [6, 7]) && !isHolidayOrNoClass($ds)) {
+    if ($dow !== 6 && $dow !== 7 && !isHolidayOrNoClass($ds)) {
         $schoolDays++;
         $schoolDates[] = $ds;
     }
@@ -83,15 +84,9 @@ if (!empty($sectionIds)) {
     $placeholders = implode(',', array_fill(0, count($sectionIds), '?'));
 
     // --- 1. Enrollment + gender counts ---
-    $enrollStmt = $db->prepare("
-        SELECT section_id,
-               COUNT(*) AS total,
-               SUM(gender = 'Male')   AS male,
-               SUM(gender = 'Female') AS female
-        FROM students
-        WHERE is_active = 1 AND section_id IN ($placeholders)
-        GROUP BY section_id
-    ");
+    $enrollStmt = $db->prepare("SELECT section_id, COUNT(*) AS total,
+        SUM(gender = 'Male') AS male, SUM(gender = 'Female') AS female
+        FROM students WHERE is_active = 1 AND section_id IN ($placeholders) GROUP BY section_id");
     $enrollStmt->execute($sectionIds);
     $enrollBySection = [];
     foreach ($enrollStmt->fetchAll() as $r) {
@@ -373,7 +368,7 @@ include '../includes/sidebar.php';
                             $rowNum = 0;
                     ?>
                         <tr class="grade-row">
-                            <td colspan="19">
+                            <td colspan="28">
                                 <i class="bi bi-bookmark-fill me-2"></i><?= sanitize($currentGrade) ?>
                             </td>
                         </tr>
@@ -489,7 +484,7 @@ include '../includes/sidebar.php';
         <div class="signature-block">
             <div class="sig-line">
                 <div class="line"></div>
-                <div class="name principal-name">KRISTEL IRIS ESTRELLADO IGOT</div>
+                <div class="name principal-name"><?= sanitize($schoolHead) ?></div>
                 <div class="role">School Head / Principal</div>
                 <div class="role muted">Date: _______________</div>
             </div>
@@ -847,4 +842,5 @@ document.getElementById('sf4FilterForm')?.addEventListener('submit', function ()
 });
 </script>
 
+<?php include __DIR__ . '/sf4_print.php'; ?>
 <?php include '../includes/footer.php'; ?>

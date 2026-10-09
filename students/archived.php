@@ -125,11 +125,12 @@ include '../includes/sidebar.php';
                         <td>
                             <div class="d-flex gap-1">
                                 <?php if (isAdmin()): ?>
-                                <button class="btn btn-sm btn-outline-success"
-                                        onclick="confirmRestore(<?= $s['id'] ?>, '<?= sanitize($s['first_name'].' '.$s['last_name']) ?>')"
+                                <a href="restore.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-success"
+                                        data-confirm="Restore &quot;<?= sanitize($s['first_name'].' '.$s['last_name']) ?>&quot; to active students?"
+                                        data-confirm-title="Restore student" data-confirm-label="Restore" data-confirm-tone="success"
                                         title="Restore">
                                     <i class="bi bi-arrow-counterclockwise"></i>
-                                </button>
+                                </a>
                                 <?php else: ?>
                                 <span class="text-muted small">—</span>
                                 <?php endif; ?>
@@ -152,36 +153,4 @@ include '../includes/sidebar.php';
     <?php endif; ?>
 </div>
 
-<!-- Restore Confirmation Modal -->
-<div class="modal fade" id="restoreModal" tabstudents="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0">
-                <h5 class="modal-title text-success">
-                    <i class="bi bi-arrow-counterclockwise me-2"></i>Restore Student
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="mb-0">Restore <strong id="restoreStudentName"></strong> to active students?</p>
-            </div>
-            <div class="modal-footer border-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <a href="#" id="restoreConfirmBtn" class="btn btn-success btn-sm">Restore</a>
-            </div>
-        </div>
-    </div>
-</div>
-
-<?php
-$extraJS = <<<JS
-<script>
-function confirmRestore(id, name) {
-    document.getElementById('restoreStudentName').textContent = name;
-    document.getElementById('restoreConfirmBtn').href = 'restore.php?id=' + id;
-    new bootstrap.Modal(document.getElementById('restoreModal')).show();
-}
-</script>
-JS;
-include '../includes/footer.php';
-?>
+<?php include '../includes/footer.php'; ?>

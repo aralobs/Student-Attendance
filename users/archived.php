@@ -62,19 +62,21 @@ include '../includes/sidebar.php';
                         <td><?= sanitize($u['email'] ?? '—') ?></td>
                         <td>
                             <span class="badge bg-<?= $u['role'] === 'admin' ? 'warning text-dark' : 'info' ?>">
-                                <?= ucfirst($u['role']) ?>
+                                <?= roleLabel($u['role']) ?>
                             </span>
                         </td>
                         <td>
                             <div class="d-flex gap-1">
                                 <a href="restore.php?id=<?= $u['id'] ?>"
                                    class="btn btn-sm btn-outline-success"
-                                   onclick="return confirm('Restore this user? They will reappear in the active list.')">
+                                   data-confirm="Restore this user? They will reappear in the active list."
+                                   data-confirm-title="Restore user" data-confirm-label="Restore" data-confirm-tone="success">
                                     <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
                                 </a>
                                 <a href="delete.php?id=<?= $u['id'] ?>"
                                    class="btn btn-sm btn-outline-danger"
-                                   onclick="return confirm('PERMANENTLY delete this user? This cannot be undone.')">
+                                   data-confirm="PERMANENTLY delete this user? This cannot be undone."
+                                   data-confirm-title="Delete permanently user" data-confirm-label="Delete permanently" data-confirm-tone="danger">
                                     <i class="bi bi-trash"></i>
                                 </a>
                             </div>

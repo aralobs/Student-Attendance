@@ -3,7 +3,6 @@
 
 # Uploaded files (don't commit student photos/QR codes)
 /uploads/students/*
-/uploads/Downloads/*
 /qrcodes/*
 /storage/sessions/*
 
@@ -13,10 +12,12 @@
 !storage/sessions/.gitkeep
 
 # Environment / sensitive config
+/config/settings_key.php
 # config/database.php is safe to commit — it reads from environment variables
 # config/database.php
 
-# Temp/test files
+# Local utility scripts and database dumps
+# Keep automated tests in /tests/ tracked in Git.
 test_qr.php
 uppass.php
 genhash.php
@@ -35,3 +36,4 @@ error_log
 .vscode/
 .idea/
 *.swp
+

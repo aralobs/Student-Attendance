@@ -17,6 +17,7 @@ $grade     = trim($_GET['grade']    ?? '');
 $page      = max(1, (int)($_GET['page'] ?? 1));
 $perPage   = 15;
 $offset    = ($page - 1) * $perPage;
+$gradeSQL  = "COALESCE(NULLIF(s.grade_level, ''), sec.grade_level)";
 
 // Build query
 $where  = ['s.is_active = 1'];
@@ -40,25 +41,25 @@ if ($sy !== '') {
 }
 
 if ($grade !== '') {
-    $where[]  = "s.grade_level = ?";
+    $where[]  = "{$gradeSQL} = ?";
     $params[] = $grade;
 }
 
 $whereSQL = 'WHERE ' . implode(' AND ', $where);
 
 // Count
-$countStmt = $db->prepare("SELECT COUNT(*) FROM students s {$whereSQL}");
+$countStmt = $db->prepare("SELECT COUNT(*) FROM students s LEFT JOIN sections sec ON s.section_id = sec.id {$whereSQL}");
 $countStmt->execute($params);
 $total = $countStmt->fetchColumn();
 
 // Data
 $stmt = $db->prepare("
-    SELECT s.*, sec.section_name,
+    SELECT s.*, {$gradeSQL} AS grade_level, sec.section_name,
            (SELECT attendance_type FROM attendance WHERE student_id = s.id AND date = CURDATE() LIMIT 1) AS today_status
     FROM students s
     LEFT JOIN sections sec ON s.section_id = sec.id
     {$whereSQL}
-    ORDER BY s.grade_level, s.last_name, s.first_name
+    ORDER BY {$gradeSQL}, s.last_name, s.first_name
     LIMIT {$perPage} OFFSET {$offset}
 ");
 $stmt->execute($params);
@@ -287,11 +288,12 @@ include '../includes/sidebar.php';
                                 </a>
                                 <?php endif; ?>
                                 <?php if (isAdmin()): ?>
-                                <button type="button" class="btn btn-sm btn-outline-warning"
-                                        onclick="confirmArchive(<?= $s['id'] ?>, '<?= sanitize($s['first_name'].' '.$s['last_name']) ?>')"
+                                <a href="archive.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-warning"
+                                        data-confirm="Archive &quot;<?= sanitize($s['first_name'].' '.$s['last_name']) ?>&quot;? They will be moved to the archived list and can be restored later."
+                                        data-confirm-title="Archive student" data-confirm-label="Archive" data-confirm-tone="warning"
                                         title="Archive">
                                     <i class="bi bi-archive"></i>
-                                </button>
+                                </a>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -313,37 +315,9 @@ include '../includes/sidebar.php';
     <?php endif; ?>
 </div>
 
-<!-- Archive Confirmation Modal -->
-<div class="modal fade" id="archiveModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header border-0">
-                <h5 class="modal-title text-warning">
-                    <i class="bi bi-archive me-2"></i>Archive Student
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="mb-0">Are you sure you want to archive <strong id="archiveStudentName"></strong>?
-                They will be moved to the archived list and can be restored later.</p>
-            </div>
-            <div class="modal-footer border-0">
-                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-                <a href="#" id="archiveConfirmBtn" class="btn btn-warning btn-sm">Archive</a>
-            </div>
-        </div>
-    </div>
-</div>
-
 <?php
 $extraJS = <<<JS
 <script>
-function confirmArchive(id, name) {
-    document.getElementById('archiveStudentName').textContent = name;
-    document.getElementById('archiveConfirmBtn').href = 'archive.php?id=' + id;
-    new bootstrap.Modal(document.getElementById('archiveModal')).show();
-}
-
 // ---- Bulk selection ----
 const selectAll  = document.getElementById('selectAll');
 const bulkBar    = document.getElementById('bulkBar');
@@ -369,12 +343,12 @@ function clearSelection() {
     updateBulkBar();
 }
 
-function bulkAssignSection() {
+async function bulkAssignSection() {
     const sectionId = document.getElementById('bulkSection').value;
-    if (!sectionId) { alert('Please choose a section first.'); return; }
+    if (!sectionId) { showMessage('Please choose a section first.', { title: 'Choose a section' }); return; }
     const checked = document.querySelectorAll('.row-check:checked').length;
-    if (checked === 0) { alert('No students selected.'); return; }
-    if (!confirm('Assign ' + checked + ' student(s) to the selected section?')) return;
+    if (checked === 0) { showMessage('No students selected.', { title: 'Select students' }); return; }
+    if (!await showConfirm('Assign ' + checked + ' student(s) to the selected section?', { title: 'Assign section', confirmLabel: 'Assign' })) return;
 
     // Inject section id and submit
     const form = document.getElementById('bulkForm');

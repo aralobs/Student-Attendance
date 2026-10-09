@@ -7,7 +7,7 @@
  * Roles:
  *   - admin   : full access (Main, Manage, Reports, Admin)
  *   - teacher : Main, Manage, Reports (SF2 + SF4 only)
- *   - user    : Scanner only
+ *   - scanner_operator : Scanner only
  */
 
 // Current script + folder, resolved ONCE
@@ -237,8 +237,8 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 <div class="text-white fw-semibold" style="font-size:0.8rem; line-height:1.2">
                     <?= sanitize($currentUser['full_name']) ?>
                 </div>
-                <span class="badge bg-<?= isAdmin() ? 'warning' : (isUser() ? 'success' : 'info') ?> text-dark" style="font-size:0.65rem">
-                    <?= ucfirst($currentUser['role']) ?>
+                <span class="badge bg-<?= isAdmin() ? 'warning' : (isScannerOperator() ? 'success' : 'info') ?> text-dark" style="font-size:0.65rem">
+                    <?= roleLabel($currentUser['role']) ?>
                 </span>
             </div>
         </div>
@@ -249,8 +249,8 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
     <!-- Navigation -->
     <ul class="nav flex-column px-2 py-2">
 
-        <?php if (isUser()): ?>
-            <?php /* ─── USER (Scanner-only) MENU ─── */ ?>
+        <?php if (isScannerOperator()): ?>
+            <?php /* ─── SCANNER OPERATOR MENU ─── */ ?>
 
             <li class="nav-section-label">SCANNER</li>
 
@@ -381,11 +381,10 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
 
     <!-- Logout (pinned to bottom via margin-top:auto) -->
     <div class="sidebar-logout px-3 py-3">
-        <a href="<?= BASE_URL ?>logout.php"
-            class="btn btn-outline-danger btn-sm w-100"
-            onclick="return confirm('Are you sure you want to logout?')">
-            <i class="bi bi-box-arrow-right me-1"></i> Logout
-        </a>
+        <a href="<?= BASE_URL ?>logout.php" class="btn btn-outline-danger btn-sm w-100"
+               data-confirm="Are you sure you want to log out?" data-confirm-title="Log out" data-confirm-label="Log out">
+                <i class="bi bi-box-arrow-right me-1"></i> Logout
+            </a>
     </div>
 </nav>
 
@@ -393,18 +392,13 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
 <div class="main-content flex-grow-1">
     <!-- Top navbar -->
     <nav class="top-navbar navbar navbar-expand px-3 py-2">
-        <button class="btn btn-link text-dark p-0 me-3" id="sidebarToggle">
+        <button class="btn btn-link text-dark p-0 me-3 d-lg-none" id="sidebarToggle" type="button" aria-label="Open navigation">
             <i class="bi bi-list fs-5"></i>
         </button>
         <span class="text-muted small">
             <i class="bi bi-calendar3 me-1"></i>
             <?= date('l, F j, Y') ?>
         </span>
-        <div class="ms-auto d-flex align-items-center gap-2">
-            <span class="badge bg-success">
-                <i class="bi bi-circle-fill me-1" style="font-size:0.5rem"></i>Online
-            </span>
-        </div>
     </nav>
 
     <!-- Page content -->

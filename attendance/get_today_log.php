@@ -12,9 +12,11 @@ header('Content-Type: application/json');
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+require_once '../includes/attendance_finalizer.php';
 
 $db    = getDB();
 $today = date('Y-m-d');
+finalizeAttendanceAbsences($today);
 $now   = date('H:i:s');
 $user  = currentUser();
 
@@ -27,19 +29,19 @@ $params        = [$today];
 $role = strtolower($user['role'] ?? '');
 
 if ($role === 'teacher') {
-    // Only apply the filter if this teacher actually advises sections.
-    // If not assigned to any, fall back to showing everything so the
-    // log isn't silently empty.
     $check = $db->prepare("SELECT COUNT(*) FROM sections WHERE adviser_id = ? AND is_active = 1");
     $check->execute([$user['id']]);
-    $hasSections = (int)$check->fetchColumn() > 0;
-
-    if ($hasSections) {
-        $adviserFilter = 'AND sec.adviser_id = ?';
-        $params[]      = $user['id'];
+    if ((int)$check->fetchColumn() > 0) {
+        $adviserFilter = ' AND sec.adviser_id = ?';
+        $params[] = $user['id'];
     }
 }
 
+$scansOnly = ($_GET['scans_only'] ?? '') === '1';
+$scanFilter = $scansOnly ? 'AND (a.am_in IS NOT NULL OR a.am_out IS NOT NULL OR a.pm_in IS NOT NULL OR a.pm_out IS NOT NULL)' : '';
+$logOrder = $scansOnly
+    ? "GREATEST(COALESCE(a.am_in, '00:00:00'), COALESCE(a.am_out, '00:00:00'), COALESCE(a.pm_in, '00:00:00'), COALESCE(a.pm_out, '00:00:00')) DESC, a.id DESC"
+    : "FIELD(sec.grade_level, 'Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'), sec.section_name, s.last_name, s.first_name";
 $stmt = $db->prepare("
     SELECT
         s.id             AS student_id,
@@ -62,10 +64,8 @@ $stmt = $db->prepare("
       AND s.enrollment_status = 'active'
       AND sec.is_active = 1
       {$adviserFilter}
-    ORDER BY
-        FIELD(sec.grade_level, 'Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'),
-        sec.section_name,
-        s.last_name, s.first_name
+      {$scanFilter}
+    ORDER BY {$logOrder}
     LIMIT 200
 ");
 $stmt->execute($params);
@@ -80,20 +80,9 @@ foreach ($rows as $r) {
     $pmIn  = $r['pm_in'];
     $pmOut = $r['pm_out'];
 
-    // Determine if a window has closed and the student never scanned IN
-    $amAbsent = false;
-    $pmAbsent = false;
-
-    if (in_array($type, ['full_day', 'am_only'], true)) {
-        if (!$amIn && $r['am_out_end'] && $now > $r['am_out_end']) {
-            $amAbsent = true;
-        }
-    }
-    if (in_array($type, ['full_day', 'pm_only'], true)) {
-        if (!$pmIn && $r['pm_out_end'] && $now > $r['pm_out_end']) {
-            $pmAbsent = true;
-        }
-    }
+    // Closed-session absences have been persisted; manual statuses remain authoritative.
+    $amAbsent = ($r['am_status'] ?? '') === 'absent';
+    $pmAbsent = ($r['pm_status'] ?? '') === 'absent';
 
     // Late flags
     $amLate = $amIn && $r['am_late_threshold'] && $amIn > $r['am_late_threshold'];
@@ -135,8 +124,8 @@ foreach ($rows as $r) {
         'am_out'          => $amOut ? date('h:i A', strtotime($amOut)) : null,
         'pm_in'           => $pmIn  ? date('h:i A', strtotime($pmIn))  : null,
         'pm_out'          => $pmOut ? date('h:i A', strtotime($pmOut)) : null,
-        'am_status'       => $amAbsent ? 'absent' : ($amLate ? 'late' : ($amIn ? 'present' : null)),
-        'pm_status'       => $pmAbsent ? 'absent' : ($pmLate ? 'late' : ($pmIn ? 'present' : null)),
+        'am_status'       => $r['am_status'] ?? ($amLate ? 'late' : ($amIn ? 'present' : null)),
+        'pm_status'       => $r['pm_status'] ?? ($pmLate ? 'late' : ($pmIn ? 'present' : null)),
         'am_absent'       => $amAbsent,
         'pm_absent'       => $pmAbsent,
         'attendance_type' => $attendanceType,

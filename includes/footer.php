@@ -7,6 +7,25 @@
 </div><!-- /.main-content -->
 </div><!-- /.wrapper -->
 
+<!-- Shared confirmation and message dialog -->
+<div class="modal fade" id="actionModal" tabindex="-1" aria-labelledby="actionModalTitle" aria-describedby="actionModalMessage" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header border-0 pb-0">
+                <h5 class="modal-title" id="actionModalTitle">Confirm action</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0" id="actionModalMessage"></p>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-outline-secondary" id="actionModalCancel" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="actionModalConfirm">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Bootstrap 5 JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Chart.js -->

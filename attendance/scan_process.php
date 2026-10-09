@@ -12,6 +12,7 @@ header('Content-Type: application/json');
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/mail_helper.php';
+require_once '../includes/attendance_scan.php';
 requireLogin();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -83,145 +84,61 @@ if ($scheduleType === 'pm_only' && !$isPastNoon) {
 }
 
 // ── Existing attendance row ──────────────────────────────────
-$existStmt = $db->prepare("SELECT * FROM attendance WHERE student_id = ? AND date = ?");
-$existStmt->execute([$student['id'], $today]);
-$existing = $existStmt->fetch() ?: null;
-
-// ── 5-MINUTE ANTI-DOUBLE-SCAN LOCK ───────────────────────────
-// If this student already scanned within the last 5 minutes,
-// refuse politely without disclosing the cooldown duration.
-if ($existing) {
-    $recentTimes = array_filter([
-        $existing['am_in']  ?? null,
-        $existing['am_out'] ?? null,
-        $existing['pm_in']  ?? null,
-        $existing['pm_out'] ?? null,
-    ]);
-
-    if (!empty($recentTimes)) {
-        // Convert each stored 'HH:MM:SS' to a Unix timestamp on today's date
-        $latestTs = 0;
-        foreach ($recentTimes as $t) {
-            $ts = strtotime($today . ' ' . $t);
-            if ($ts > $latestTs) $latestTs = $ts;
-        }
-
-        if ($latestTs > 0 && (time() - $latestTs) < 300) {   // 300s = 5 minutes
-            echo json_encode([
-                'success' => false,
-                'message' => "You're already scanned",
-            ]);
-            exit;
-        }
-    }
-}
-
-// ── Section array for helpers ────────────────────────────────
+// Selection, cooldown and saving share the same student/date row lock.
 $section = [
-    'schedule_type'      => $student['schedule_type'],
-    'am_late_threshold'  => $student['am_late_threshold'],
-    'pm_late_threshold'  => $student['pm_late_threshold'],
+    'schedule_type'     => $student['schedule_type'],
+    'am_late_threshold' => $student['am_late_threshold'],
+    'pm_late_threshold' => $student['pm_late_threshold'],
 ];
-
-// ── Determine next event (TIME-AWARE) ────────────────────────
-$nextEvent = getNextAttendanceEvent($existing, $section, $now);
-
-if ($nextEvent === 'complete') {
-    echo json_encode([
-        'success' => false,
-        'message' => $student['first_name'] . ' ' . $student['last_name'] .
-                     ' has completed all attendance events for today.'
-    ]);
+try {
+    $scan = saveAttendanceScan($db, (int)$student['id'], $today, $section, (int)currentUser()['id']);
+} catch (Throwable $e) {
+    error_log('Attendance scan save failed: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Unable to record attendance. Please try again.']);
+    exit;
+}
+if (!$scan['success']) {
+    $message = !empty($scan['complete'])
+        ? $student['first_name'] . ' ' . $student['last_name'] . ' has completed all attendance events for today.'
+        : $scan['message'];
+    echo json_encode(['success' => false, 'message' => $message]);
     exit;
 }
 
-// ── Create today's row if missing ────────────────────────────
-$smsSent    = false;
-$emailSent  = false;
-$eventLabel = '';
-$smsType    = '';
-
-if (!$existing) {
-    $db->prepare("
-        INSERT INTO attendance
-            (student_id, date, attendance_type, recorded_by)
-        VALUES (?, ?, 'absent', ?)
-    ")->execute([$student['id'], $today, currentUser()['id']]);
-
-    $existStmt->execute([$student['id'], $today]);
-    $existing = $existStmt->fetch();
+$nextEvent = $scan['event'];
+$now = $scan['time'];
+$updated = $scan['record'];
+$attendType = $updated['attendance_type'];
+$events = [
+    'am_in'  => ['AM In', 'am_arrival', 'AM', true],
+    'am_out' => ['AM Out', 'am_departure', 'AM', false],
+    'pm_in'  => ['PM In', 'pm_arrival', 'PM', true],
+    'pm_out' => ['PM Out', 'pm_departure', 'PM', false],
+];
+[$eventLabel, $smsType, $session, $isArrival] = $events[$nextEvent];
+$smsSent = false;
+$emailSent = false;
+// Only the request that committed this new event reaches notification delivery.
+// Keep provider I/O outside the transaction. Never retry delivery automatically:
+// a provider may accept a message even when its response or log write fails.
+if (!empty($student['parent_contact'])) {
+    try {
+        $msg = buildSMSMessage('sms_' . $smsType . '_template', $student);
+        $smsSent = sendSMS($student['parent_contact'], $msg, $student['id'], $smsType);
+    } catch (Throwable $e) {
+        error_log('Attendance scan SMS failed: ' . $e->getMessage());
+    }
+}
+if (!empty($student['parent_email'])) {
+    try {
+        $emailSent = $isArrival ? sendArrivalEmail($student, $session) : sendDepartureEmail($student, $session);
+    } catch (Throwable $e) {
+        error_log('Attendance scan email failed: ' . $e->getMessage());
+    }
 }
 
-// ── Record the event ─────────────────────────────────────────
-switch ($nextEvent) {
-
-    case 'am_in':
-        $amStatus = getSessionStatus($now, 'am_late_threshold', $section);
-        $db->prepare("UPDATE attendance SET am_in = ?, am_status = ? WHERE id = ?")
-           ->execute([$now, $amStatus, $existing['id']]);
-        $eventLabel = 'AM In';
-        $smsType    = 'am_arrival';
-        if (!empty($student['parent_contact'])) {
-            $msg     = buildSMSMessage('sms_am_arrival_template', $student);
-            $smsSent = sendSMS($student['parent_contact'], $msg, $student['id'], 'am_arrival');
-        }
-        if (!empty($student['parent_email'])) {
-            $emailSent = sendArrivalEmail($student, 'AM');
-        }
-        break;
-
-    case 'am_out':
-        $db->prepare("UPDATE attendance SET am_out = ? WHERE id = ?")
-           ->execute([$now, $existing['id']]);
-        $eventLabel = 'AM Out';
-        $smsType    = 'am_departure';
-        if (!empty($student['parent_contact'])) {
-            $msg     = buildSMSMessage('sms_am_departure_template', $student);
-            $smsSent = sendSMS($student['parent_contact'], $msg, $student['id'], 'am_departure');
-        }
-        if (!empty($student['parent_email'])) {
-            $emailSent = sendDepartureEmail($student, 'AM');
-        }
-        break;
-
-    case 'pm_in':
-        $pmStatus = getSessionStatus($now, 'pm_late_threshold', $section);
-        $db->prepare("UPDATE attendance SET pm_in = ?, pm_status = ? WHERE id = ?")
-           ->execute([$now, $pmStatus, $existing['id']]);
-        $eventLabel = 'PM In';
-        $smsType    = 'pm_arrival';
-        if (!empty($student['parent_contact'])) {
-            $msg     = buildSMSMessage('sms_pm_arrival_template', $student);
-            $smsSent = sendSMS($student['parent_contact'], $msg, $student['id'], 'pm_arrival');
-        }
-        if (!empty($student['parent_email'])) {
-            $emailSent = sendArrivalEmail($student, 'PM');
-        }
-        break;
-
-    case 'pm_out':
-        $db->prepare("UPDATE attendance SET pm_out = ? WHERE id = ?")
-           ->execute([$now, $existing['id']]);
-        $eventLabel = 'PM Out';
-        $smsType    = 'pm_departure';
-        if (!empty($student['parent_contact'])) {
-            $msg     = buildSMSMessage('sms_pm_departure_template', $student);
-            $smsSent = sendSMS($student['parent_contact'], $msg, $student['id'], 'pm_departure');
-        }
-        if (!empty($student['parent_email'])) {
-            $emailSent = sendDepartureEmail($student, 'PM');
-        }
-        break;
-}
-
-// ── Recompute attendance_type ─────────────────────────────────
-$existStmt->execute([$student['id'], $today]);
-$updated    = $existStmt->fetch();
-$attendType = computeAttendanceType($updated, $section);
-$db->prepare("UPDATE attendance SET attendance_type = ? WHERE id = ?")
-   ->execute([$attendType, $existing['id']]);
-
-// ── Remaining events ─────────────────────────────────────────
+// Remaining events
 $remaining = [];
 if ($scheduleType !== 'pm_only' && empty($updated['am_in']))  $remaining[] = 'AM In';
 if ($scheduleType !== 'pm_only' && empty($updated['am_out'])) $remaining[] = 'AM Out';

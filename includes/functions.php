@@ -12,9 +12,10 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/settings_security.php';
 
 // Idle timeout in seconds for admin/teacher accounts (0 = disabled).
-// Scanner 'user' accounts are exempt so kiosks don't log themselves out.
+// Scanner 'scanner_operator' accounts are exempt so kiosks don't log themselves out.
 if (!defined('SESSION_IDLE_TIMEOUT')) define('SESSION_IDLE_TIMEOUT', 0);
 
 // ─── Anti-cache headers ─────────────────────────────────────
@@ -122,9 +123,12 @@ function checkSession(): ?string {
         return 'session_taken';
     }
 
+    // Refresh the role after account updates or a role migration.
+    $_SESSION['role'] = $row['role'];
+
     // Optional idle timeout (not for scanner kiosks)
     $idle = (int)($row['idle_seconds'] ?? 0);
-    if (SESSION_IDLE_TIMEOUT > 0 && $row['role'] !== 'user' && $idle > SESSION_IDLE_TIMEOUT) {
+    if (SESSION_IDLE_TIMEOUT > 0 && $row['role'] !== 'scanner_operator' && $idle > SESSION_IDLE_TIMEOUT) {
         return 'timeout';
     }
 
@@ -245,11 +249,15 @@ function currentUser() {
     ];
 }
 
-// ─── Scanner-user role ──────────────────────────────────────
+// ─── Scanner operator role ──────────────────────────────────────
 
-function isUser(): bool {
+function roleLabel(string $role): string {
+    return $role === 'scanner_operator' ? 'Scanner Operator' : ucfirst($role);
+}
+
+function isScannerOperator(): bool {
     startSession();
-    return isset($_SESSION['role']) && $_SESSION['role'] === 'user';
+    return isset($_SESSION['role']) && $_SESSION['role'] === 'scanner_operator';
 }
 
 function isTeacher(): bool {
@@ -257,9 +265,9 @@ function isTeacher(): bool {
     return isset($_SESSION['role']) && $_SESSION['role'] === 'teacher';
 }
 
-function requireUser(): void {
+function requireScannerOperator(): void {
     requireLogin();
-    if (!isUser()) {
+    if (!isScannerOperator()) {
         header('Location: ' . BASE_URL . 'dashboard.php');
         exit;
     }
@@ -267,7 +275,7 @@ function requireUser(): void {
 
 function requireScannerAccess(): void {
     requireLogin();
-    if (!isAdmin() && !isTeacher() && !isUser()) {
+    if (!isAdmin() && !isTeacher() && !isScannerOperator()) {
         header('Location: ' . BASE_URL . 'index.php');
         exit;
     }
@@ -275,14 +283,14 @@ function requireScannerAccess(): void {
 
 function requireStaff(): void {
     requireLogin();
-    if (isUser()) {
+    if (isScannerOperator()) {
         header('Location: ' . BASE_URL . 'attendance/scanner.php');
         exit;
     }
 }
 
 function isKioskMode(): bool {
-    return isUser();
+    return isScannerOperator();
 }
 
 // ─── Teacher section access ──────────────────────────────────
@@ -359,10 +367,12 @@ function getSetting(string $key): ?string {
     $stmt = $db->prepare("SELECT setting_value FROM system_settings WHERE setting_key = ?");
     $stmt->execute([$key]);
     $row = $stmt->fetch();
-    return $row ? $row['setting_value'] : null;
+    if (!$row || $row['setting_value'] === null) return null;
+    return isSecretSetting($key) ? decryptSettingSecret($row['setting_value']) : $row['setting_value'];
 }
 
 function updateSetting(string $key, string $value) {
+    if (isSecretSetting($key)) $value = encryptSettingSecret($value);
     $db   = getDB();
     $stmt = $db->prepare("INSERT INTO system_settings (setting_key, setting_value)
                           VALUES (?, ?)

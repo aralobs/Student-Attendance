@@ -19,6 +19,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($username))  $errors[] = 'Username required.';
     if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters.';
     if ($password !== $confirm) $errors[] = 'Passwords do not match.';
+    if (!in_array($role, ['admin', 'teacher', 'scanner_operator'], true)) {
+        $errors[] = 'Invalid role selected.';
+    }
 
     if (empty($errors)) {
         $check = $db->prepare("SELECT id FROM users WHERE username = ?");
@@ -73,6 +76,7 @@ include '../includes/sidebar.php';
                     <select name="role" class="form-select">
                         <option value="teacher" <?= ($_POST['role'] ?? '') === 'teacher' ? 'selected' : '' ?>>Teacher</option>
                         <option value="admin"   <?= ($_POST['role'] ?? '') === 'admin'   ? 'selected' : '' ?>>Admin</option>
+                        <option value="scanner_operator"    <?= ($_POST['role'] ?? '') === 'scanner_operator'    ? 'selected' : '' ?>>Scanner Operator</option>
                     </select>
                 </div>
             </div>

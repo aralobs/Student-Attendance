@@ -66,13 +66,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // ── Confirm delete helper ──────────────────────────────────
-
-    window.confirmAction = function (message, url) {
-        if (confirm(message)) {
-            window.location.href = url;
-        }
-    };
 
     // ── Form validation styling ────────────────────────────────
 
@@ -110,7 +103,83 @@ document.addEventListener('DOMContentLoaded', function () {
 
 });
 
-// ── Global AJAX helper ─────────────────────────────────────────
+
+// Escape, backdrop, close, and Cancel all leave an action unconfirmed.
+const actionDialogQueue = [];
+let actionDialogOpen = false;
+
+function showActionDialog(message, options = {}, messageOnly = false) {
+    return new Promise(resolve => {
+        actionDialogQueue.push({ message, options, messageOnly, resolve, trigger: document.activeElement });
+        openNextActionDialog();
+    });
+}
+
+function openNextActionDialog() {
+    if (actionDialogOpen || actionDialogQueue.length === 0) return;
+    actionDialogOpen = true;
+    const { message, options, messageOnly, resolve, trigger } = actionDialogQueue.shift();
+    const element = document.getElementById('actionModal');
+    const confirmButton = document.getElementById('actionModalConfirm');
+    const cancelButton = document.getElementById('actionModalCancel');
+    const modal = bootstrap.Modal.getOrCreateInstance(element);
+    const tone = ['primary', 'warning', 'danger', 'success'].includes(options.tone) ? options.tone : 'primary';
+    let confirmed = false;
+
+    document.getElementById('actionModalTitle').textContent = options.title || (messageOnly ? 'Notice' : 'Confirm action');
+    document.getElementById('actionModalMessage').textContent = message;
+    confirmButton.textContent = messageOnly ? 'OK' : (options.confirmLabel || 'Confirm');
+    confirmButton.className = 'btn btn-' + tone;
+    cancelButton.hidden = messageOnly;
+    confirmButton.disabled = false;
+
+    function accept() {
+        confirmed = true;
+        confirmButton.disabled = true;
+        modal.hide();
+    }
+    confirmButton.addEventListener('click', accept);
+    element.addEventListener('shown.bs.modal', () => {
+        (messageOnly ? confirmButton : cancelButton).focus();
+    }, { once: true });
+    element.addEventListener('hidden.bs.modal', () => {
+        confirmButton.removeEventListener('click', accept);
+        if (trigger?.isConnected) trigger.focus();
+        actionDialogOpen = false;
+        resolve(confirmed);
+        openNextActionDialog();
+    }, { once: true });
+    modal.show();
+}
+
+function showConfirm(message, options = {}) {
+    return showActionDialog(message, options);
+}
+
+function showMessage(message, options = {}) {
+    return showActionDialog(message, options, true);
+}
+
+async function confirmAction(message, url, options = {}) {
+    if (await showConfirm(message, options)) window.location.href = url;
+}
+
+document.addEventListener('click', async event => {
+    const link = event.target.closest('a[data-confirm]');
+    if (!link || event.defaultPrevented) return;
+    event.preventDefault();
+    if (link.dataset.confirmPending) return;
+    link.dataset.confirmPending = 'true';
+    try {
+        await confirmAction(link.dataset.confirm, link.href, {
+            title: link.dataset.confirmTitle,
+            confirmLabel: link.dataset.confirmLabel,
+            tone: link.dataset.confirmTone
+        });
+    } finally {
+        delete link.dataset.confirmPending;
+    }
+});
 
 async function ajaxPost(url, data) {
     try {

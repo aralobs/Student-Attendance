@@ -366,7 +366,7 @@ CREATE TABLE `users` (
   `password` varchar(255) NOT NULL,
   `full_name` varchar(100) NOT NULL,
   `email` varchar(100) DEFAULT NULL,
-  `role` enum('admin','teacher','user') NOT NULL DEFAULT 'teacher',
+  `role` enum('admin','teacher','scanner_operator') NOT NULL DEFAULT 'teacher',
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `session_token` varchar(255) DEFAULT NULL,
   `session_user_agent` varchar(255) DEFAULT NULL,
@@ -389,7 +389,7 @@ INSERT INTO `users` (`id`, `username`, `password`, `full_name`, `email`, `role`,
 (6, 'teacher5', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Rosa Bautista', 'rbautista@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-08-27 14:21:13'),
 (7, 'teacher6', '$2y$10$XoFVxeGpFQ8esmsUSlsh4.e0EauN0YLq53uuvMIhrHg6SJDegurn2', 'Carlos Mendoza', 'cmendoza@spccs.edu.ph', 'teacher', 1, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-09-18 10:52:48'),
 (8, 'teacher7', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Elena Torres', 'etorres@spccs.edu.ph', 'teacher', 2, NULL, NULL, NULL, NULL, '2026-08-27 14:21:13', '2026-09-18 10:47:31'),
-(10, 'user', '$2y$10$LBIe1VL7VbzFbAfTiJLMuesDQkhQSZcbv4cGw8oEJ6CwacySBRNYS', 'user', 'user@gmail.com', 'user', 1, NULL, NULL, NULL, NULL, '2026-09-25 11:39:19', '2026-09-25 11:39:19');
+(10, 'user', '$2y$10$LBIe1VL7VbzFbAfTiJLMuesDQkhQSZcbv4cGw8oEJ6CwacySBRNYS', 'user', 'user@gmail.com', 'scanner_operator', 1, NULL, NULL, NULL, NULL, '2026-09-25 11:39:19', '2026-09-25 11:39:19');
 
 --
 -- Indexes for dumped tables

@@ -13,6 +13,8 @@ $db        = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $keys = [
         'school_name',
+        'school_id',
+        'school_head',
         'school_address',
         'school_year',
         'grade_level',
@@ -34,13 +36,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'mail_from_email',
         'email_notifications'
     ];
-    foreach ($keys as $key) {
-        if (isset($_POST[$key])) {
-            updateSetting($key, trim($_POST[$key]));
+    try {
+        if (!validSettingsCsrf($_POST['csrf_token'] ?? null)) {
+            throw new InvalidArgumentException('Please reload Settings and try again.');
+        }
+        foreach ($keys as $key) {
+            if (isset($_POST[$key]) && !is_string($_POST[$key])) {
+                throw new InvalidArgumentException('Invalid settings value.');
+            }
+        }
+        if (trim($_POST['school_name'] ?? '') === '') {
+            throw new InvalidArgumentException('Please enter the school name.');
+        }
+        foreach (['school_name' => 255, 'school_id' => 30, 'school_head' => 200] as $key => $maxLength) {
+            if (mb_strlen(trim($_POST[$key] ?? ''), 'UTF-8') > $maxLength) {
+                throw new InvalidArgumentException('School information exceeds the allowed length.');
+            }
+        }
+        $db->beginTransaction();
+        foreach ($keys as $key) {
+            if (isSecretSetting($key)) {
+                $replacement = trim($_POST[$key] ?? '');
+                if ($replacement !== '') {
+                    updateSetting($key, $replacement);
+                } else {
+                    // Preserve blank fields and encrypt any credentials saved by older versions.
+                    $stored = $db->prepare('SELECT setting_value FROM system_settings WHERE setting_key = ?');
+                    $stored->execute([$key]);
+                    $oldValue = $stored->fetchColumn();
+                    if (is_string($oldValue) && $oldValue !== '' && strncmp($oldValue, 'enc:v1:', 7) !== 0) {
+                        updateSetting($key, $oldValue);
+                    }
+                }
+                continue;
+            }
+            if (isset($_POST[$key])) {
+                updateSetting($key, trim($_POST[$key]));
+            }
+        }
+        updateSetting('email_notifications', isset($_POST['email_notifications']) ? '1' : '0');
+        $db->commit();
+        setFlash('success', 'Settings saved successfully.');
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        if ($e instanceof InvalidArgumentException) {
+            setFlash('danger', $e->getMessage());
+        } else {
+            error_log('Settings save failed: ' . $e->getMessage());
+            setFlash('danger', 'Settings could not be saved. Please try again.');
         }
     }
-    setFlash('success', 'Settings saved successfully.');
-    header('Location: index.php');
+    header('Location: settings.php');
     exit;
 }
 
@@ -48,8 +96,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $settings = [];
 $rows = $db->query("SELECT setting_key, setting_value FROM system_settings")->fetchAll();
 foreach ($rows as $row) {
-    $settings[$row['setting_key']] = $row['setting_value'];
+    $settings[$row['setting_key']] = isSecretSetting($row['setting_key'])
+        ? ($row['setting_value'] !== null && $row['setting_value'] !== '') : $row['setting_value'];
 }
+unset($rows, $row);
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
@@ -67,8 +117,72 @@ include '../includes/sidebar.php';
 </div>
 
 <form method="POST">
+    <input type="hidden" name="csrf_token" id="settingsCsrf" value="<?= htmlspecialchars(settingsCsrfToken()) ?>">
     <div class="row g-4">
 
+
+        <!-- School Information -->
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-building me-2 text-primary"></i>School Information
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small mb-3">These details are saved for school reports, including SF2 and SF4.</p>
+                    <div class="row g-3 mb-4">
+                        <div class="col-lg-6">
+                            <label for="schoolName" class="form-label">School Name <span class="text-danger">*</span></label>
+                            <input type="text" id="schoolName" name="school_name" class="form-control"
+                                maxlength="255" required autocomplete="organization"
+                                value="<?= htmlspecialchars($settings['school_name'] ?? '') ?>">
+                        </div>
+                        <div class="col-lg-2 col-md-4">
+                            <label for="schoolId" class="form-label">School ID</label>
+                            <input type="text" id="schoolId" name="school_id" class="form-control"
+                                maxlength="30" placeholder="Enter school ID"
+                                value="<?= htmlspecialchars($settings['school_id'] ?? '') ?>">
+                        </div>
+                        <div class="col-lg-4 col-md-8">
+                            <label for="schoolHead" class="form-label">Current Principal / School Head</label>
+                            <input type="text" id="schoolHead" name="school_head" class="form-control"
+                                maxlength="200" placeholder="Enter full name"
+                                value="<?= htmlspecialchars($settings['school_head'] ?? '') ?>">
+                        </div>
+                        <div class="col-md-8">
+                            <label for="schoolAddress" class="form-label">School Address</label>
+                            <input type="text" id="schoolAddress" name="school_address" class="form-control"
+                                value="<?= htmlspecialchars($settings['school_address'] ?? '') ?>">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="schoolYear" class="form-label">School Year</label>
+                            <input type="text" id="schoolYear" name="school_year" class="form-control"
+                                placeholder="2026-2027"
+                                value="<?= htmlspecialchars($settings['school_year'] ?? '') ?>">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">School Logo</label>
+                        <div class="d-flex align-items-center gap-3">
+                            <img src="<?= BASE_URL ?>assets/img/school_logo.png"
+                                style="width:60px;height:60px;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;padding:4px"
+                                onerror="this.style.display='none'"
+                                id="logoPreview"
+                                alt="School Logo">
+                            <div>
+                                <label for="logoUpload" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-upload me-1"></i>Upload Logo (PNG/JPG)
+                                </label>
+                                <input type="file" id="logoUpload" accept="image/png,image/jpeg" class="d-none"
+                                    onchange="uploadLogo(this)">
+                                <div class="text-muted small mt-1">
+                                    Recommended: 960×960px PNG. Used in SF2 and SF4 reports.
+                </div>
+            </div>
+        </div>
+    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- UniSMS Settings -->
         <div class="col-12">
@@ -93,7 +207,8 @@ include '../includes/sidebar.php';
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-8">
-                            <label class="form-label">UniSMS Secret Key</label>
+                            <label for="apiKeyInput" class="form-label"><?= !empty($settings['unisms_api_key']) ? 'Replace API key' : 'UniSMS Secret Key' ?></label>
+                            <p class="small text-muted mb-2"><?= !empty($settings['unisms_api_key']) ? 'SMS key configured. Send a test SMS to check the connection. Leave this field blank to keep the saved key.' : 'Paste your UniSMS Secret Key here, then click Save All Settings.' ?></p>
                             <div class="input-group">
                                 <span class="input-group-text bg-light">
                                     <i class="bi bi-key text-muted"></i>
@@ -103,7 +218,8 @@ include '../includes/sidebar.php';
                                     id="apiKeyInput"
                                     class="form-control font-monospace"
                                     placeholder="sk_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                                    value="<?= htmlspecialchars($settings['unisms_api_key'] ?? '') ?>">
+                                    autocomplete="new-password"
+                                    value="">
                                 <button type="button"
                                     class="btn btn-outline-secondary"
                                     onclick="toggleField('apiKeyInput','apiKeyEye')">
@@ -123,6 +239,7 @@ include '../includes/sidebar.php';
 
                     <!-- Test SMS -->
                     <div class="mb-4">
+                        <p class="small text-muted">Tests use saved settings. Save any changes before testing.</p>
                         <button type="button" class="btn btn-sm btn-outline-success"
                             onclick="testSMS()">
                             <i class="bi bi-send me-1"></i>Send Test SMS
@@ -204,7 +321,8 @@ include '../includes/sidebar.php';
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Gmail App Password</label>
+                            <label for="mailPassInput" class="form-label"><?= !empty($settings['mail_password']) ? 'Replace Gmail App Password' : 'Gmail App Password' ?></label>
+                            <p class="small text-muted mb-2"><?= !empty($settings['mail_password']) ? 'Email password configured. Leave this field blank to keep the saved password.' : 'Paste your Gmail App Password, then click Save All Settings.' ?></p>
                             <div class="input-group">
                                 <span class="input-group-text bg-light">
                                     <i class="bi bi-shield-lock text-muted"></i>
@@ -214,7 +332,8 @@ include '../includes/sidebar.php';
                                     id="mailPassInput"
                                     class="form-control font-monospace"
                                     placeholder="xxxx xxxx xxxx xxxx"
-                                    value="<?= htmlspecialchars($settings['mail_password'] ?? '') ?>">
+                                    autocomplete="new-password"
+                                    value="">
                                 <button type="button"
                                     class="btn btn-outline-secondary"
                                     onclick="toggleField('mailPassInput','mailPassEye')">
@@ -258,6 +377,7 @@ include '../includes/sidebar.php';
 
                     <!-- Test Email -->
                     <div class="mt-3">
+                        <p class="small text-muted">Tests use saved settings. Save any changes before testing.</p>
                         <button type="button" class="btn btn-sm btn-outline-success"
                             onclick="testEmail()">
                             <i class="bi bi-envelope me-1"></i>Send Test Email
@@ -282,26 +402,6 @@ include '../includes/sidebar.php';
 
     </div>
 
-    <div class="mb-3">
-        <label class="form-label">School Logo</label>
-        <div class="d-flex align-items-center gap-3">
-            <img src="<?= BASE_URL ?>assets/img/school_logo.png"
-                style="width:60px;height:60px;object-fit:contain;border:1px solid #e5e7eb;border-radius:8px;padding:4px"
-                onerror="this.style.display='none'"
-                id="logoPreview"
-                alt="School Logo">
-            <div>
-                <label for="logoUpload" class="btn btn-sm btn-outline-primary">
-                    <i class="bi bi-upload me-1"></i>Upload Logo (PNG/JPG)
-                </label>
-                <input type="file" id="logoUpload" accept="image/*" class="d-none"
-                    onchange="uploadLogo(this)">
-                <div class="text-muted small mt-1">
-                    Recommended: 960×960px PNG. Used in SF2 and SF4 reports.
-                </div>
-            </div>
-        </div>
-    </div>
 </form>
 
 <?php
@@ -336,19 +436,18 @@ async function testSMS() {
         const res  = await fetch('test_sms.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'number=' + encodeURIComponent(number)
+            body: new URLSearchParams({number, csrf_token: document.getElementById('settingsCsrf').value})
         });
         const text = await res.text();
         try {
             const data = JSON.parse(text);
-            result.innerHTML = data.success
-                ? '<span class="text-success"><i class="bi bi-check-circle me-1"></i>SMS sent successfully!</span>'
-                : '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + data.message + '</span>';
+            result.className = 'ms-2 small ' + (data.success ? 'text-success' : 'text-danger');
+            result.textContent = data.success ? 'SMS sent successfully!' : data.message;
         } catch (e) {
-            result.innerHTML = '<span class="text-danger">Unexpected response: ' + text.substring(0, 100) + '</span>';
+            result.textContent = 'Could not send the test. Reload Settings and try again.';
         }
     } catch (e) {
-        result.innerHTML = '<span class="text-danger">Network error: ' + e.message + '</span>';
+        result.textContent = 'Network error. Please try again.';
     }
 }
 
@@ -368,19 +467,18 @@ async function testEmail() {
         const res  = await fetch('test_email.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: 'email=' + encodeURIComponent(email)
+            body: new URLSearchParams({email, csrf_token: document.getElementById('settingsCsrf').value})
         });
         const text = await res.text();
         try {
             const data = JSON.parse(text);
-            result.innerHTML = data.success
-                ? '<span class="text-success"><i class="bi bi-check-circle me-1"></i>Email sent! Check your inbox.</span>'
-                : '<span class="text-danger"><i class="bi bi-x-circle me-1"></i>' + data.message + '</span>';
+            result.className = 'ms-2 small ' + (data.success ? 'text-success' : 'text-danger');
+            result.textContent = data.success ? 'Email sent! Check your inbox.' : data.message;
         } catch (e) {
-            result.innerHTML = '<span class="text-danger">Unexpected response: ' + text.substring(0, 100) + '</span>';
+            result.textContent = 'Could not send the test. Reload Settings and try again.';
         }
     } catch (e) {
-        result.innerHTML = '<span class="text-danger">Network error: ' + e.message + '</span>';
+        result.textContent = 'Network error. Please try again.';
     }
 }
 
@@ -389,6 +487,7 @@ async function uploadLogo(input) {
 
     const formData = new FormData();
     formData.append('logo', input.files[0]);
+    formData.append('csrf_token', document.getElementById('settingsCsrf').value);
 
     try {
         const res  = await fetch('upload_logo.php', {
@@ -400,12 +499,12 @@ async function uploadLogo(input) {
             document.getElementById('logoPreview').src =
                 data.url + '?v=' + Date.now();
             document.getElementById('logoPreview').style.display = '';
-            alert('Logo uploaded successfully!');
+            showMessage('Logo uploaded successfully!', { title: 'Logo uploaded', tone: 'success' });
         } else {
-            alert('Upload failed: ' + data.message);
+            showMessage('Upload failed: ' + data.message, { title: 'Upload failed' });
         }
     } catch (e) {
-        alert('Network error uploading logo.');
+        showMessage('Network error uploading logo. Please try again.', { title: 'Upload failed' });
     }
 }
 </script>

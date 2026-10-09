@@ -136,7 +136,8 @@ include '../includes/sidebar.php';
                                     <a href="restore.php?id=<?= $s['id'] ?>"
                                        class="btn btn-sm btn-outline-success"
                                        title="Restore"
-                                       onclick="return confirm('Restore section \'<?= sanitize($s['section_name']) ?>\'?')">
+                                       data-confirm="Restore section &quot;<?= sanitize($s['section_name']) ?>&quot;?"
+                                       data-confirm-title="Restore section" data-confirm-label="Restore" data-confirm-tone="success">
                                         <i class="bi bi-arrow-counterclockwise"></i>
                                     </a>
                                 <?php else: ?>
@@ -148,7 +149,8 @@ include '../includes/sidebar.php';
                                     <a href="archive.php?id=<?= $s['id'] ?>"
                                        class="btn btn-sm btn-outline-warning"
                                        title="Archive"
-                                       onclick="return confirm('Archive section \'<?= sanitize($s['section_name']) ?>\'?')">
+                                       data-confirm="Archive section &quot;<?= sanitize($s['section_name']) ?>&quot;?"
+                                       data-confirm-title="Archive section" data-confirm-label="Archive" data-confirm-tone="warning">
                                         <i class="bi bi-archive"></i>
                                     </a>
                                 <?php endif; ?>

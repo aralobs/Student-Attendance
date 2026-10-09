@@ -51,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $errors[] = 'Invalid email address.';
     }
-    if (!in_array($role, ['admin', 'teacher', 'user'], true)) {
+    if (!in_array($role, ['admin', 'teacher', 'scanner_operator'], true)) {
         $errors[] = 'Invalid role selected.';
     }
     if (!in_array($is_active, [0, 1], true)) {
@@ -182,9 +182,9 @@ include '../includes/sidebar.php';
                 <div class="col-md-6">
                     <label class="form-label">Role <span class="text-danger">*</span></label>
                     <select name="role" class="form-select" required>
-                        <?php foreach (['admin', 'teacher', 'user'] as $r): ?>
+                        <?php foreach (['admin', 'teacher', 'scanner_operator'] as $r): ?>
                             <option value="<?= $r ?>" <?= $user['role'] === $r ? 'selected' : '' ?>>
-                                <?= ucfirst($r) ?>
+                                <?= roleLabel($r) ?>
                             </option>
                         <?php endforeach; ?>
                     </select>

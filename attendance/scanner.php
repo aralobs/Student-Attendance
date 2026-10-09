@@ -177,7 +177,7 @@ include '../includes/sidebar.php';
 </div>
 
 <?php
-$extraJS = <<<'JSEOF'
+$extraJS = '<script>const scannerContext = ' . json_encode(['user_id' => (int)currentUser()['id'], 'date' => $today]) . ';</script>' . <<<'JSEOF'
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 let qrScanner  = null;
@@ -185,6 +185,31 @@ let scanCount  = 0;
 let cooldown   = false;
 let lastToken  = '';
 let lastScannedId = null;
+const lastScanStorageKey = `attendance_last_scan_${scannerContext.user_id}`;
+
+function rememberLastScan(data) {
+    try {
+        localStorage.setItem(lastScanStorageKey, JSON.stringify({date: scannerContext.date, data}));
+    } catch (error) {
+        console.warn('Could not remember last scan:', error);
+    }
+}
+
+function restoreLastScan() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(lastScanStorageKey) || 'null');
+        if (!saved) return;
+        if (saved.date !== scannerContext.date) {
+            localStorage.removeItem(lastScanStorageKey);
+            return;
+        }
+        if (saved.data?.success && saved.data.student_id && ['am_in', 'am_out', 'pm_in', 'pm_out'].includes(saved.data.event)) {
+            renderScanResult(saved.data);
+        }
+    } catch (error) {
+        console.warn('Could not restore last scan:', error);
+    }
+}
 
 // ── Scanner lifecycle ──────────────────────────────────────
 
@@ -276,25 +301,11 @@ function submitManual() {
 
 // ── Core processor ────────────────────────────────────────
 
-async function processToken(token) {
-    showResult('info', '⏳ Processing...', `<code>${token}</code>`);
-
-    try {
-        const res  = await fetch('scan_process.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `token=${encodeURIComponent(token)}`
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        if (data.success) {
-            scanCount++;
-            document.getElementById('scanCount').textContent = scanCount;
-            beep(true);
-
-            if (data.student_id) lastScannedId = data.student_id;
-
+function renderScanResult(data) {
+            const escapeText = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+            data = {...data};
+            for (const field of ['student', 'grade', 'section', 'time', 'am_in', 'am_out', 'pm_in', 'pm_out']) data[field] = escapeText(data[field]);
+            data.remaining = Array.isArray(data.remaining) ? data.remaining.map(escapeText) : [];
             const colors = {
                 am_in:  { bg: '#d1fae5', border: '#10b981', icon: '☀️', label: 'AM In'  },
                 am_out: { bg: '#fef3c7', border: '#f59e0b', icon: '🌤️', label: 'AM Out' },
@@ -364,15 +375,34 @@ async function processToken(token) {
                             ${remainingHtml}
                             <div class="mt-2 small">
                                 <i class="bi bi-chat-dots me-1"></i>
-                                SMS: ${data.sms_sent ? '<span class="text-success">Sent</span>' : '<span class="text-muted">—</span>'}
+                                SMS: ${data.sms_sent ? '<span class="text-muted">Sent</span>' : '<span class="text-muted">—</span>'}
                                 &nbsp;|&nbsp;
                                 <i class="bi bi-envelope me-1"></i>
-                                Email: ${data.email_sent ? '<span class="text-success">Sent</span>' : '<span class="text-muted">—</span>'}
+                                Email: ${data.email_sent ? '<span class="text-muted">Sent</span>' : '<span class="text-muted">—</span>'}
                             </div>
                         </div>
                     </div>
                 </div>`;
 
+}
+
+async function processToken(token) {
+    showResult('info', 'Processing...', '');
+    try {
+        const res = await fetch('scan_process.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `token=${encodeURIComponent(token)}`
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (data.success) {
+            scanCount++;
+            document.getElementById('scanCount').textContent = scanCount;
+            beep(true);
+            if (data.student_id) lastScannedId = data.student_id;
+            renderScanResult(data);
+            rememberLastScan(data);
             refreshLog();
         } else {
             // Soft "already scanned" handling — no duration disclosed
@@ -402,7 +432,7 @@ async function refreshLog() {
     const tbody = document.getElementById('logBody');
 
     try {
-        const res = await fetch('get_today_log.php');
+        const res = await fetch('get_today_log.php?scans_only=1');
 
         if (!res.ok) {
             throw new Error(`HTTP ${res.status} ${res.statusText}`);
@@ -422,7 +452,7 @@ async function refreshLog() {
         }
 
         if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">No students</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">No scans today</td></tr>`;
             return;
         }
 
@@ -546,6 +576,7 @@ function beep(success) {
 // ── Init ─────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+    restoreLastScan();
     const manualInput = document.getElementById('manualInput');
     if (manualInput) {
         manualInput.focus();

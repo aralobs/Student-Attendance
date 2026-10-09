@@ -80,11 +80,11 @@ foreach (getGradeLevels() as $grade) {
             COUNT(a.id)                                      AS total,
             SUM(a.attendance_type IN ('full_day','partial')) AS attended
         FROM sections sec
-        LEFT JOIN students s  ON s.section_id  = sec.id AND s.is_active = 1
+        LEFT JOIN students s ON s.section_id  = sec.id AND s.is_active = 1
         LEFT JOIN attendance a ON a.student_id = s.id AND YEAR(a.date) = ?
-        WHERE sec.grade_level = ?
+        WHERE sec.grade_level = ? {$sectionFilter}
     ");
-    $stmt->execute([$year, $grade]);
+    $stmt->execute(array_merge([$year, $grade], $sectionParams));
     $row = $stmt->fetch();
     $gradeRates[$grade] = [
         'total'    => (int)($row['total']    ?? 0),
@@ -269,7 +269,6 @@ include '../includes/sidebar.php';
                         <option value="full_day">Full Day</option>
                         <option value="partial">Partial</option>
                         <option value="absent">Absent</option>
-                        <option value="pending">Pending</option>
                     </select>
                     <input type="text"
                            id="todayLogSearch"
@@ -312,8 +311,8 @@ include '../includes/sidebar.php';
                             </div>
                             <div class="col-6">
                                 <div class="border rounded p-2 text-center">
-                                    <div class="text-muted small text-uppercase fw-600">Pending</div>
-                                    <div class="fw-bold fs-5 text-secondary" id="todayStatPending">0</div>
+                                    <div class="text-muted small text-uppercase fw-600">Scanned</div>
+                                    <div class="fw-bold fs-5 text-secondary" id="todayStatScanned">0</div>
                                 </div>
                             </div>
                         </div>
@@ -330,12 +329,13 @@ include '../includes/sidebar.php';
                             <th class="text-center">AM Out</th>
                             <th class="text-center">PM In</th>
                             <th class="text-center">PM Out</th>
+                            <th>Last Event</th>
                             <th class="text-center">Type</th>
                         </tr>
                     </thead>
                     <tbody id="todayLogBody">
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
+                            <td colspan="7" class="text-center text-muted py-4">
                                 <span class="spinner-border spinner-border-sm me-2"></span>
                                 Loading today's log...
                             </td>
@@ -345,7 +345,7 @@ include '../includes/sidebar.php';
             </div>
             <div class="card-footer text-muted small d-flex justify-content-between">
                 <span id="todayLogUpdated">—</span>
-                <span>Showing all students recorded today.</span>
+                <span>Showing students scanned today.</span>
             </div>
         </div>
     </div>
@@ -551,7 +551,7 @@ $extraJS = <<<JS
     const statFull    = document.getElementById('todayStatFull');
     const statPartial = document.getElementById('todayStatPartial');
     const statAbsent  = document.getElementById('todayStatAbsent');
-    const statPending = document.getElementById('todayStatPending');
+    const statScanned = document.getElementById('todayStatScanned');
     const chartCanvas = document.getElementById('todayLogChart');
 
     // Key Metrics row
@@ -564,8 +564,10 @@ $extraJS = <<<JS
 
     if (!tbody) return;
 
-    const ENDPOINT = {$endpointJs};
+    const METRICS_ENDPOINT = {$endpointJs};
+    const ENDPOINT = METRICS_ENDPOINT + '?scans_only=1';
     let rows = [];
+    let metricsRows = [];
     let chart = null;
 
     function esc(s) {
@@ -604,6 +606,12 @@ $extraJS = <<<JS
         if (type === 'absent')  return 'table-danger';
         if (type === 'pending') return 'table-light';
         return '';
+    }
+
+    function lastEventCell(r) {
+        const labels = {am_in: 'AM In', am_out: 'AM Out', pm_in: 'PM In', pm_out: 'PM Out'};
+        return '<span class="badge bg-secondary">' + esc(labels[r.last_event] || '') + '</span>' +
+               '<div class="text-muted small">' + esc(r.last_event_time || '') + '</div>';
     }
 
     // ── Compute today's stats ────────────────────────────────
@@ -652,24 +660,22 @@ $extraJS = <<<JS
         if (statFull)    statFull.textContent    = stats.full_day;
         if (statPartial) statPartial.textContent = stats.partial;
         if (statAbsent)  statAbsent.textContent  = stats.absent;
-        if (statPending) statPending.textContent = stats.pending;
+        if (statScanned) statScanned.textContent = stats.total;
     }
 
     function updateChart(stats) {
         const data = {
-            labels: ['Full Day', 'Partial', 'Absent', 'Pending'],
+            labels: ['Full Day', 'Partial', 'Absent'],
             datasets: [{
                 data: [
                     stats.full_day,
                     stats.partial,
-                    stats.absent,
-                    stats.pending
+                    stats.absent
                 ],
                 backgroundColor: [
                     'rgba(14,159,110,0.85)',
                     'rgba(245,158,11,0.85)',
-                    'rgba(224,36,36,0.75)',
-                    'rgba(156,163,175,0.75)'
+                    'rgba(224,36,36,0.75)'
                 ],
                 borderWidth: 0
             }]
@@ -709,7 +715,7 @@ $extraJS = <<<JS
         const grade = gradeSel.value;
         const type  = typeSel.value;
 
-        const filtered = rows.filter(r => {
+        const matchesFilters = r => {
             const matchesTerm =
                 term === '' ||
                 (r.name    || '').toLowerCase().includes(term) ||
@@ -718,20 +724,21 @@ $extraJS = <<<JS
             const matchesGrade = grade === '' || r.grade === grade;
             const matchesType  = type  === '' || r.attendance_type === type;
             return matchesTerm && matchesGrade && matchesType;
-        });
+        };
+        const filtered = rows.filter(matchesFilters);
 
         countEl.textContent = filtered.length + ' student' +
                               (filtered.length === 1 ? '' : 's');
 
-        // Compute once, feed everyone
+        // Class metrics include unscanned learners; log summaries include scans only.
         const stats = computeStats(filtered);
-        updateKeyMetrics(stats);
+        updateKeyMetrics(computeStats(metricsRows.filter(matchesFilters)));
         updateChartTiles(stats);
         updateChart(stats);
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
-                '<i class="bi bi-inbox me-1"></i>No students match your filter.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+                '<i class="bi bi-inbox me-1"></i>' + (rows.length ? 'No scans match your filter.' : 'No scans today.') + '</td></tr>';
             return;
         }
 
@@ -747,27 +754,28 @@ $extraJS = <<<JS
               '<td class="text-center small">' + fmtCell(r.am_out, null)         + '</td>' +
               '<td class="text-center small">' + fmtCell(r.pm_in,  r.pm_status) + '</td>' +
               '<td class="text-center small">' + fmtCell(r.pm_out, null)         + '</td>' +
+              '<td>' + lastEventCell(r) + '</td>' +
               '<td class="text-center">' + typeBadge(r.attendance_type) + '</td>' +
             '</tr>'
         )).join('');
     }
 
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading today\\'s log...</td></tr>';
 
         try {
-            const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const all = await res.json();
-            if (!Array.isArray(all)) throw new Error('Invalid response');
-
-            rows = all;
+            const responses = await Promise.all([ENDPOINT, METRICS_ENDPOINT].map(url => fetch(url, {credentials: 'same-origin'})));
+            for (const res of responses) if (!res.ok) throw new Error('HTTP ' + res.status);
+            const [scans, all] = await Promise.all(responses.map(res => res.json()));
+            if (!Array.isArray(scans) || !Array.isArray(all)) throw new Error('Invalid response');
+            rows = scans;
+            metricsRows = all;
 
             render();
             updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">' +
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">' +
                 'Failed to load today\\'s log: ' + esc(err.message) + '</td></tr>';
             countEl.textContent = '—';
 
@@ -786,7 +794,7 @@ $extraJS = <<<JS
     refreshBtn.addEventListener('click', load);
 
     load();
-    setInterval(load, 60000);
+    setInterval(load, 30000);
 })();
 </script>
 JS;

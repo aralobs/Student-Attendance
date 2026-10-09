@@ -35,6 +35,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($lastName))  $errors[] = 'Last name is required.';
     if (empty($gender))    $errors[] = 'Gender is required.';
 
+    $gradeLevel = null;
+    $schoolYear = null;
+    if ($sectionId > 0) {
+        $sectionStmt = $db->prepare("SELECT grade_level, school_year FROM sections WHERE id = ? AND is_active = 1");
+        $sectionStmt->execute([$sectionId]);
+        $section = $sectionStmt->fetch();
+        if (!$section) {
+            $errors[] = 'Please choose an active section.';
+        } else {
+            $gradeLevel = $section['grade_level'];
+            $schoolYear = $section['school_year'];
+        }
+    }
+
     if (empty($errors)) {
         $check = $db->prepare("SELECT id FROM students WHERE lrn = ?");
         $check->execute([$lrn]);
@@ -65,14 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $db->prepare("
             INSERT INTO students
                 (lrn, first_name, middle_name, last_name, gender, birth_date,
-                 address, section_id, photo, qr_token,
+                 address, section_id, grade_level, school_year, photo, qr_token,
                  parent_name, parent_contact, parent_email)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ");
         $stmt->execute([
             $lrn, $firstName, $middleName, $lastName,
             $gender, $birthDate ?: null, $address,
-            $sectionId ?: null, $photo, $qrToken,
+            $sectionId ?: null, $gradeLevel, $schoolYear, $photo, $qrToken,
             $parentName, $parentContact, $parentEmail
         ]);
 

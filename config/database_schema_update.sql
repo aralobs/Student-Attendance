@@ -33,7 +33,7 @@ CREATE TABLE users (
     password   VARCHAR(255) NOT NULL,
     full_name  VARCHAR(100) NOT NULL,
     email      VARCHAR(100) NULL,
-    role       ENUM('admin','teacher') NOT NULL DEFAULT 'teacher',
+    role       ENUM('admin','teacher','scanner_operator') NOT NULL DEFAULT 'teacher',
     is_active  TINYINT(1)   NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP

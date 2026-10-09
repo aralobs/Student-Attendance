@@ -11,7 +11,9 @@ $id = (int)($_GET['id'] ?? 0);
 $db = getDB();
 
 $stmt = $db->prepare("
-    SELECT s.*, sec.section_name, sec.grade_level, sec.schedule_type
+    SELECT s.*, sec.section_name,
+           COALESCE(NULLIF(s.grade_level, ''), sec.grade_level) AS grade_level,
+           sec.schedule_type
     FROM students s
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE s.id = ? AND s.is_active = 1

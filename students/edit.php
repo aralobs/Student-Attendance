@@ -44,6 +44,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($lastName))  $errors[] = 'Last name is required.';
     if (empty($gender))    $errors[] = 'Gender is required.';
 
+    $gradeLevel = $student['grade_level'];
+    $schoolYear = $student['school_year'];
+    if ($sectionId > 0) {
+        $sectionStmt = $db->prepare("SELECT grade_level, school_year FROM sections WHERE id = ? AND is_active = 1");
+        $sectionStmt->execute([$sectionId]);
+        $section = $sectionStmt->fetch();
+        if (!$section) {
+            $errors[] = 'Please choose an active section.';
+        } else {
+            $gradeLevel = $section['grade_level'];
+            $schoolYear = $section['school_year'];
+        }
+    }
+
     if (empty($errors)) {
         $check = $db->prepare("SELECT id FROM students WHERE lrn = ? AND id != ?");
         $check->execute([$lrn, $id]);
@@ -73,11 +87,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             UPDATE students SET
                 lrn=?, first_name=?, middle_name=?, last_name=?,
                 gender=?, birth_date=?, address=?, section_id=?,
+                grade_level=?, school_year=?,
                 photo=?, parent_name=?, parent_contact=?, parent_email=?
             WHERE id=?
         ")->execute([
             $lrn, $firstName, $middleName, $lastName,
             $gender, $birthDate ?: null, $address, $sectionId ?: null,
+            $gradeLevel, $schoolYear,
             $photo, $parentName, $parentContact, $parentEmail,
             $id
         ]);

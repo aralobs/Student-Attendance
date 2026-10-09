@@ -74,7 +74,7 @@ include '../includes/sidebar.php';
                             <td><?= sanitize($u['email'] ?? '—') ?></td>
                             <td>
                                 <span class="badge bg-<?= $u['role'] === 'admin' ? 'warning text-dark' : 'info' ?>">
-                                    <?= ucfirst($u['role']) ?>
+                                    <?= roleLabel($u['role']) ?>
                                 </span>
                             </td>
                             <td>
@@ -96,14 +96,16 @@ include '../includes/sidebar.php';
                                     <a href="toggle.php?id=<?= (int)$u['id'] ?>"
                                        class="btn btn-sm btn-outline-<?= $u['is_active'] ? 'danger' : 'success' ?>"
                                        title="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?>"
-                                       onclick="return confirm('<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> this user?')">
+                                       data-confirm="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> this user?"
+                                       data-confirm-title="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> user" data-confirm-label="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?>" data-confirm-tone="<?= $u['is_active'] ? 'danger' : 'success' ?>">
                                         <i class="bi bi-<?= $u['is_active'] ? 'person-x' : 'person-check' ?>"></i>
                                     </a>
                                     <?php if ((int)$u['id'] !== (int)currentUser()['id']): ?>
                                     <a href="archive.php?id=<?= (int)$u['id'] ?>"
                                        class="btn btn-sm btn-outline-secondary"
                                        title="Archive"
-                                       onclick="return confirm('Archive this user? They will be hidden from the list but kept in the database.')">
+                                       data-confirm="Archive this user? They will be hidden from the list but kept in the database."
+                                   data-confirm-title="Archive user" data-confirm-label="Archive" data-confirm-tone="warning">
                                         <i class="bi bi-archive"></i>
                                     </a>
                                     <?php endif; ?>

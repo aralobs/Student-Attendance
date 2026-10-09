@@ -8,6 +8,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
 
 $pageTitle = 'Manual Attendance';
 $db        = getDB();
@@ -26,11 +27,7 @@ $sectionId = (int)($_POST['section_id'] ?? $_GET['section'] ?? $allowedSections[
 $date      = trim($_POST['attendance_date'] ?? $_GET['date'] ?? $today);
 
 // Validate section access
-if (!canAccessSection($sectionId)) {
-    setFlash('danger', 'Access denied to this section.');
-    header('Location: attendance.php');
-    exit;
-}
+if (!canAccessSection($sectionId)) { http_response_code(403); exit('Access denied to this section.'); }
 
 // Fetch section BEFORE POST handler — needed by computeAttendanceType()
 $section = getSection($sectionId);
@@ -51,7 +48,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: manual.php?section=' . $sectionId . '&date=' . urlencode($submittedDate));
         exit;
     }
-
+    if (!is_array($entries)) { http_response_code(400); exit('Invalid attendance entries.'); }
+    $roster = $db->prepare('SELECT id FROM students WHERE section_id = ? AND is_active = 1');
+    $roster->execute([$sectionId]);
+    $allowedStudentIds = array_fill_keys(array_column($roster->fetchAll(), 'id'), true);
+    foreach ($entries as $studentId => $data) {
+        $validStudentId = filter_var($studentId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($validStudentId === false || !is_array($data)) { http_response_code(400); exit('Invalid attendance entries.'); }
+        if (!isset($allowedStudentIds[$validStudentId])) { http_response_code(403); exit('A submitted student does not belong to this active section roster.'); }
+    }
     foreach ($entries as $studentId => $data) {
         $studentId = (int)$studentId;
         if ($studentId <= 0) continue;

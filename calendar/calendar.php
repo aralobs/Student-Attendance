@@ -5,6 +5,7 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/calendarific.php';
 requireLogin();
 
 $pageTitle = 'School Calendar';
@@ -29,7 +30,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
     header('Content-Type: application/json');
     requireAdmin();
 
+    if (!validSettingsCsrf($_POST['csrf_token'] ?? null)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Please reload School Calendar and try again.']);
+        exit;
+    }
+
     $action = $_POST['action'] ?? '';
+
+    if (in_array($action, ['calendarific_save', 'calendarific_test', 'calendarific_import'], true)) {
+        try {
+            if ($action === 'calendarific_save') {
+                $key = $_POST['api_key'] ?? '';
+                if (!is_string($key) || strlen($key) > 512 || preg_match('/[\x00-\x1F\x7F]/', $key)) {
+                    throw new InvalidArgumentException('Enter a valid Calendarific API key.');
+                }
+                $key = trim($key);
+                if ($key === '') $key = getSetting('calendarific_api_key') ?? '';
+                if ($key === '') {
+                    throw new InvalidArgumentException('Enter your Calendarific API key.');
+                }
+                // Preserve blank replacements while encrypting credentials saved by older versions.
+                updateSetting('calendarific_api_key', $key);
+                echo json_encode(['success' => true, 'message' => 'API key saved. Test the connection to verify it.']);
+            } else {
+                $importYear = calendarificYear($_POST['year'] ?? '');
+                $holidays = fetchCalendarificHolidays(getSetting('calendarific_api_key') ?? '', $importYear);
+                if ($action === 'calendarific_test') {
+                    echo json_encode(['success' => true, 'message' => 'Connection successful. Found ' . count($holidays) . ' Philippine national holiday dates for ' . $importYear . '.']);
+                } else {
+                    $counts = importCalendarificHolidays($db, $holidays, (int)currentUser()['id']);
+                    $message = "Imported {$counts['added']} holiday dates for {$importYear}; preserved {$counts['skipped']} existing entries.";
+                    setFlash('success', $message);
+                    echo json_encode(['success' => true, 'message' => $message]);
+                }
+            }
+        } catch (InvalidArgumentException $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            // Never log request URLs or credentials, or expose raw provider/DB errors.
+            error_log('Calendarific action failed.');
+            echo json_encode(['success' => false, 'message' => 'Calendarific action could not be completed. Please try again.']);
+        }
+        exit;
+    }
 
     if ($action === 'add') {
         $date  = $_POST['date']        ?? '';
@@ -101,9 +145,14 @@ include '../includes/sidebar.php';
         <p class="page-subtitle">Manage holidays, no-class days, and special events</p>
     </div>
     <?php if (isAdmin()): ?>
+    <div class="d-flex gap-2 flex-wrap">
+    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#calendarificModal">
+        <i class="bi bi-cloud-arrow-down me-1"></i>Calendarific API
+    </button>
     <button class="btn btn-primary" onclick="openAddModal(null)">
         <i class="bi bi-plus-circle me-1"></i>Add Entry
     </button>
+    </div>
     <?php endif; ?>
 </div>
 
@@ -283,7 +332,8 @@ include '../includes/sidebar.php';
                             </span>
                             <?php if (isAdmin()): ?>
                             <button class="btn btn-sm btn-outline-danger p-0 px-1"
-                                    onclick="deleteEntry('<?= $date ?>','<?= sanitize($entry['title']) ?>')"
+                                    data-entry-date="<?= sanitize($date) ?>" data-entry-title="<?= sanitize($entry['title']) ?>"
+                                    onclick="deleteEntry(this.dataset.entryDate, this.dataset.entryTitle)"
                                     style="font-size:0.7rem">
                                 <i class="bi bi-trash"></i>
                             </button>
@@ -300,6 +350,37 @@ include '../includes/sidebar.php';
 
 <!-- Add/Edit Modal -->
 <?php if (isAdmin()): ?>
+<?php
+$keyStatus = $db->prepare('SELECT setting_value FROM system_settings WHERE setting_key = ?');
+$keyStatus->execute(['calendarific_api_key']);
+$calendarificConfigured = (bool)$keyStatus->fetchColumn();
+?>
+<input type="hidden" id="calendarCsrf" value="<?= htmlspecialchars(settingsCsrfToken()) ?>">
+<div class="modal fade" id="calendarificModal" tabindex="-1" aria-labelledby="calendarificModalTitle" aria-hidden="true">
+    <div class="modal-dialog"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title" id="calendarificModalTitle">Calendarific API</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+            <p id="calendarificStatus" class="small text-muted"><?= $calendarificConfigured ? 'API key configured. Leave the field blank to keep your saved key.' : 'Paste your Calendarific API key below and save it.' ?></p>
+            <label for="calendarificKey" class="form-label">Calendarific API key</label>
+            <input type="password" id="calendarificKey" class="form-control" maxlength="512" autocomplete="new-password" placeholder="<?= $calendarificConfigured ? 'Enter a replacement key' : 'Enter your API key' ?>">
+            <div class="form-text mb-3">Saved keys are encrypted and are never displayed here. <a href="https://calendarific.com/" target="_blank" rel="noopener noreferrer">Get an API key</a></div>
+            <button type="button" class="btn btn-primary btn-sm mb-3" onclick="calendarificAction('calendarific_save')">Save API Key</button>
+            <hr>
+            <label for="calendarificYear" class="form-label">Holiday year</label>
+            <input type="number" id="calendarificYear" class="form-control mb-2" min="2000" max="2049" value="<?= max(2000, min(2049, $year)) ?>">
+            <p class="small text-muted">Import Philippine national holidays for one calendar year. Existing entries are preserved. For a school year spanning two years, import each year separately. School breaks and local suspensions can be added with Add Entry.</p>
+            <p class="small text-muted">Import runs only when you click Import Holidays. Test and import use the saved key; save a replacement before testing.</p>
+            <div id="calendarificMsg" role="status" aria-live="polite"></div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-outline-primary btn-sm" onclick="calendarificAction('calendarific_test')">Test Connection</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="calendarificAction('calendarific_import')">Import Holidays</button>
+        </div>
+    </div></div>
+</div>
 <div class="modal fade" id="calendarModal" tabcalendar="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -353,6 +434,48 @@ include '../includes/sidebar.php';
 $extraJS = <<<'JS'
 <script>
 let calendarModal = null;
+function calendarCsrf() {
+    return encodeURIComponent(document.getElementById('calendarCsrf')?.value || '');
+}
+
+async function calendarificAction(action) {
+    const modal = document.getElementById('calendarificModal');
+    const msg = document.getElementById('calendarificMsg');
+    const buttons = modal.querySelectorAll('button');
+    const year = document.getElementById('calendarificYear').value;
+    if (action !== 'calendarific_save' && !document.getElementById('calendarificYear').checkValidity()) {
+        document.getElementById('calendarificYear').reportValidity();
+        return;
+    }
+    if (action === 'calendarific_import' && !await showConfirm(`Import Philippine national holidays for ${year}? Existing calendar entries will be preserved.`, {title: 'Import holidays', confirmLabel: 'Import'})) return;
+    buttons.forEach(button => button.disabled = true);
+    msg.className = 'alert alert-info py-2';
+    msg.textContent = 'Please wait...';
+    try {
+        const params = new URLSearchParams({ajax: '1', action, year,
+            csrf_token: document.getElementById('calendarCsrf').value});
+        if (action === 'calendarific_save') params.set('api_key', document.getElementById('calendarificKey').value);
+        const response = await fetch('calendar.php', {method: 'POST', body: params});
+        const data = await response.json();
+        msg.className = `alert alert-${data.success ? 'success' : 'danger'} py-2`;
+        msg.textContent = data.message;
+        if (data.success && action === 'calendarific_save') {
+            document.getElementById('calendarificKey').value = '';
+            document.getElementById('calendarificKey').placeholder = 'Enter a replacement key';
+            document.getElementById('calendarificStatus').textContent = 'API key configured. Leave the field blank to keep your saved key.';
+        }
+        if (data.success && action === 'calendarific_import') {
+            const url = new URL(window.location.href);
+            url.searchParams.set('year', year);
+            window.location.assign(url.toString());
+        }
+    } catch (error) {
+        msg.className = 'alert alert-danger py-2';
+        msg.textContent = 'Could not complete the request. Please try again.';
+    } finally {
+        buttons.forEach(button => button.disabled = false);
+    }
+}
 
 document.addEventListener('DOMContentLoaded', () => {
     const el = document.getElementById('calendarModal');
@@ -373,7 +496,7 @@ function openAddModal(date) {
         fetch('calendar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `ajax=1&action=get&date=${encodeURIComponent(date)}`
+            body: `ajax=1&action=get&csrf_token=${calendarCsrf()}&date=${encodeURIComponent(date)}`
         })
         .then(r => r.json())
         .then(data => {
@@ -413,7 +536,7 @@ async function saveEntry() {
         const res  = await fetch('calendar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `ajax=1&action=add&date=${encodeURIComponent(date)}&title=${encodeURIComponent(title)}&type=${encodeURIComponent(type)}&description=${encodeURIComponent(desc)}`
+            body: `ajax=1&action=add&csrf_token=${calendarCsrf()}&date=${encodeURIComponent(date)}&title=${encodeURIComponent(title)}&type=${encodeURIComponent(type)}&description=${encodeURIComponent(desc)}`
         });
         const data = await res.json();
 
@@ -434,19 +557,19 @@ async function saveEntry() {
 }
 
 async function deleteEntry(date, title) {
-    if (!confirm(`Delete entry: "${title}" on ${date}?`)) return;
+    if (!await showConfirm(`Delete entry: "${title}" on ${date}?`, { title: 'Delete calendar entry', confirmLabel: 'Delete', tone: 'danger' })) return;
 
     try {
         const res  = await fetch('calendar.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `ajax=1&action=delete&date=${encodeURIComponent(date)}`
+            body: `ajax=1&action=delete&csrf_token=${calendarCsrf()}&date=${encodeURIComponent(date)}`
         });
         const data = await res.json();
         if (data.success) window.location.reload();
-        else alert('Failed to delete entry.');
+        else showMessage('Failed to delete entry.', { title: 'Delete failed' });
     } catch(e) {
-        alert('Network error.');
+        showMessage('Network error. Please try again.', { title: 'Connection error' });
     }
 }
 </script>

@@ -4,6 +4,7 @@ require_once '../includes/functions.php';
 requireAdmin();
 
 header('Content-Type: application/json');
+requireSettingsPost();
 
 if (empty($_FILES['logo']['name'])) {
     echo json_encode(['success' => false, 'message' => 'No file uploaded.']);

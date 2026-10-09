@@ -5,10 +5,11 @@ require_once '../includes/mail_helper.php';
 requireAdmin();
 
 header('Content-Type: application/json');
+requireSettingsPost();
 
-$email = trim($_POST['email'] ?? '');
-if (empty($email)) {
-    echo json_encode(['success' => false, 'message' => 'No email address provided.']);
+$email = is_string($_POST['email'] ?? null) ? trim($_POST['email']) : '';
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    echo json_encode(['success' => false, 'message' => 'Enter a valid email address.']);
     exit;
 }
 
@@ -18,5 +19,10 @@ $html   = buildEmailTemplate(
      <p>If you received this, email notifications are working correctly! ✅</p>'
 );
 
-$result = sendEmail($email, 'Test Recipient', 'Test Email — SPCCS Attendance System', $html);
-echo json_encode($result);
+try {
+    $result = sendEmail($email, 'Test Recipient', 'Test Email — SPCCS Attendance System', $html);
+    echo json_encode(['success' => $result['success'], 'message' => $result['success']
+        ? 'Email sent successfully.' : 'Email could not be sent. Check the saved Gmail address and App Password.']);
+} catch (Throwable $e) {
+    echo json_encode(['success' => false, 'message' => 'Email test failed. Check the saved settings and try again.']);
+}

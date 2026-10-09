@@ -12,7 +12,7 @@ $old = [
     'username'  => '',
     'full_name' => '',
     'email'     => '',
-    'role'      => 'user',
+    'role'      => 'scanner_operator',
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -20,7 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $old['username']  = trim($_POST['username']  ?? '');
     $old['full_name'] = trim($_POST['full_name'] ?? '');
     $old['email']     = trim($_POST['email']     ?? '');
-    $old['role']      = $_POST['role']           ?? 'user';
+    $old['role']      = $_POST['role']           ?? 'scanner_operator';
 
     $password        = $_POST['password']         ?? '';
     $passwordConfirm = $_POST['password_confirm'] ?? '';
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errors[] = 'Full name is required.';
     }
 
-    if (!in_array($old['role'], ['admin', 'teacher', 'user'], true)) {
+    if (!in_array($old['role'], ['admin', 'teacher', 'scanner_operator'], true)) {
         $errors[] = 'Invalid role.';
     }
 
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $success = "Account '{$old['username']}' created successfully!";
 
         // Reset form
-        $old = ['username' => '', 'full_name' => '', 'email' => '', 'role' => 'user'];
+        $old = ['username' => '', 'full_name' => '', 'email' => '', 'role' => 'scanner_operator'];
     }
 }
 ?>
@@ -132,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="mb-3">
                     <label class="form-label">Role</label>
                     <select name="role" class="form-select">
-                        <option value="user"    <?= $old['role'] === 'user'    ? 'selected' : '' ?>>User (Scanner Only)</option>
+                        <option value="scanner_operator"    <?= $old['role'] === 'scanner_operator'    ? 'selected' : '' ?>>Scanner Operator</option>
                         <option value="teacher" <?= $old['role'] === 'teacher' ? 'selected' : '' ?>>Teacher</option>
                         <option value="admin"   <?= $old['role'] === 'admin'   ? 'selected' : '' ?>>Admin</option>
                     </select>

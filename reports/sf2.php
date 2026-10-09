@@ -11,6 +11,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+require_once '../includes/attendance_finalizer.php';
 
 $pageTitle       = 'SF2 — Daily Attendance Record';
 $db              = getDB();
@@ -19,6 +20,10 @@ $year            = (int)($_GET['year']    ?? date('Y'));
 $sectionId       = (int)($_GET['section'] ?? 0);
 $allowedSections = getAllowedSections();
 $grades          = getGradeLevels();
+if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) {
+    http_response_code(400);
+    exit('Invalid report month or year');
+}
 
 // Default to first allowed section
 if ($sectionId === 0 && !empty($allowedSections)) {
@@ -26,47 +31,39 @@ if ($sectionId === 0 && !empty($allowedSections)) {
 }
 
 $section     = getSection($sectionId);
+if (!canAccessSection($sectionId)) {
+    http_response_code(403);
+    exit('Section access denied');
+}
+$reportStart = sprintf('%04d-%02d-01', $year, $month);
+finalizeAttendanceRange($reportStart, date('Y-m-t', strtotime($reportStart)), $sectionId);
 $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 $monthLabel  = date('F Y', mktime(0, 0, 0, $month, 1, $year));
 $monthUpper  = strtoupper(date('F', mktime(0, 0, 0, $month, 1, $year)));
 $schoolName  = getSetting('school_name')  ?? 'San Pablo City Central School';
-$schoolYear  = getSetting('school_year')  ?? '';
-$schoolId    = getSetting('school_id')    ?: '109791';
+$schoolYear  = $section['school_year'] ?? getSetting('school_year') ?? '';
+$schoolId    = getSetting('school_id') ?? '';
+$schoolHead  = getSetting('school_head') ?? '';
+$generatedBy = getSetting('sf2_generated_by') ?? '';
 $calEntries  = getCalendarMonth($month, $year);
 
-// Students for this section
-$students = $db->prepare("
-    SELECT * FROM students
-    WHERE section_id = ? AND is_active = 1
-    ORDER BY last_name, first_name
-");
+$students = $db->prepare("SELECT * FROM students WHERE section_id = ? AND is_active = 1 ORDER BY last_name, first_name");
 $students->execute([$sectionId]);
 $students = $students->fetchAll();
-
-// Attendance matrix [student_id][day] => record
 $attMatrix = [];
-$stmt = $db->prepare("
-    SELECT student_id, DAY(date) AS day,
-           am_in, am_out, am_status,
-           pm_in, pm_out, pm_status,
-           attendance_type
-    FROM attendance
-    WHERE MONTH(date) = ? AND YEAR(date) = ?
-    AND student_id IN (
-        SELECT id FROM students WHERE section_id = ? AND is_active = 1
-    )
-");
+$stmt = $db->prepare("SELECT student_id, DAY(date) AS day, am_in, am_out, pm_in, pm_out,
+    am_status, pm_status, attendance_type FROM attendance
+    WHERE MONTH(date) = ? AND YEAR(date) = ? AND student_id IN
+    (SELECT id FROM students WHERE section_id = ? AND is_active = 1)");
 $stmt->execute([$month, $year, $sectionId]);
-foreach ($stmt->fetchAll() as $row) {
-    $attMatrix[$row['student_id']][$row['day']] = $row;
-}
+foreach ($stmt->fetchAll() as $row) $attMatrix[$row['student_id']][$row['day']] = $row;
 
 // Count school days
 $schoolDays = 0;
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0, 0, 0, $month, $d, $year));
-    if (!in_array($dow, [6, 7]) && !isHolidayOrNoClass($ds)) $schoolDays++;
+    if ($dow !== 6 && $dow !== 7 && !isHolidayOrNoClass($ds)) $schoolDays++;
 }
 
 $isAmOnly = ($section['schedule_type'] ?? 'full_day') === 'am_only';
@@ -85,6 +82,112 @@ function sf2MFCells($gender, $value, $color = '', $bg = '')
     return "<td style=\"{$base}\">{$m}</td><td style=\"{$base}\">{$f}</td>";
 }
 
+// Print model: weekday columns, day-equivalent attendance, male/female groups.
+// Missing attendance is not counted as present or absent.
+function sf2PrintNumber($value) {
+    return rtrim(rtrim(number_format((float)$value, 2, '.', ''), '0'), '.');
+}
+function sf2PrintCell($record, $off, $schedule) {
+    if ($off || !$record) return ['html' => '', 'present' => 0, 'absent' => 0, 'fullAbsent' => false, 'recorded' => false];
+    $sessions = $schedule === 'am_only' ? ['am'] : ($schedule === 'pm_only' ? ['pm'] : ['am', 'pm']);
+    $present = $absent = 0; $statuses = [];
+    foreach ($sessions as $session) {
+        $status = $record[$session . '_status'] ?? '';
+        $statuses[] = $status;
+        if (in_array($status, ['present', 'late'], true)) $present++;
+        if ($status === 'absent') $absent++;
+    }
+    $count = count($sessions);
+    $recorded = count(array_filter($statuses, static function ($status) { return in_array($status, ['present', 'late', 'absent'], true); }));
+    $fullAbsent = $absent === $count;
+    if ($fullAbsent) $html = 'X';
+    elseif ($count === 1) $html = $statuses[0] === 'late' ? '<span class="half-mark upper late-mark"></span>' : '';
+    else {
+        $html = '';
+        foreach ($statuses as $index => $status) {
+            $position = $index === 0 ? 'upper' : 'lower';
+            if ($status === 'absent') $html .= '<span class="half-mark ' . $position . '">X</span>';
+            elseif ($status === 'late') $html .= '<span class="half-mark ' . $position . ' late-mark"></span>';
+
+        }
+    }
+    if ($recorded === 0) $html = '';
+    return ['html' => $html, 'present' => $present / $count, 'absent' => $absent / $count, 'fullAbsent' => $fullAbsent, 'recorded' => $recorded > 0];
+}
+$sf2PrintDays = [];
+for ($day = 1; $day <= $daysInMonth; $day++) {
+    $weekday = (int)date('N', mktime(0, 0, 0, $month, $day, $year));
+    $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
+    if ($weekday > 5) continue;
+    $sf2PrintDays[] = ['day' => $day, 'weekday' => ['M', 'T', 'W', 'TH', 'F'][$weekday - 1], 'off' => isHolidayOrNoClass($date)];
+}
+while (count($sf2PrintDays) < 25) $sf2PrintDays[] = ['day' => null, 'weekday' => '', 'off' => true];
+$sf2PrintGroups = ['M' => [], 'F' => [], 'U' => []];
+$sf2PrintSummary = ['M' => ['count' => 0, 'present' => 0, 'absent' => 0, 'five' => 0], 'F' => ['count' => 0, 'present' => 0, 'absent' => 0, 'five' => 0], 'U' => ['count' => 0, 'present' => 0, 'absent' => 0, 'five' => 0]];
+foreach ($students as $student) {
+    $gender = strtoupper(substr($student['gender'] ?? '', 0, 1));
+    if (!in_array($gender, ['M', 'F'], true)) $gender = 'U';
+    $item = ['student' => $student, 'gender' => $gender, 'cells' => [], 'present' => 0, 'absent' => 0, 'recorded' => 0];
+    $streak = 0; $five = false;
+    foreach ($sf2PrintDays as $column) {
+        $record = $column['day'] === null ? null : ($attMatrix[$student['id']][$column['day']] ?? null);
+        $cell = sf2PrintCell($record, $column['off'], $section['schedule_type'] ?? 'full_day');
+        $item['cells'][] = $cell;
+        $item['present'] += $cell['present']; $item['absent'] += $cell['absent'];
+        $item['recorded'] += (int)$cell['recorded'];
+        if (!$column['off']) {
+            $streak = $cell['fullAbsent'] ? $streak + 1 : 0;
+            if ($streak >= 5) $five = true;
+        }
+    }
+    $sf2PrintSummary[$gender]['count']++;
+    $item['number'] = $sf2PrintSummary[$gender]['count'];
+    $sf2PrintSummary[$gender]['present'] += $item['present'];
+    $sf2PrintSummary[$gender]['absent'] += $item['absent'];
+    if ($five) $sf2PrintSummary[$gender]['five']++;
+    $sf2PrintGroups[$gender][] = $item;
+}
+$sf2PrintAll = array_merge($sf2PrintGroups['M'], $sf2PrintGroups['F'], $sf2PrintGroups['U']);
+$sf2PrintPages = array_chunk($sf2PrintAll, 23);
+if (!$sf2PrintPages) $sf2PrintPages = [[]];
+$sf2PrintSummary['TOTAL'] = ['count' => count($sf2PrintAll), 'present' => array_sum(array_column($sf2PrintSummary, 'present')), 'absent' => array_sum(array_column($sf2PrintSummary, 'absent')), 'five' => array_sum(array_column($sf2PrintSummary, 'five'))];
+foreach (['M', 'F', 'U'] as $gender) $sf2PrintSummary[$gender]['recorded'] = array_sum(array_column($sf2PrintGroups[$gender], 'recorded'));
+$sf2PrintSummary['TOTAL']['recorded'] = array_sum(array_column($sf2PrintAll, 'recorded'));
+// Historical enrolment and transfer/dropout counts are not available in the supplied queries.
+// Optional integration: set $sf2SummaryOverrides[row key][M|F|TOTAL] from your historical data.
+$sf2PrintSummaryRows = [
+    ['key' => 'initial', 'label' => '* Enrolment as of (1st Friday of June)'],
+    ['key' => 'late', 'label' => 'Late enrolment during the month (beyond cut-off)'],
+    ['key' => 'registered', 'label' => 'Registered Learners as of end of month'],
+    ['key' => 'enrolmentPct', 'label' => 'Percentage of Enrolment as of end of month'],
+    ['key' => 'ada', 'label' => 'Average Daily Attendance'],
+    ['key' => 'attendancePct', 'label' => 'Percentage of Attendance for the month'],
+    ['key' => 'five', 'label' => 'Number of students absent for 5 consecutive days'],
+    ['key' => 'dropped', 'label' => 'Dropped out'],
+    ['key' => 'out', 'label' => 'Transferred out'],
+    ['key' => 'in', 'label' => 'Transferred in'],
+];
+function sf2PrintSummaryValue($key, $gender, $summary, $schoolDays, $overrides) {
+    if (isset($overrides[$key][$gender])) return sf2PrintNumber($overrides[$key][$gender]);
+    $data = $summary[$gender];
+    if ($key === 'registered') return sf2PrintNumber($data['count']);
+    if ($key === 'five') return $data['recorded'] > 0 ? sf2PrintNumber($data['five']) : '';
+    if ($key === 'ada') return $schoolDays > 0 && $data['recorded'] > 0 ? sf2PrintNumber($data['present'] / $schoolDays) : '';
+    if ($key === 'attendancePct') return $schoolDays > 0 && $data['count'] > 0 && $data['recorded'] > 0 ? sf2PrintNumber($data['present'] / ($schoolDays * $data['count']) * 100) : '';
+    if ($key === 'enrolmentPct' && isset($overrides['initial'][$gender]) && $overrides['initial'][$gender] > 0) return sf2PrintNumber($data['count'] / $overrides['initial'][$gender] * 100);
+    return '';
+}
+function sf2PrintTotalRow($items, $label, $columns) {
+    $html = '<tr class="total-row"><td colspan="2">' . htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . '</td>';
+    for ($i = 0; $i < count($columns); $i++) {
+        $total = array_sum(array_map(static function ($item) use ($i) { return $item['cells'][$i]['present']; }, $items));
+        $recorded = array_sum(array_map(static function ($item) use ($i) { return (int)$item['cells'][$i]['recorded']; }, $items));
+        $html .= '<td>' . ($columns[$i]['off'] ? '' : ($recorded > 0 ? sf2PrintNumber($total) : '')) . '</td>';
+    }
+    $recorded = array_sum(array_column($items, 'recorded'));
+    return $html . '<td>' . ($recorded > 0 ? sf2PrintNumber(array_sum(array_column($items, 'absent'))) : '') . '</td><td>' . ($recorded > 0 ? sf2PrintNumber(array_sum(array_column($items, 'present'))) : '') . '</td><td></td></tr>';
+}
+
 include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
@@ -98,7 +201,7 @@ include '../includes/sidebar.php';
         </h1>
         <p class="page-subtitle">DepEd Official Format</p>
     </div>
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
         <button onclick="window.print()" class="btn btn-success btn-sm">
             <i class="bi bi-printer me-1"></i>Print / Save PDF
         </button>
@@ -172,7 +275,7 @@ include '../includes/sidebar.php';
             <div>5. The adviser will provide necessary interventions including but not limited to home visitation to learner/s who were absent for 5 consecutive days and/or those at risk of dropping out.</div>
             <div>6. Attendance performance of learners will be reflected in Form 137 and Form 138 every grading period.</div>
             <div class="sf2-guidelines-note">*Beginning of School Year cut-off report is every 1st Friday of the School Year</div>
-            <div class="sf2-guidelines-sign">MARCIA CIABAL VILLEGAS</div>
+            <div class="sf2-guidelines-sign"><?= sanitize($generatedBy) ?></div>
             <div class="sf2-guidelines-sub">(This replaces Form 1, Form 2 &amp; STS Form 4 - Absenteeism and Dropout Profile)</div>
         </div>
 
@@ -380,9 +483,9 @@ include '../includes/sidebar.php';
                             $late    = $amL + $pmL;
                             $absent  = $amA + $pmA;
 
-                            $pctEnrol = $sessionTotal > 0 ? ($daysWithRecord / $sessionTotal) * 100 : 0;
-                            $adaVal   = $schoolDays  > 0 ? $present / $schoolDays : 0;
-                            $pctAtt   = $sessionTotal > 0 ? ($present / $sessionTotal) * 100 : 0;
+                            $pctEnrol = 0;
+                            $adaVal   = $sessionTotal > 0 ? ($present + $late) / $sessionTotal : 0;
+                            $pctAtt   = $sessionTotal > 0 ? (($present + $late) / $sessionTotal) * 100 : 0;
 
                             $sumPctEnrol += $pctEnrol;
                             $sumADA      += $adaVal;
@@ -396,21 +499,21 @@ include '../includes/sidebar.php';
                             }
 
                             echo sf2MFCells($gender, 1, '', 'background:#eff6ff');
-                            echo sf2MFCells($gender, $present, '', 'background:#f0fdf4');
-                            echo sf2MFCells($gender, $late, 'darkorange', 'background:#fffbeb');
-                            echo sf2MFCells($gender, $absent, 'red', 'background:#fef2f2');
+                            echo sf2MFCells($gender, $daysWithRecord > 0 ? $present : '', '', 'background:#f0fdf4');
+                            echo sf2MFCells($gender, $daysWithRecord > 0 ? $late : '', 'darkorange', 'background:#fffbeb');
+                            echo sf2MFCells($gender, $daysWithRecord > 0 ? $absent : '', 'red', 'background:#fef2f2');
                             ?>
                             <td class="c grp-metric">
-                                <span class="rate-pill rate-neutral"><?= number_format($pctEnrol, 2) ?>%</span>
+                                <span class="rate-pill rate-neutral"></span>
                             </td>
                             <td class="c grp-metric">
-                                <span class="ada-pill"><?= number_format($adaVal, 2) ?></span>
+                                <span class="ada-pill"><?= $daysWithRecord > 0 ? number_format($adaVal, 2) : '' ?></span>
                             </td>
                             <td class="c grp-metric">
                                 <?php
                                 $pctCls = $pctAtt >= 90 ? 'good' : ($pctAtt >= 75 ? 'warn' : 'bad');
                                 ?>
-                                <span class="rate-pill rate-<?= $pctCls ?>"><?= number_format($pctAtt, 2) ?>%</span>
+                                <span class="rate-pill rate-<?= $pctCls ?>"><?= $daysWithRecord > 0 ? number_format($pctAtt, 2) . '%' : '' ?></span>
                             </td>
                             <td class="remark-cell">
                                 <textarea
@@ -443,10 +546,10 @@ include '../includes/sidebar.php';
                             <td class="c b <?= $meta['cls'] ?>" style="<?= $c ?>"><?= $tot[$key]['F'] ?></td>
                         <?php endforeach; ?>
                         <td class="c b grp-metric">
-                            <?= $studentCount ? number_format($sumPctEnrol / $studentCount, 2) : '0.00' ?>%
+
                         </td>
                         <td class="c b grp-metric">
-                            <?= $studentCount ? number_format($sumADA / $studentCount, 2) : '0.00' ?>
+                            <?= number_format($sumADA, 2) ?>
                         </td>
                         <td class="c b grp-metric">
                             <?php
@@ -487,7 +590,7 @@ include '../includes/sidebar.php';
             </div>
             <div class="sig-line">
                 <div class="line"></div>
-                <div class="name principal-name">KRISTEL IRIS ESTRELLADO IGOT</div>
+                <div class="name principal-name"><?= sanitize($schoolHead) ?></div>
                 <div class="role">School Head / Principal</div>
             </div>
         </div>
@@ -645,6 +748,7 @@ include '../includes/sidebar.php';
 /* ---------- Table Wrapper ---------- */
 .sf2-table-wrap {
     overflow-x: auto;
+    max-width: 100%;
     border-radius: 8px;
     border: 1px solid #d1d5db;
 }
@@ -1072,6 +1176,229 @@ include '../includes/sidebar.php';
         document.getElementById('genSpin')?.classList.remove('d-none');
         document.getElementById('genBtn').disabled = true;
     });
+})();
+</script>
+
+<div id="sf2PrintRoot" aria-hidden="true">
+<?php foreach ($sf2PrintPages as $sf2PageIndex => $sf2PageItems): ?>
+<section class="sheet">
+  <h1>School Form 2 (SF2) Daily Attendance Report of Learners</h1>
+  <div class="subtitle">(This replaces Form 1, Form 2 &amp; STS Form 4 - Absenteeism and Dropout Profile)</div>
+
+  <div class="meta">
+    <label class="id-label">School ID</label><span class="id-value print-value"><?= sanitize($schoolId) ?></span>
+    <label class="year-label">School Year</label><span class="year-value print-value"><?= sanitize(preg_replace('/\s*-\s*/', ' - ', $schoolYear)) ?></span>
+    <label class="month-label">Report for the Month of</label><span class="month-value print-value"><?= sanitize($monthUpper) ?></span>
+    <label class="school-label">Name of School</label><span class="school-value print-value"><?= sanitize(strtoupper($schoolName)) ?></span>
+    <label class="grade-label">Grade Level</label><span class="grade-value print-value"><?= sanitize($section['grade_level'] ?? '') ?></span>
+    <label class="section-label">Section</label><span class="section-value print-value"><?= sanitize($section['section_name'] ?? '') ?></span>
+  </div>
+
+  <table class="attendance">
+    <colgroup><col style="width:2.8%"><col style="width:16.5%">
+    <?php foreach ($sf2PrintDays as $column): ?><col style="width:<?= 51 / count($sf2PrintDays) ?>% "><?php endforeach; ?>
+    <col style="width:6.1%"><col style="width:6.1%"><col style="width:17%"></colgroup>
+    <thead>
+      <tr><th rowspan="3">No.</th><th rowspan="3">NAME<br><span class="learner-name-format">(Last Name, First Name, Middle Name)</span></th><th class="date-caption" colspan="<?= count($sf2PrintDays) ?>">(1st row for date)</th><th class="month-total-header" colspan="2" rowspan="2">Total for the<br>Month</th><th class="remarks-header" rowspan="3"><b>REMARKS</b> (If DROPPED OUT, state reason, please refer to legend number 2. If TRANSFERRED IN/OUT, write the name of School.)</th></tr>
+      <tr><?php foreach ($sf2PrintDays as $column): ?><th><?= $column['day'] ?? '' ?></th><?php endforeach; ?></tr>
+      <tr><?php foreach ($sf2PrintDays as $column): ?><th><?= $column['weekday'] ?></th><?php endforeach; ?><th>ABSENT</th><th>PRESENT</th></tr>
+    </thead>
+    <tbody>
+    <?php foreach (['M' => 'MALE', 'F' => 'FEMALE', 'U' => 'UNSPECIFIED'] as $gender => $label):
+        $pageGroup = array_values(array_filter($sf2PageItems, static function ($item) use ($gender) { return $item['gender'] === $gender; }));
+        if (!$pageGroup) continue;
+        foreach ($pageGroup as $item): $student = $item['student']; ?>
+      <tr><td><?= $item['number'] ?>.</td><td class="name"><?= sanitize(strtoupper($student['last_name'] . ', ' . $student['first_name'] . (!empty($student['middle_name']) ? ' ' . $student['middle_name'] : ''))) ?></td>
+      <?php foreach ($item['cells'] as $cell): ?><td class="att-cell"><?= $cell['html'] ?></td><?php endforeach; ?>
+      <td><?= $item['recorded'] > 0 ? sf2PrintNumber($item['absent']) : '' ?></td><td><?= $item['recorded'] > 0 ? sf2PrintNumber($item['present']) : '' ?></td><td class="remarks" data-print-student-id="<?= (int)$student['id'] ?>"></td></tr>
+    <?php endforeach;
+        echo sf2PrintTotalRow($pageGroup, count($pageGroup) . '. <=== ' . $label . ' | TOTAL Per Day ===>', $sf2PrintDays);
+    endforeach;
+    echo sf2PrintTotalRow($sf2PageItems, count($sf2PageItems) . '. Combined TOTAL Per Day' . (count($sf2PrintPages) > 1 ? ' (this page)' : ''), $sf2PrintDays); ?>
+    </tbody>
+  </table>
+
+  <div class="bottom">
+    <div class="box guidelines">
+      <h3>GUIDELINES:</h3>
+      <p>1. The attendance shall be accomplished daily. Refer to the codes for checking learners' attendance.</p>
+      <p>2. Dates shall be written in the columns after Learner's Name.</p>
+      <p>3. To compute the following:</p>
+
+      <div class="formula"><span>a. Percentage of Enrolment =</span><span class="fraction"><span>Registered Learners as of end of the month</span><span>Enrolment as of 1st Friday of the school year</span></span><span>× 100</span></div>
+      <div class="formula"><span>b. Average Daily Attendance =</span><span class="fraction"><span>Total Daily Attendance</span><span>Number of School Days in reporting month</span></span></div>
+      <div class="formula"><span>c. Percentage of Attendance for the month =</span><span class="fraction"><span>Average daily attendance</span><span>Registered Learners as of end of the month</span></span><span>× 100</span></div>
+      <p>4. Every end of the month, the class adviser will submit this form to the office of the principal for recording of summary table into School Form 4. Once signed by the principal, this form should be returned to the adviser.</p>
+      <p>5. The adviser will provide necessary interventions including but not limited to home visitation to learners who were absent for 5 consecutive days and/or those at risk of dropping out.</p>
+      <p>6. Attendance performance of learners will be reflected in Form 137 and Form 138 every grading period.</p>
+      <p class="cutoff">*Beginning of School Year cut-off report is every 1st Friday of the School Year</p>
+    </div>
+    <div class="legend-column"><div class="box legend">
+      <h3>1. CODES FOR CHECKING ATTENDANCE</h3>
+      <p>(blank) - Present; (x) - Absent; Tardy (half shaded = Upper for Late Comer, Lower for Cutting Classes)</p>
+      <h3>2. REASONS/CAUSES FOR NLS</h3>
+      <p><b>a. Domestic-Related Factors</b></p>
+      <p>a.1. Had to take care of siblings</p><p>a.2. Early marriage/pregnancy</p>
+      <p>a.3. Parents' attitude toward schooling</p><p>a.4. Family problems</p>
+      <p><b>b. Individual-Related Factors</b></p>
+      <p>b.1. Illness</p><p>b.2. Overage</p><p>b.3. Death</p><p>b.4. Drug Abuse</p>
+      <p>b.5. Poor academic performance</p><p>b.6. Lack of interest/Distractions</p><p>b.7. Hunger/Malnutrition</p>
+      <p><b>c. School-Related Factors</b></p><p>c.1. Teacher Factor</p><p>c.2. Physical condition of classroom</p><p>c.3. Peer influence</p>
+      <p><b>d. Geographic/Environmental</b></p><p>d.1. Distance between home and school</p><p>d.2. Armed conflict (incl. Tribal wars &amp; clanfeuds)</p><p>d.3. Calamities/Disasters</p>
+      <p><b>e. Financial-Related</b></p><p>e.1. Child labor, work</p><p><b>f. Others</b> (Specify)</p>
+    </div><div class="generated"><b><?= sanitize($generatedBy) ?></b><span>Generated thru LIS</span></div></div>
+    <div class="summary-column">
+      <div class="box summary">
+        <table>
+          <colgroup><col style="width:62%"><col style="width:10%"><col style="width:10%"><col style="width:18%"></colgroup>
+          <tr><th rowspan="2" class="summary-month"><span>Month : <?= sanitize($monthUpper) ?></span><span>No. of Days of<br>Classes: <?= $schoolDays ?></span></th><th colspan="3">Summary</th></tr>
+          <tr><th>M</th><th>F</th><th>TOTAL</th></tr>
+          <?php foreach ($sf2PrintSummaryRows as $summaryRow): ?>
+          <tr><td><?= sanitize($summaryRow['label']) ?></td>
+          <?php foreach (['M','F','TOTAL'] as $gender): ?><td><?= sf2PrintSummaryValue($summaryRow['key'], $gender, $sf2PrintSummary, $schoolDays, $sf2SummaryOverrides ?? []) ?></td><?php endforeach; ?>
+          </tr><?php endforeach; ?>
+        </table>
+      </div>
+      <p class="certify">I certify that this is a true and correct report.</p>
+      <div class="signatures">
+        <div><div class="signature-space"></div><div class="sigline"><span class="signature-name"><?= sanitize($section['adviser_name'] ?? '') ?></span><small>(Signature of Adviser over Printed Name)</small></div></div>
+        <div><p class="attested">Attested by:</p><div class="signature-space"></div><div class="sigline"><b class="signature-name"><?= sanitize($schoolHead) ?></b><small>(Signature of School Head over Printed Name)</small></div></div>
+      </div>
+    </div>
+  </div>
+<?php if (count($sf2PrintPages) > 1): ?><p class="page-count">Page <?= $sf2PageIndex + 1 ?> of <?= count($sf2PrintPages) ?> · Daily totals on this page; summary for the entire class.</p><?php endif; ?>
+</section>
+<?php endforeach; ?>
+</div>
+
+<style>
+#sf2PrintRoot{display:none}
+@media print {
+ @page{size:A4 landscape;margin:0}
+ html,body{margin:0!important;padding:0!important;background:white!important;width:297mm!important;min-width:0!important;height:auto!important}
+ body> :not(#sf2PrintRoot){display:none!important}
+ #sf2PrintRoot{display:block!important;margin:0!important;padding:0!important;position:static!important}
+ #sf2PrintRoot *{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+#sf2PrintRoot .sheet{width:297mm;min-height:210mm;margin:12px auto;padding:7mm 0 7mm 7mm;background:white;box-shadow:0 1px 8px #aaa}#sf2PrintRoot .sheet>h1,#sf2PrintRoot .sheet>.subtitle,#sf2PrintRoot .meta,#sf2PrintRoot .attendance,#sf2PrintRoot .bottom{width:143mm}#sf2PrintRoot h1{font-size:7.15pt;text-align:center;margin:0 0 2.5mm;font-weight:700}#sf2PrintRoot .subtitle{font-size:4.4pt;font-style:italic;text-align:center;margin-bottom:2mm}#sf2PrintRoot .meta{position:relative;height:7.7mm;font-size:4.4pt}#sf2PrintRoot .meta label,#sf2PrintRoot .meta input,#sf2PrintRoot .meta textarea{position:absolute}#sf2PrintRoot .meta label{text-align:right;line-height:1.05}#sf2PrintRoot .meta input,#sf2PrintRoot .meta textarea{border:0.2mm solid #111;background:white;color:#111;border-radius:0;text-align:center;font-family:Arial;font-size:6pt;padding:0;height:3.9mm;resize:none;overflow:hidden;line-height:1.05}#sf2PrintRoot .id-label{left:18mm;top:1mm;width:9mm}#sf2PrintRoot .id-value{left:27.5mm;top:0;width:8.8mm}#sf2PrintRoot .year-label{left:37mm;top:0.3mm;width:7.8mm}#sf2PrintRoot .year-value{left:45mm;top:0;width:12.5mm}#sf2PrintRoot .month-label{left:58mm;top:0.4mm;width:15mm}#sf2PrintRoot .month-value{left:73.5mm;top:0;width:18.5mm}#sf2PrintRoot .school-label{left:9mm;top:5.1mm;width:18mm}#sf2PrintRoot .meta .school-value{left:27.5mm;top:3.9mm;width:30mm;height:3.8mm;font-size:5.5pt;line-height:0.95}#sf2PrintRoot .grade-label{left:60mm;top:5mm;width:13mm}#sf2PrintRoot .grade-value{left:73.5mm;top:3.9mm;width:18.5mm}#sf2PrintRoot .section-label{left:93mm;top:5mm;width:8mm}#sf2PrintRoot .section-value{left:101mm;top:3.9mm;width:42mm}#sf2PrintRoot table{border-collapse:collapse}#sf2PrintRoot .attendance{table-layout:fixed;font-size:4.4pt}#sf2PrintRoot .attendance th,#sf2PrintRoot .attendance td{border:0.2mm solid #111;padding:0;text-align:center;height:3.8mm;line-height:1.03;overflow-wrap:break-word}#sf2PrintRoot .attendance thead th{font-size:4.4pt}#sf2PrintRoot .attendance thead tr:first-child th{height:1.9mm}#sf2PrintRoot .attendance thead tr:nth-child(2) th{height:3mm}#sf2PrintRoot .attendance thead tr:nth-child(3) th{height:4.6mm}#sf2PrintRoot .name-col{text-align:center!important}#sf2PrintRoot .name{text-align:left!important;padding-left:0.5mm!important;font-size:4.4pt}#sf2PrintRoot .att-cell{cursor:pointer;font-size:4.4pt}#sf2PrintRoot .total-row{font-weight:normal}#sf2PrintRoot .total-row td:nth-last-child(2),#sf2PrintRoot .total-row td:nth-last-child(3){font-weight:bold}#sf2PrintRoot .remarks{font-size:4pt}#sf2PrintRoot .att-cell.tardy{background:linear-gradient(to bottom,#aaa 50%,white 50%)}#sf2PrintRoot .att-cell.cut{background:linear-gradient(to bottom,white 50%,#aaa 50%)}#sf2PrintRoot .bottom{display:grid;grid-template-columns:71.5mm 28mm 42mm;gap:0.75mm;margin-top:0;font-size:3.3pt;line-height:1.15}#sf2PrintRoot .box{padding:0}#sf2PrintRoot .box h3{font-size:3.3pt;margin:0 0 0.5mm}#sf2PrintRoot .box p{margin:0 0 0.45mm}#sf2PrintRoot .formula{display:flex;gap:1mm;align-items:center;margin:3mm 2mm;font-size:3pt}#sf2PrintRoot .formula>span:first-child{flex:1}#sf2PrintRoot .fraction{display:flex;flex-direction:column;text-align:center;flex:1.4}#sf2PrintRoot .fraction>span:first-child{border-bottom:0.2mm solid #111;padding-bottom:0.4mm}#sf2PrintRoot .fraction>span:last-child{padding-top:0.4mm}#sf2PrintRoot .cutoff{margin:5mm 3mm!important;font-size:3pt}#sf2PrintRoot .legend{border:0.2mm solid #111;min-height:57mm;padding:0.7mm;font-size:2.75pt}#sf2PrintRoot .legend h3{font-size:2.75pt;margin-bottom:1mm}#sf2PrintRoot .legend p:has(b){margin-top:2mm}#sf2PrintRoot .legend p{margin-bottom:0.5mm}#sf2PrintRoot .legend-column{position:relative}#sf2PrintRoot .generated{font-size:3.3pt;text-align:center;margin-top:5mm}#sf2PrintRoot .generated b{display:block;border-bottom:0.2mm solid #111;font-size:4.4pt}#sf2PrintRoot .summary table{width:100%;font-size:4.4pt;table-layout:fixed}#sf2PrintRoot .summary td,#sf2PrintRoot .summary th{border:0.2mm solid #111;text-align:center;padding:0.3mm;line-height:1.05}#sf2PrintRoot .summary td:first-child,#sf2PrintRoot .summary th:first-child{width:67%;font-weight:normal}#sf2PrintRoot .summary td{height:3.7mm}#sf2PrintRoot .summary tr:nth-last-child(-n+3) td{height:2.5mm}#sf2PrintRoot .certify{font-size:4.4pt;font-style:italic;margin:3mm 0 0}#sf2PrintRoot .signatures{font-size:4.4pt;text-align:center}#sf2PrintRoot .signature-space{height:6mm}#sf2PrintRoot .sigline{border-top:0.2mm solid #111;margin:0 1.5mm;padding-top:0.3mm}#sf2PrintRoot .sigline small{font-size:3pt}#sf2PrintRoot .attested{text-align:left;font-style:italic;margin:4mm 0 0}#sf2PrintRoot .editable{background:#fffde8}
+
+#sf2PrintRoot .sheet{box-sizing:border-box;margin:0;padding:7mm 0 7mm 7mm;width:297mm;min-height:0;background:#fff;box-shadow:none;font-family:Arial,Helvetica,sans-serif;color:#000;break-after:page}
+#sf2PrintRoot .sheet:last-child{break-after:auto}
+#sf2PrintRoot,#sf2PrintRoot *{box-sizing:border-box}
+#sf2PrintRoot h1{line-height:normal;letter-spacing:normal}
+#sf2PrintRoot table{border-collapse:collapse;margin:0;color:#000}
+#sf2PrintRoot .meta .print-value{position:absolute;display:flex;align-items:center;justify-content:center;height:3.9mm;border:0.2mm solid #111;font-size:6pt;line-height:1.05;text-align:center;overflow-wrap:break-word;padding:0 0.2mm}
+#sf2PrintRoot .meta .school-value{height:3.8mm;font-size:5.5pt}
+#sf2PrintRoot .attendance .att-cell{position:relative;cursor:default}
+#sf2PrintRoot .half-mark{position:absolute;left:0;right:0;height:50%;font-size:3pt;line-height:1.4}
+#sf2PrintRoot .half-mark.upper{top:0}
+#sf2PrintRoot .half-mark.lower{bottom:0}
+#sf2PrintRoot .late-mark{background:#aaa}
+#sf2PrintRoot .remarks{text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;padding:0.3mm}
+#sf2PrintRoot .page-count{font-size:3.5pt;margin:1mm 0;width:143mm}
+#sf2PrintRoot .bottom{break-inside:avoid}
+#sf2PrintRoot .attendance tr{break-inside:avoid}
+#sf2PrintRoot .summary th{font-size:3.8pt}
+
+/* Reference PDF geometry: 7.2 mm left inset, 142.9 mm form width. */
+#sf2PrintRoot .sheet{padding:7.2mm 0 7mm 7.2mm}
+#sf2PrintRoot .sheet>h1,#sf2PrintRoot .sheet>.subtitle,#sf2PrintRoot .meta,#sf2PrintRoot .attendance,#sf2PrintRoot .bottom{width:142.9mm}
+#sf2PrintRoot h1{height:5.67mm;margin:0;font-size:7.15pt;line-height:5.67mm}
+#sf2PrintRoot .subtitle{height:3.78mm;margin:0;font-size:4.4pt;line-height:3.78mm}
+#sf2PrintRoot .meta{height:7.57mm;font-size:4.95pt}
+#sf2PrintRoot .meta .print-value{height:3.78mm;border:.145mm solid #000;font-size:6pt}
+#sf2PrintRoot .id-label{left:18mm;top:1mm;width:9.2mm}
+#sf2PrintRoot .id-value{left:27.5mm;top:0;width:8.8mm}
+#sf2PrintRoot .year-label{left:36.5mm;top:.2mm;width:8mm;font-size:4.4pt}
+#sf2PrintRoot .year-value{left:44.8mm;top:0;width:12.8mm}
+#sf2PrintRoot .month-label{left:57.8mm;top:.2mm;width:15.4mm;font-size:4.4pt}
+#sf2PrintRoot .month-value{left:73.3mm;top:0;width:18.8mm}
+#sf2PrintRoot .school-label{left:9mm;top:4.9mm;width:18.2mm}
+#sf2PrintRoot .meta .school-value{left:27.5mm;top:3.78mm;width:30.1mm;height:3.79mm;font-size:5.5pt}
+#sf2PrintRoot .grade-label{left:59mm;top:4.9mm;width:14.2mm}
+#sf2PrintRoot .grade-value{left:73.3mm;top:3.78mm;width:18.8mm}
+#sf2PrintRoot .section-label{left:92.4mm;top:4.9mm;width:8.6mm}
+#sf2PrintRoot .section-value{left:101.1mm;top:3.78mm;width:41.8mm}
+#sf2PrintRoot .attendance th,#sf2PrintRoot .attendance td{border:.145mm solid #000;height:3.785mm;font-weight:400}
+#sf2PrintRoot .attendance thead th{font-weight:700}
+#sf2PrintRoot .attendance thead tr:first-child th{height:1.89mm}
+#sf2PrintRoot .attendance thead tr:nth-child(2) th{height:2.91mm}
+#sf2PrintRoot .attendance thead tr:nth-child(3) th{height:4.66mm}
+#sf2PrintRoot .attendance tbody td{font-size:4.4pt;line-height:1.05}
+#sf2PrintRoot .attendance .name{font-weight:400}
+#sf2PrintRoot .attendance .total-row td:nth-last-child(2),#sf2PrintRoot .attendance .total-row td:nth-last-child(3){font-weight:700}
+#sf2PrintRoot .bottom{grid-template-columns:71.5mm 28mm 42mm;gap:.7mm;font-size:3.3pt}
+#sf2PrintRoot .guidelines{padding:.5mm .3mm 0}
+#sf2PrintRoot .formula{margin:3mm 2mm;font-size:3pt}
+#sf2PrintRoot .legend{min-height:57mm;border:.145mm solid #000;padding:.5mm;font-size:2.75pt}
+#sf2PrintRoot .summary td,#sf2PrintRoot .summary th{border:.145mm solid #000;padding:.25mm;font-size:4.4pt}
+#sf2PrintRoot .summary th{height:1.9mm;line-height:1.05}
+#sf2PrintRoot .summary .summary-month{padding:0;font-size:4.4pt}
+#sf2PrintRoot .summary-month span{display:inline-block;vertical-align:middle;width:50%;font-weight:700}
+#sf2PrintRoot .summary-month span+span{border-left:.145mm solid #000}
+#sf2PrintRoot .summary td:first-child{font-style:italic}
+#sf2PrintRoot .summary td{height:4.6mm}
+#sf2PrintRoot .summary tr:nth-last-child(-n+3) td{height:2.5mm;font-weight:700;font-style:normal}
+#sf2PrintRoot .generated{margin-top:4.5mm}
+#sf2PrintRoot .generated b{border-bottom:.145mm solid #000}
+#sf2PrintRoot .sigline{border-top:.145mm solid #000}
+#sf2PrintRoot .sheet{position:relative}
+#sf2PrintRoot .page-count{position:absolute;top:202mm;left:7.2mm;width:142.9mm;margin:0;line-height:1}
+
+#sf2PrintRoot .summary td{height:3.65mm}
+#sf2PrintRoot .summary tr:nth-last-child(-n+3) td{height:2.5mm}
+#sf2PrintRoot .summary th:last-child{font-size:3.7pt}
+#sf2PrintRoot .signature-space{height:5mm}
+#sf2PrintRoot .meta .school-value{font-size:6.05pt;line-height:1}
+#sf2PrintRoot .total-row td:first-child{font-size:3.8pt}
+#sf2PrintRoot .sigline{border-top:0;padding-top:0}
+#sf2PrintRoot .signature-name{display:block;min-height:2mm;border-bottom:.145mm solid #000;padding-bottom:.3mm}
+#sf2PrintRoot .sigline small{display:block;padding-top:.3mm}
+#sf2PrintRoot .bottom{min-height:64mm}
+#sf2PrintRoot .formula{display:grid;grid-template-columns:26mm 32.8mm 6.5mm;gap:.6mm;align-items:center;margin:1mm 2mm;font-size:3.3pt}
+#sf2PrintRoot .fraction>span:first-child{padding-bottom:.2mm}
+#sf2PrintRoot .fraction>span:last-child{padding-top:.2mm}
+#sf2PrintRoot .guidelines>p:nth-of-type(n+4):not(.cutoff){text-align:justify}
+#sf2PrintRoot .cutoff{margin:3mm 2mm!important;font-size:3.3pt}
+#sf2PrintRoot .legend{min-height:55.5mm}
+#sf2PrintRoot .legend-column{position:relative}
+#sf2PrintRoot .generated{position:absolute;left:0;right:0;bottom:0;margin:0}
+#sf2PrintRoot .generated b{min-height:2mm}
+#sf2PrintRoot .generated span{display:block;padding-top:.3mm;font-size:3pt}
+#sf2PrintRoot .summary-column{display:flex;flex-direction:column;min-height:64mm}
+#sf2PrintRoot .summary td,#sf2PrintRoot .summary th{font-size:3.6pt}
+#sf2PrintRoot .summary td:first-child,#sf2PrintRoot .summary th:first-child{width:62%}
+#sf2PrintRoot .summary .summary-month{font-size:3.6pt}
+#sf2PrintRoot .certify{margin:3mm 0 0}
+#sf2PrintRoot .signatures{margin-top:auto}
+#sf2PrintRoot .signature-space{height:4mm}
+#sf2PrintRoot .signature-name{font-size:5.4pt;line-height:1.1}
+#sf2PrintRoot .signatures>div+div .signature-name{font-size:3.6pt}
+#sf2PrintRoot .subtitle{height:3mm;line-height:3mm;margin:1.5mm 0;font-size:2.7pt}
+#sf2PrintRoot .meta label{font-size:3.3pt;white-space:nowrap}
+#sf2PrintRoot .year-label,#sf2PrintRoot .month-label{top:1mm}
+#sf2PrintRoot .meta .print-value{font-size:4.5pt;font-weight:700}
+#sf2PrintRoot .meta .school-value{font-size:4.25pt;white-space:nowrap}
+#sf2PrintRoot .attendance thead .learner-name-format{font-size:2.75pt;white-space:nowrap}
+#sf2PrintRoot .attendance thead .date-caption{font-size:2.75pt;font-weight:400}
+#sf2PrintRoot .attendance thead .month-total-header{font-size:4.5pt;line-height:1.15}
+#sf2PrintRoot .attendance thead .remarks-header{font-size:2.75pt;font-weight:400;line-height:1.15}
+
+}
+</style>
+
+<script>
+(function () {
+    const printRoot = document.getElementById('sf2PrintRoot');
+    // Place the report directly under body so application wrappers and sidebar styles cannot shrink it.
+    document.body.appendChild(printRoot);
+    function syncPrintRemarks() {
+        const remarks = new Map();
+        document.querySelectorAll('.sf2-remark[data-student-id]').forEach(el => remarks.set(el.dataset.studentId, el.value));
+        printRoot.querySelectorAll('[data-print-student-id]').forEach(el => { el.textContent = remarks.get(el.dataset.printStudentId) || ''; });
+    }
+    window.addEventListener('beforeprint', syncPrintRemarks);
+    document.addEventListener('input', event => { if (event.target.matches('.sf2-remark')) syncPrintRemarks(); });
+    syncPrintRemarks();
 })();
 </script>
 

@@ -36,8 +36,9 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['session_token'])) {
             !empty($row['session_token']) &&
             hash_equals((string)$row['session_token'], (string)$_SESSION['session_token'])
         ) {
+            $_SESSION['role'] = $row['role'];
             // Already logged in — route by role
-            if ($row['role'] === 'user') {
+            if ($row['role'] === 'scanner_operator') {
                 header('Location: ' . BASE_URL . 'attendance/scanner.php');
             } else {
                 header('Location: ' . BASE_URL . 'dashboard.php');
@@ -127,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
                 }
 
-                if ($user['role'] === 'user') {
+                if ($user['role'] === 'scanner_operator') {
                     header('Location: ' . BASE_URL . 'attendance/scanner.php');
                 } else {
                     header('Location: ' . BASE_URL . 'dashboard.php');
@@ -154,7 +155,7 @@ $schoolName = getSetting('school_name') ?? 'San Pablo City Central School';
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-    <link href="css.css" rel="stylesheet">
+    <link href="assets/css/login.css" rel="stylesheet">
 </head>
 <body>
 <div class="login-page">

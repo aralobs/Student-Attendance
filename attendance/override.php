@@ -2,6 +2,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     header('Location: attendance.php');
@@ -16,7 +17,6 @@ $pmIn         = !empty($_POST['pm_in'])     ? $_POST['pm_in']     : null;
 $pmOut        = !empty($_POST['pm_out'])    ? $_POST['pm_out']    : null;
 $pmStatus     = !empty($_POST['pm_status']) ? $_POST['pm_status'] : null;
 $remarks      = trim($_POST['remarks']      ?? '');
-$scheduleType = $_POST['schedule_type']     ?? 'full_day';
 $redirectDate = $_POST['redirect_date']     ?? date('Y-m-d');
 
 if ($id <= 0) {
@@ -29,7 +29,7 @@ $db = getDB();
 
 // Get the attendance record and its section
 $stmt = $db->prepare("
-    SELECT a.*, sec.schedule_type
+    SELECT a.*, s.section_id, sec.schedule_type
     FROM attendance a
     JOIN students s ON a.student_id = s.id
     LEFT JOIN sections sec ON s.section_id = sec.id
@@ -45,7 +45,10 @@ if (!$existing) {
 }
 
 // Compute attendance_type
-$mockSection   = ['schedule_type' => $scheduleType];
+if (empty($existing['section_id']) || !canAccessSection((int)$existing['section_id'])) {
+    http_response_code(403); exit('Access denied to this section.');
+}
+$mockSection = ['schedule_type' => $existing['schedule_type']];
 $mockRecord    = [
     'am_in' => $amIn,
     'pm_in' => $pmIn,

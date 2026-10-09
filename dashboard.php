@@ -23,7 +23,7 @@ $today     = date('Y-m-d');
 $user      = currentUser();
 
 $endpointUrl = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/')
-             . '/attendance/get_today_log.php';
+             . '/attendance/get_today_log.php?scans_only=1';
 
 // ── Calendar: single fetch for today + upcoming events ─────
 $calendarEntry  = getCalendarEntry($today);
@@ -241,7 +241,6 @@ include 'includes/sidebar.php';
                         <option value="full_day">Full Day</option>
                         <option value="partial">Partial</option>
                         <option value="absent">Absent</option>
-                        <option value="pending">Pending</option>
                     </select>
                     <input type="text"
                            id="todayLogSearch"
@@ -262,12 +261,13 @@ include 'includes/sidebar.php';
                             <th class="text-center">AM Out</th>
                             <th class="text-center">PM In</th>
                             <th class="text-center">PM Out</th>
+                            <th>Last Event</th>
                             <th class="text-center">Type</th>
                         </tr>
                     </thead>
                     <tbody id="todayLogBody">
                         <tr>
-                            <td colspan="6" class="text-center text-muted py-4">
+                            <td colspan="7" class="text-center text-muted py-4">
                                 <span class="spinner-border spinner-border-sm me-2"></span>
                                 Loading today's log...
                             </td>
@@ -277,7 +277,7 @@ include 'includes/sidebar.php';
             </div>
             <div class="card-footer text-muted small d-flex justify-content-between">
                 <span id="todayLogUpdated">—</span>
-                <span>Showing all students recorded today.</span>
+                <span>Showing students scanned today.</span>
             </div>
         </div>
     </div>
@@ -480,6 +480,12 @@ $extraJS = <<<JS
         return '';
     }
 
+    function lastEventCell(r) {
+        const labels = {am_in: 'AM In', am_out: 'AM Out', pm_in: 'PM In', pm_out: 'PM Out'};
+        return '<span class="badge bg-secondary">' + esc(labels[r.last_event] || '') + '</span>' +
+               '<div class="text-muted small">' + esc(r.last_event_time || '') + '</div>';
+    }
+
     function render() {
         const term  = (searchBox.value || '').toLowerCase().trim();
         const grade = gradeSel.value;
@@ -500,8 +506,8 @@ $extraJS = <<<JS
                               (filtered.length === 1 ? '' : 's');
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
-                '<i class="bi bi-inbox me-1"></i>No students match your filter.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+                '<i class="bi bi-inbox me-1"></i>' + (rows.length ? 'No scans match your filter.' : 'No scans today.') + '</td></tr>';
             return;
         }
 
@@ -517,13 +523,14 @@ $extraJS = <<<JS
               '<td class="text-center small">' + fmtCell(r.am_out, null)         + '</td>' +
               '<td class="text-center small">' + fmtCell(r.pm_in,  r.pm_status) + '</td>' +
               '<td class="text-center small">' + fmtCell(r.pm_out, null)         + '</td>' +
+              '<td>' + lastEventCell(r) + '</td>' +
               '<td class="text-center">' + typeBadge(r.attendance_type) + '</td>' +
             '</tr>'
         )).join('');
     }
 
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">' +
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading today\\'s log...</td></tr>';
         try {
             const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
@@ -545,13 +552,13 @@ $extraJS = <<<JS
             const all = await res.json();
             if (!Array.isArray(all)) throw new Error('Invalid response');
 
-            // No filter — show every student, just like scanner.php
+            // The scanner endpoint returns scanned students in newest-first order.
             rows = all;
 
             render();
             updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">' +
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">' +
                 'Failed to load today\\'s log: ' + esc(err.message) + '</td></tr>';
             countEl.textContent = '—';
         }
