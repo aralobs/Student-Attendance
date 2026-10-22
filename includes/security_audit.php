@@ -26,7 +26,7 @@ function securityAuditAlertCount(): ?int {
 function securityAuditEvent(PDO $db, string $action, string $outcome = 'success', string $targetType = 'route', ?int $targetId = null, bool $alert = false): string {
     if (!preg_match('/^[a-z][a-z0-9_.]{0,79}$/D', $action)
         || !in_array($outcome, ['success','failure','denied','limited','error'], true)
-        || !in_array($targetType, ['route','user','student','attendance','report'], true)) throw new InvalidArgumentException('Invalid audit event.');
+        || !in_array($targetType, ['route','user','student','attendance','report','school_year','enrollment','enroll_correct'], true)) throw new InvalidArgumentException('Invalid audit event.');
     $event = bin2hex(random_bytes(16));
     $db->prepare('INSERT INTO security_events (event_id,request_id,actor_id,device_hash,action,outcome,target_type,target_id,alert,route_name) VALUES (?,?,?,?,?,?,?,?,?,?)')
         ->execute([$event,securityRequestId(),securityAuditActor(),$GLOBALS['security_audit_device'] ?? null,$action,$outcome,$targetType,$targetId,(int)$alert,securityAuditRoute()]);
@@ -40,7 +40,7 @@ function securityAuditChange(PDO $db, string $action, string $targetType, int $t
 }
 function attendanceAuditSnapshot(?array $row): ?array {
     if ($row === null) return null;
-    return array_intersect_key($row, array_flip(['id','student_id','date','am_in','am_out','am_status','pm_in','pm_out','pm_status','attendance_type','remarks','recorded_by']));
+    return array_intersect_key($row, array_flip(['id','student_id','enrollment_id','assignment_id','date','am_in','am_out','am_status','pm_in','pm_out','pm_status','attendance_type','remarks','recorded_by']));
 }
 function auditAttendanceAfterWrite(PDO $db, int $id, ?array $before, string $action): void {
     $read = $db->prepare('SELECT * FROM attendance WHERE id = ?'); $read->execute([$id]);
