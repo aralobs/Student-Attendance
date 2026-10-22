@@ -10,8 +10,8 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
-require_once '../includes/attendance_finalizer.php';
+require_once '../includes/sf2_remarks.php';
+requireStudentManagement();
 
 $pageTitle       = 'SF2 — Daily Attendance Record';
 $db              = getDB();
@@ -35,8 +35,6 @@ if (!canAccessSection($sectionId)) {
     http_response_code(403);
     exit('Section access denied');
 }
-$reportStart = sprintf('%04d-%02d-01', $year, $month);
-finalizeAttendanceRange($reportStart, date('Y-m-t', strtotime($reportStart)), $sectionId);
 $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 $monthLabel  = date('F Y', mktime(0, 0, 0, $month, 1, $year));
 $monthUpper  = strtoupper(date('F', mktime(0, 0, 0, $month, 1, $year)));
@@ -50,6 +48,13 @@ $calEntries  = getCalendarMonth($month, $year);
 $students = $db->prepare("SELECT * FROM students WHERE section_id = ? AND is_active = 1 ORDER BY last_name, first_name");
 $students->execute([$sectionId]);
 $students = $students->fetchAll();
+try {
+    $sf2Remarks = loadSF2Remarks($db, $sectionId, $month, $year);
+} catch (Throwable $error) {
+    http_response_code(503);
+    error_log('SF2 remarks unavailable.');
+    exit('Report remarks are temporarily unavailable. Please try again later.');
+}
 $attMatrix = [];
 $stmt = $db->prepare("SELECT student_id, DAY(date) AS day, am_in, am_out, pm_in, pm_out,
     am_status, pm_status, attendance_type FROM attendance
@@ -521,7 +526,9 @@ include '../includes/sidebar.php';
                                     data-student-id="<?= $stu['id'] ?>"
                                     rows="1"
                                     placeholder="Add remark..."
-                                ></textarea>
+                                    maxlength="1000"
+                                    data-version="<?= (int)($sf2Remarks[$stu['id']]['version'] ?? 0) ?>"
+                                ><?= htmlspecialchars($sf2Remarks[$stu['id']]['text'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></textarea>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -1119,65 +1126,13 @@ include '../includes/sidebar.php';
 }
 </style>
 
-<script>
-(function () {
-    // Unique storage key per section + month + year
-    const STORAGE_KEY = 'sf2_remarks_<?= (int)$sectionId ?>_<?= (int)$month ?>_<?= (int)$year ?>';
-    const textareas   = document.querySelectorAll('.sf2-remark');
-
-    // 1. Load saved remarks
-    let saved = {};
-    try {
-        saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    } catch (e) {
-        saved = {};
-    }
-
-    // 2. Populate
-    textareas.forEach(function (ta) {
-        const id = ta.dataset.studentId;
-        if (saved[id]) {
-            ta.value = saved[id];
-            autoGrow(ta);
-        }
-    });
-
-    // 3. Save on input (debounced) + auto-grow
-    let saveTimer = null;
-    textareas.forEach(function (ta) {
-        ta.addEventListener('input', function () {
-            autoGrow(ta);
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(persist, 400);
-        });
-        ta.addEventListener('blur', persist);
-    });
-
-    function persist() {
-        const data = {};
-        textareas.forEach(function (ta) {
-            const v = ta.value.trim();
-            if (v) data[ta.dataset.studentId] = v;
-        });
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } catch (e) {
-            console.warn('Could not save remarks:', e);
-        }
-    }
-
-    function autoGrow(el) {
-        el.style.height = 'auto';
-        el.style.height = (el.scrollHeight) + 'px';
-    }
-
-    // Loading spinner on Generate
-    document.getElementById('sf2FilterForm')?.addEventListener('submit', function () {
-        document.getElementById('genSpin')?.classList.remove('d-none');
-        document.getElementById('genBtn').disabled = true;
-    });
-})();
-</script>
+<div class="d-flex align-items-center gap-2 my-3 no-print">
+    <span id="sf2RemarkStatus" class="small text-muted" role="status" aria-live="polite"
+          data-endpoint="<?= BASE_URL ?>reports/save_sf2_remark.php" data-section="<?= (int)$sectionId ?>"
+          data-month="<?= (int)$month ?>" data-year="<?= (int)$year ?>">Remarks are stored securely on the server.</span>
+    <button id="sf2RemarkRetry" type="button" class="btn btn-outline-primary btn-sm" hidden>Retry saving</button>
+</div>
+<script src="<?= BASE_URL ?>assets/js/sf2_remarks.js"></script>
 
 <div id="sf2PrintRoot" aria-hidden="true">
 <?php foreach ($sf2PrintPages as $sf2PageIndex => $sf2PageItems): ?>

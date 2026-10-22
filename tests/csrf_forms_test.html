@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="csrf-token" content="synthetic-session-token">
+<title>CSRF form browser checks</title>
+<form id="bulkForm" method="POST" action="../students/bulk_assign_section.php"><input name="csrf_token" value="synthetic-session-token"></form>
+<table><tbody><tr><td>
+<input type="checkbox" name="student_ids[]" value="123" checked form="bulkForm">
+<form id="buttonAction" method="POST" action="../students/archive.php">
+<input name="csrf_token" value="synthetic-session-token"><input name="id" value="123">
+<button type="submit" data-confirm="Archive?" data-confirm-label="Archive">Archive</button>
+</form>
+<form id="formAction" method="POST" action="../users/toggle.php" data-confirm="Toggle?">
+<input name="csrf_token" value="synthetic-session-token"><input name="id" value="456">
+<button type="submit">Toggle</button>
+</form>
+</td></tr></tbody></table>
+<pre id="testResult">Running</pre>
+<script src="../assets/js/main.js"></script>
+<script src="csrf_forms_test.js"></script>

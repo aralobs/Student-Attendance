@@ -14,6 +14,8 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+requireStaff();
+$user = currentUser();
 
 // ── Allow both admin and teacher ──────────────────────────
 if (!isAdmin() && !isTeacher()) {
@@ -73,7 +75,7 @@ if (isAdmin()) {
         WHERE s.is_active = 1 AND s.adviser_id = ?
         ORDER BY " . gradeLevelOrderSQL('s.grade_level') . ", s.section_name
     ");
-    $secStmt->execute([$currentUser['id']]);
+    $secStmt->execute([$user['id']]);
     $allSections = $secStmt->fetchAll();
 }
 

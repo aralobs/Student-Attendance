@@ -58,6 +58,7 @@ include '../includes/sidebar.php';
                     <option value="arrival"   <?= $type === 'arrival'   ? 'selected' : '' ?>>Arrival</option>
                     <option value="departure" <?= $type === 'departure' ? 'selected' : '' ?>>Departure</option>
                     <option value="absence"   <?= $type === 'absence'   ? 'selected' : '' ?>>Absence</option>
+                    <option value="missing_checkout" <?= $type === 'missing_checkout' ? 'selected' : '' ?>>Missing Time-Out</option>
                 </select>
             </div>
             <div class="col-auto">
@@ -82,13 +83,14 @@ include '../includes/sidebar.php';
                         <th>Student</th>
                         <th>Recipient</th>
                         <th>Type</th>
+                        <th>Delivery status</th>
                         <th>Message</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if (empty($logs)): ?>
                     <tr>
-                        <td colspan="5" class="text-center text-muted py-4">
+                        <td colspan="6" class="text-center text-muted py-4">
                             No SMS logs found.
                         </td>
                     </tr>
@@ -108,9 +110,10 @@ include '../includes/sidebar.php';
                             <span class="badge bg-<?= $log['type'] === 'arrival'
                                 ? 'success'
                                 : ($log['type'] === 'departure' ? 'info' : 'danger') ?> bg-opacity-75">
-                                <?= ucfirst($log['type']) ?>
+                                <?= $log['type'] === 'missing_checkout' ? 'Missing Time-Out' : ucfirst($log['type']) ?>
                             </span>
                         </td>
+                        <td><?= sanitize(ucfirst($log['status'])) ?></td>
                         <td>
                             <small class="text-muted"
                                    title="<?= htmlspecialchars($log['message']) ?>">

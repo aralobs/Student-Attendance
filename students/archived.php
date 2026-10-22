@@ -4,7 +4,8 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+requireStudentManagement();
 
 $pageTitle = 'Archived Students';
 $db        = getDB();
@@ -15,8 +16,9 @@ $page    = max(1, (int)($_GET['page'] ?? 1));
 $perPage = 15;
 $offset  = ($page - 1) * $perPage;
 
-$where  = ['s.is_active = 0'];
-$params = [];
+[$studentScope, $scopeParams] = studentRecordScope('s');
+$where  = ['s.is_active = 0', "({$studentScope})"];
+$params = $scopeParams;
 
 if ($search !== '') {
     $where[]  = "(s.first_name LIKE ? OR s.last_name LIKE ? OR s.lrn LIKE ?)";
@@ -125,12 +127,16 @@ include '../includes/sidebar.php';
                         <td>
                             <div class="d-flex gap-1">
                                 <?php if (isAdmin()): ?>
-                                <a href="restore.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-success"
+                                <form method="POST" action="restore.php" class="d-inline">
+<?= csrfField() ?>
+<input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
+<button type="submit" class="btn btn-sm btn-outline-success"
                                         data-confirm="Restore &quot;<?= sanitize($s['first_name'].' '.$s['last_name']) ?>&quot; to active students?"
                                         data-confirm-title="Restore student" data-confirm-label="Restore" data-confirm-tone="success"
                                         title="Restore">
                                     <i class="bi bi-arrow-counterclockwise"></i>
-                                </a>
+                                </button>
+</form>
                                 <?php else: ?>
                                 <span class="text-muted small">—</span>
                                 <?php endif; ?>

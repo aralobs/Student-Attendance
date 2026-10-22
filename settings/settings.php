@@ -28,6 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'sms_arrival_template',
         'sms_departure_template',
         'sms_absence_template',
+        'sms_missing_checkout_template',
+        'email_arrival_subject',
+        'email_departure_subject',
+        'email_absence_subject',
+        'email_arrival_template',
+        'email_departure_template',
+        'email_absence_template',
         'mail_host',
         'mail_port',
         'mail_username',
@@ -51,6 +58,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         foreach (['school_name' => 255, 'school_id' => 30, 'school_head' => 200] as $key => $maxLength) {
             if (mb_strlen(trim($_POST[$key] ?? ''), 'UTF-8') > $maxLength) {
                 throw new InvalidArgumentException('School information exceeds the allowed length.');
+            }
+        }
+        foreach (notificationTemplateDefaults() as $key => $default) {
+            if (!isset($_POST[$key])) continue;
+            $maximum = str_ends_with($key, '_subject') ? 200 : 4000;
+            if (mb_strlen($_POST[$key]) > $maximum || str_contains($_POST[$key], "\0")
+                || (str_ends_with($key, '_subject') && preg_match('/[\r\n]/', $_POST[$key]))) {
+                throw new InvalidArgumentException('Message templates must be at most 4,000 characters; subjects must be a single line of at most 200 characters.');
             }
         }
         $db->beginTransaction();
@@ -100,6 +115,7 @@ foreach ($rows as $row) {
         ? ($row['setting_value'] !== null && $row['setting_value'] !== '') : $row['setting_value'];
 }
 unset($rows, $row);
+foreach (notificationTemplateDefaults() as $key => $default) $settings[$key] = notificationTemplate($key);
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
@@ -257,6 +273,8 @@ include '../includes/sidebar.php';
                     <small class="text-muted d-block mb-3">
                         Variables: <code>{student_name}</code>
                         <code>{time}</code> <code>{date}</code>
+                        <code>{section}</code> <code>{school_name}</code>.
+                        Arrival and departure templates apply to both AM and PM scans. Blank templates use the default message.
                     </small>
 
                     <div class="row g-3">
@@ -283,6 +301,11 @@ include '../includes/sidebar.php';
                             </label>
                             <textarea name="sms_absence_template"
                                 class="form-control" rows="4"><?= htmlspecialchars($settings['sms_absence_template'] ?? '') ?></textarea>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label" for="missingCheckoutTemplate">Missing Time-Out Alert</label>
+                            <textarea id="missingCheckoutTemplate" name="sms_missing_checkout_template" class="form-control" rows="3" maxlength="4000"><?= htmlspecialchars($settings['sms_missing_checkout_template']) ?></textarea>
+                            <small class="text-muted">Sent only when a teacher selects a parent alert in End of Day Review. Editing this message does not resend earlier alerts.</small>
                         </div>
                     </div>
 
@@ -374,6 +397,21 @@ include '../includes/sidebar.php';
                             </div>
                         </div>
                     </div>
+
+                    <hr>
+                    <p class="fw-600 mb-1">Email Templates</p>
+                    <p class="small text-muted">Use plain text with {student_name}, {time}, {date}, {section}, and {school_name}. Messages keep the school email layout. Blank fields use defaults.</p>
+                    <div class="row g-3">
+                    <?php foreach (['arrival' => 'Arrival', 'departure' => 'Departure', 'absence' => 'Absence'] as $event => $label): ?>
+                        <div class="col-md-4">
+                            <label class="form-label" for="emailSubject<?= $event ?>"><?= $label ?> Subject</label>
+                            <input id="emailSubject<?= $event ?>" name="email_<?= $event ?>_subject" class="form-control mb-2" maxlength="200" value="<?= htmlspecialchars($settings['email_' . $event . '_subject']) ?>">
+                            <label class="form-label" for="emailBody<?= $event ?>"><?= $label ?> Message</label>
+                            <textarea id="emailBody<?= $event ?>" name="email_<?= $event ?>_template" class="form-control" rows="7" maxlength="4000"><?= htmlspecialchars($settings['email_' . $event . '_template']) ?></textarea>
+                        </div>
+                    <?php endforeach; ?>
+                    </div>
+                    <p class="small text-muted mt-2">Arrival and departure emails follow successful scans. Absence templates are used only where the app explicitly sends an absence email; the cron finalizer sends no parent notifications. Missing Time-Out review currently sends SMS only.</p>
 
                     <!-- Test Email -->
                     <div class="mt-3">

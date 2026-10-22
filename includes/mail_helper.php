@@ -9,6 +9,7 @@ use PHPMailer\PHPMailer\SMTP;
 use PHPMailer\PHPMailer\Exception;
 
 require_once dirname(__DIR__) . '/vendor/autoload.php';
+require_once __DIR__ . '/notification_templates.php';
 
 /**
  * Send email notification
@@ -145,118 +146,30 @@ HTML;
 /**
  * Send arrival email to parent
  */
+function sendStudentNotificationEmail(array $student, string $event): bool {
+    if (empty($student['parent_email']) || getSetting('email_notifications') === '0') return false;
+    $labels = ['arrival' => ['Arrival Notification', '#0e9f6e'],
+        'departure' => ['Departure Notification', '#1a56db'],
+        'absence' => ['Absence Notification', '#e02424']];
+    if (!isset($labels[$event])) throw new InvalidArgumentException('Unsupported email notification');
+    [$title, $color] = $labels[$event];
+    $subject = renderNotificationText(notificationTemplate('email_' . $event . '_subject'), $student);
+    $subject = str_replace(["\r", "\n"], ' ', $subject);
+    $plain = renderNotificationText(notificationTemplate('email_' . $event . '_template'), $student);
+    $body = '<p>' . nl2br(htmlspecialchars($plain, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')) . '</p>';
+    $result = sendEmail($student['parent_email'], 'Parent/Guardian', $subject,
+        buildEmailTemplate($title, $body, $color), $plain);
+    return $result['success'];
+}
+
 function sendArrivalEmail(array $student): bool {
-    if (empty($student['parent_email'])) return false;
-
-    $name    = $student['first_name'] . ' ' . $student['last_name'];
-    $time    = date('h:i A');
-    $date    = date('F j, Y');
-    $section = $student['section_name'] ?? 'Kindergarten';
-
-    $subject = "✅ {$name} has arrived at school";
-
-    $body = <<<HTML
-        <p>Dear Parent/Guardian,</p>
-        <p>We are pleased to inform you that your child has arrived safely at school.</p>
-
-        <table width="100%" cellpadding="0" cellspacing="0"
-               style="background:#f0fdf4;border:1px solid #bbf7d0;
-                      border-radius:8px;padding:20px;margin:20px 0">
-            <tr>
-                <td>
-                    <p style="margin:0 0 8px"><strong>👤 Student:</strong> {$name}</p>
-                    <p style="margin:0 0 8px"><strong>🏫 Section:</strong> {$section}</p>
-                    <p style="margin:0 0 8px"><strong>📅 Date:</strong> {$date}</p>
-                    <p style="margin:0"><strong>🕐 Time In:</strong> {$time}</p>
-                </td>
-            </tr>
-        </table>
-
-        <p>Your child is now in school and under our supervision. Have a great day!</p>
-        <p>Best regards,<br><strong>SPCCS Kindergarten Department</strong></p>
-HTML;
-
-    $html   = buildEmailTemplate("Arrival Notification", $body, '#0e9f6e');
-    $result = sendEmail($student['parent_email'], 'Parent/Guardian', $subject, $html);
-
-    return $result['success'];
+    return sendStudentNotificationEmail($student, 'arrival');
 }
 
-/**
- * Send departure email to parent
- */
 function sendDepartureEmail(array $student): bool {
-    if (empty($student['parent_email'])) return false;
-
-    $name    = $student['first_name'] . ' ' . $student['last_name'];
-    $time    = date('h:i A');
-    $date    = date('F j, Y');
-    $section = $student['section_name'] ?? 'Kindergarten';
-
-    $subject = "🚪 {$name} has left school";
-
-    $body = <<<HTML
-        <p>Dear Parent/Guardian,</p>
-        <p>This is to inform you that your child has been dismissed from school.</p>
-
-        <table width="100%" cellpadding="0" cellspacing="0"
-               style="background:#eff6ff;border:1px solid #bfdbfe;
-                      border-radius:8px;padding:20px;margin:20px 0">
-            <tr>
-                <td>
-                    <p style="margin:0 0 8px"><strong>👤 Student:</strong> {$name}</p>
-                    <p style="margin:0 0 8px"><strong>🏫 Section:</strong> {$section}</p>
-                    <p style="margin:0 0 8px"><strong>📅 Date:</strong> {$date}</p>
-                    <p style="margin:0"><strong>🕐 Time Out:</strong> {$time}</p>
-                </td>
-            </tr>
-        </table>
-
-        <p>Please ensure someone is available to receive your child. Thank you!</p>
-        <p>Best regards,<br><strong>SPCCS Kindergarten Department</strong></p>
-HTML;
-
-    $html   = buildEmailTemplate("Departure Notification", $body, '#1a56db');
-    $result = sendEmail($student['parent_email'], 'Parent/Guardian', $subject, $html);
-
-    return $result['success'];
+    return sendStudentNotificationEmail($student, 'departure');
 }
 
-/**
- * Send absence email to parent
- */
 function sendAbsenceEmail(array $student): bool {
-    if (empty($student['parent_email'])) return false;
-
-    $name    = $student['first_name'] . ' ' . $student['last_name'];
-    $date    = date('F j, Y');
-    $section = $student['section_name'] ?? 'Kindergarten';
-
-    $subject = "⚠️ Absence Notice — {$name}";
-
-    $body = <<<HTML
-        <p>Dear Parent/Guardian,</p>
-        <p>We would like to inform you that your child was marked <strong>absent</strong> today.</p>
-
-        <table width="100%" cellpadding="0" cellspacing="0"
-               style="background:#fef2f2;border:1px solid #fecaca;
-                      border-radius:8px;padding:20px;margin:20px 0">
-            <tr>
-                <td>
-                    <p style="margin:0 0 8px"><strong>👤 Student:</strong> {$name}</p>
-                    <p style="margin:0 0 8px"><strong>🏫 Section:</strong> {$section}</p>
-                    <p style="margin:0"><strong>📅 Date:</strong> {$date}</p>
-                </td>
-            </tr>
-        </table>
-
-        <p>If this absence was unplanned, please contact the school at your earliest convenience.
-           If your child is ill or has a valid reason, please provide a letter upon return.</p>
-        <p>Best regards,<br><strong>SPCCS Kindergarten Department</strong></p>
-HTML;
-
-    $html   = buildEmailTemplate("Absence Notification", $body, '#e02424');
-    $result = sendEmail($student['parent_email'], 'Parent/Guardian', $subject, $html);
-
-    return $result['success'];
+    return sendStudentNotificationEmail($student, 'absence');
 }

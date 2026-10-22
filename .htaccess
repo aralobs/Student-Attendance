@@ -1,0 +1,11 @@
+Options -Indexes
+
+# Application internals, test fixtures and storage must never be served.
+RewriteEngine On
+RewriteRule ^(?:\.git|\.qa|\.agents|\.codex|config|includes|migrations|tests|docs|storage|deployment|tools)(?:/|$) - [F,L,NC]
+RewriteRule ^uploads/students(?:/|$) - [F,L,NC]
+RewriteRule (?:^|/)(?:\.[^/]+|[^/]+\.(?:sql|bak|backup|old|orig|log|env|ini|zip|tar|gz|7z))$ - [F,L,NC]
+
+<FilesMatch "(?i)^(?:composer\.(?:json|lock)|SECURITY_REVIEW\.md|README\.md)$">
+    Require all denied
+</FilesMatch>

@@ -2,12 +2,9 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+requireCsrfPost();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: attendance.php');
-    exit;
-}
 
 $id           = (int)($_POST['attendance_id'] ?? 0);
 $amIn         = !empty($_POST['am_in'])     ? $_POST['am_in']     : null;
@@ -26,14 +23,16 @@ if ($id <= 0) {
 }
 
 $db = getDB();
+$db->beginTransaction();
+try {
 
 // Get the attendance record and its section
 $stmt = $db->prepare("
-    SELECT a.*, s.section_id, sec.schedule_type
+    SELECT a.*, s.section_id, sec.grade_level, sec.schedule_type
     FROM attendance a
     JOIN students s ON a.student_id = s.id
     LEFT JOIN sections sec ON s.section_id = sec.id
-    WHERE a.id = ?
+    WHERE a.id = ? FOR UPDATE
 ");
 $stmt->execute([$id]);
 $existing = $stmt->fetch();
@@ -44,16 +43,27 @@ if (!$existing) {
     exit;
 }
 
+$beforeAudit = $existing;
 // Compute attendance_type
 if (empty($existing['section_id']) || !canAccessSection((int)$existing['section_id'])) {
     http_response_code(403); exit('Access denied to this section.');
 }
-$mockSection = ['schedule_type' => $existing['schedule_type']];
+$mockSection = $existing;
+$existing['schedule_type'] = getAttendanceScheduleType($existing);
+$schedule = $existing['schedule_type'];
+if ($schedule !== 'pm_only') $pmIn = null;
+if ($schedule === 'pm_only') { $amIn = null; $amOut = null; $amStatus = null; }
+elseif ($schedule === 'am_only') { $pmOut = null; $pmStatus = null; }
+else { $amOut = null; if ($amIn && !$pmStatus) $pmStatus = 'present'; }
 $mockRecord    = [
     'am_in' => $amIn,
     'pm_in' => $pmIn,
+    'am_out' => $amOut,
+    'pm_out' => $pmOut,
+    'remarks' => $remarks,
 ];
 $attendType = computeAttendanceType($mockRecord, $mockSection);
+if ($attendType === 'remarked') { $amStatus = null; $pmStatus = null; }
 
 $db->prepare("
     UPDATE attendance SET
@@ -71,6 +81,14 @@ $db->prepare("
     currentUser()['id'],
     $id,
 ]);
+
+auditAttendanceAfterWrite($db, $id, $beforeAudit, 'attendance.override');
+$db->commit();
+} catch (Throwable $error) {
+    if ($db->inTransaction()) $db->rollBack();
+    error_log('SECURITY_ALERT attendance_write_failed request_id=' . securityRequestId());
+    http_response_code(503); exit('Unable to save attendance. Please try again.');
+}
 
 setFlash('success', 'Attendance record updated successfully.');
 header('Location: attendance.php?date=' . urlencode($redirectDate));

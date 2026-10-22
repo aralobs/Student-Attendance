@@ -8,7 +8,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
 
 $pageTitle = 'Attendance';
 $db        = getDB();
@@ -203,6 +203,7 @@ include '../includes/sidebar.php';
                             <?= $typeFilter === 'partial'  ? 'selected' : '' ?>>Partial</option>
                     <option value="absent"
                             <?= $typeFilter === 'absent'   ? 'selected' : '' ?>>Absent</option>
+                    <option value="remarked" <?= $typeFilter === 'remarked' ? 'selected' : '' ?>>Manual remark</option>
                 </select>
             </div>
             <div class="col-auto d-flex gap-1">
@@ -266,11 +267,9 @@ include '../includes/sidebar.php';
                     <tr>
                         <th>Student</th>
                         <th>Grade / Section</th>
-                        <th class="text-center" style="background:#f0fdf4">AM In</th>
-                        <th class="text-center" style="background:#f0fdf4">AM Out</th>
+                        <th class="text-center" style="background:#f0fdf4">Time-In</th>
+                        <th class="text-center" style="background:#f0fdf4">Time-Out</th>
                         <th class="text-center" style="background:#f0fdf4">AM</th>
-                        <th class="text-center" style="background:#eff6ff">PM In</th>
-                        <th class="text-center" style="background:#eff6ff">PM Out</th>
                         <th class="text-center" style="background:#eff6ff">PM</th>
                         <th>Type</th>
                         <th>Actions</th>
@@ -279,7 +278,7 @@ include '../includes/sidebar.php';
                 <tbody>
                     <?php if (empty($records)): ?>
                     <tr>
-                        <td colspan="10" class="text-center py-5 text-muted">
+                        <td colspan="8" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox fs-2 d-block mb-2 opacity-25"></i>
                             No attendance records found.
                         </td>
@@ -289,9 +288,8 @@ include '../includes/sidebar.php';
                     <tr>
                         <td>
                             <div class="d-flex align-items-center gap-2">
-                                <img src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($r['photo']) ?>"
-                                     class="student-photo-sm"
-                                     onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=<?= urlencode($r['first_name'].' '.$r['last_name']) ?>&size=40&background=1a56db&color=fff'">
+                                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$r['id'] ?>"
+                                     class="student-photo-sm">
                                 <div>
                                     <div class="fw-600">
                                         <?= sanitize($r['last_name'].', '.$r['first_name']) ?>
@@ -306,40 +304,11 @@ include '../includes/sidebar.php';
                             <div class="fw-600"><?= sanitize($r['grade_level'] ?? '—') ?></div>
                             <div class="text-muted"><?= sanitize($r['section_name'] ?? '—') ?></div>
                         </td>
-                        <!-- AM -->
-                        <td class="text-center small" style="background:#fafffe">
-                            <?= $r['am_in']
-                                ? date('h:i A', strtotime($r['am_in']))
-                                : '<span class="text-muted">—</span>' ?>
-                        </td>
-                        <td class="text-center small" style="background:#fafffe">
-                            <?= $r['am_out']
-                                ? date('h:i A', strtotime($r['am_out']))
-                                : '<span class="text-muted">—</span>' ?>
-                        </td>
-                        <td class="text-center" style="background:#fafffe">
-                            <?= sessionStatusBadge($r['am_status']) ?>
-                        </td>
-                        <!-- PM -->
-                        <td class="text-center small" style="background:#f5f8ff">
-                            <?= $r['schedule_type'] === 'am_only'
-                                ? '<span class="text-muted small">N/A</span>'
-                                : ($r['pm_in']
-                                    ? date('h:i A', strtotime($r['pm_in']))
-                                    : '<span class="text-muted">—</span>') ?>
-                        </td>
-                        <td class="text-center small" style="background:#f5f8ff">
-                            <?= $r['schedule_type'] === 'am_only'
-                                ? '<span class="text-muted small">N/A</span>'
-                                : ($r['pm_out']
-                                    ? date('h:i A', strtotime($r['pm_out']))
-                                    : '<span class="text-muted">—</span>') ?>
-                        </td>
-                        <td class="text-center" style="background:#f5f8ff">
-                            <?= $r['schedule_type'] === 'am_only'
-                                ? '<span class="text-muted small">N/A</span>'
-                                : sessionStatusBadge($r['pm_status']) ?>
-                        </td>
+                        <?php $out = $r[getAttendanceEvents($r)[1]]; ?>
+                        <td class="text-center small"><?= $r[getAttendanceEvents($r)[0]] ? date('h:i A', strtotime($r[getAttendanceEvents($r)[0]])) : '-' ?></td>
+                        <td class="text-center small"><?= $out ? date('h:i A', strtotime($out)) : '-' ?></td>
+                        <td class="text-center"><?= getAttendanceScheduleType($r) === 'pm_only' ? 'N/A' : sessionStatusBadge($r['am_status']) ?></td>
+                        <td class="text-center"><?= getAttendanceScheduleType($r) === 'am_only' ? 'N/A' : sessionStatusBadge($r['pm_status']) ?></td>
                         <td><?= attendanceTypeBadge($r['attendance_type']) ?></td>
                         <td>
                             <button class="btn btn-sm btn-outline-warning"
@@ -395,6 +364,7 @@ include '../includes/sidebar.php';
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="POST" action="override.php">
+<?= csrfField() ?>
                 <div class="modal-body">
                     <input type="hidden" name="attendance_id"  id="ovId">
                     <input type="hidden" name="redirect_date"  value="<?= htmlspecialchars($date) ?>">
@@ -404,7 +374,7 @@ include '../includes/sidebar.php';
 
                     <div class="row g-3">
                         <!-- AM -->
-                        <div class="col-md-6">
+                        <div class="col-md-6" id="ovAmSection">
                             <div class="card border-success">
                                 <div class="card-header py-2" style="background:#f0fdf4">
                                     <i class="bi bi-sun me-1 text-success"></i>
@@ -413,13 +383,13 @@ include '../includes/sidebar.php';
                                 <div class="card-body">
                                     <div class="row g-2">
                                         <div class="col-6">
-                                            <label class="form-label small">AM In</label>
+                                            <label class="form-label small">Time-In</label>
                                             <input type="time" name="am_in"
                                                    id="ovAmIn"
                                                    class="form-control form-control-sm">
                                         </div>
                                         <div class="col-6">
-                                            <label class="form-label small">AM Out</label>
+                                            <label class="form-label small">Time-Out</label>
                                             <input type="time" name="am_out"
                                                    id="ovAmOut"
                                                    class="form-control form-control-sm">
@@ -448,14 +418,9 @@ include '../includes/sidebar.php';
                                 </div>
                                 <div class="card-body">
                                     <div class="row g-2">
+                                        <div class="col-6"><label class="form-label small">Time-In</label><input type="time" name="pm_in" id="ovPmIn" class="form-control form-control-sm"></div>
                                         <div class="col-6">
-                                            <label class="form-label small">PM In</label>
-                                            <input type="time" name="pm_in"
-                                                   id="ovPmIn"
-                                                   class="form-control form-control-sm">
-                                        </div>
-                                        <div class="col-6">
-                                            <label class="form-label small">PM Out</label>
+                                            <label class="form-label small">Time-Out</label>
                                             <input type="time" name="pm_out"
                                                    id="ovPmOut"
                                                    class="form-control form-control-sm">
@@ -511,11 +476,22 @@ function openOverride(r) {
     document.getElementById('ovAmIn').value     = t(r.am_in);
     document.getElementById('ovAmOut').value    = t(r.am_out);
     document.getElementById('ovAmStatus').value = r.am_status || '';
-    document.getElementById('ovPmIn').value     = t(r.pm_in);
     document.getElementById('ovPmOut').value    = t(r.pm_out);
     document.getElementById('ovPmStatus').value = r.pm_status || '';
     document.getElementById('ovRemarks').value  = r.remarks  || '';
 
+    document.getElementById('ovPmIn').value = t(r.pm_in);
+    const pmOnly = r.schedule_type === 'pm_only';
+    document.getElementById('ovAmSection').style.display = pmOnly ? 'none' : '';
+    for (const id of ['ovAmIn', 'ovAmStatus']) document.getElementById(id).disabled = pmOnly;
+    const pmIn = document.getElementById('ovPmIn');
+    pmIn.parentElement.style.display = pmOnly ? '' : 'none';
+    pmIn.disabled = !pmOnly;
+    const amOnly = r.schedule_type === 'am_only';
+    const amOut = document.getElementById('ovAmOut');
+    amOut.parentElement.style.display = amOnly ? '' : 'none';
+    amOut.disabled = !amOnly;
+    document.getElementById('ovPmOut').disabled = amOnly;
     // Hide PM for am_only sections
     document.getElementById('ovPmSection').style.display =
         r.schedule_type === 'am_only' ? 'none' : '';

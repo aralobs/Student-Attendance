@@ -5,10 +5,12 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+requireStudentManagement();
 
 $id = (int)($_GET['id'] ?? 0);
 $db = getDB();
+[$studentScope, $scopeParams] = studentRecordScope('s');
 
 $stmt = $db->prepare("
     SELECT s.*, sec.section_name,
@@ -16,12 +18,13 @@ $stmt = $db->prepare("
            sec.schedule_type
     FROM students s
     LEFT JOIN sections sec ON s.section_id = sec.id
-    WHERE s.id = ? AND s.is_active = 1
+    WHERE s.id = ? AND s.is_active = 1 AND ({$studentScope})
 ");
-$stmt->execute([$id]);
+$stmt->execute(array_merge([$id], $scopeParams));
 $student = $stmt->fetch();
 
 if (!$student) {
+    $GLOBALS['security_audit_outcome'] = 'denied';
     setFlash('danger', 'Student not found.');
     header('Location: students.php');
     exit;
@@ -35,20 +38,20 @@ $summary = $db->prepare("
         SUM(attendance_type = 'partial')             AS partial,
         SUM(attendance_type = 'absent')              AS absent,
         SUM(am_status = 'late' OR pm_status = 'late') AS late_count
-    FROM attendance
-    WHERE student_id = ?
+    FROM attendance a JOIN students s ON s.id = a.student_id
+    WHERE a.student_id = ? AND ({$studentScope})
 ");
-$summary->execute([$id]);
+$summary->execute(array_merge([$id], $scopeParams));
 $summary = $summary->fetch();
 
 // Recent attendance - last 10
 $recent = $db->prepare("
-    SELECT * FROM attendance
-    WHERE student_id = ?
-    ORDER BY date DESC
+    SELECT a.* FROM attendance a JOIN students s ON s.id = a.student_id
+    WHERE a.student_id = ? AND ({$studentScope})
+    ORDER BY a.date DESC
     LIMIT 10
 ");
-$recent->execute([$id]);
+$recent->execute(array_merge([$id], $scopeParams));
 $recent = $recent->fetchAll();
 
 // Attendance rate (full_day = 1, partial = 0.5)
@@ -90,10 +93,9 @@ include '../includes/sidebar.php';
     <div class="col-lg-4">
         <div class="card text-center">
             <div class="card-body p-4">
-                <img src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($student['photo']) ?>"
+                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?>"
                      class="rounded-circle mb-3"
-                     style="width:110px;height:110px;object-fit:cover;border:4px solid #1a56db"
-                     onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=<?= urlencode($student['first_name'].' '.$student['last_name']) ?>&size=110&background=1a56db&color=fff'">
+                     style="width:110px;height:110px;object-fit:cover;border:4px solid #1a56db">
 
                 <h5 class="fw-800 mb-0">
                     <?= sanitize($student['first_name'] . ' ' .

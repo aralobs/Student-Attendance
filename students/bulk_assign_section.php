@@ -3,11 +3,8 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
 requireAdmin();
+requireCsrfPost();
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    header('Location: students.php');
-    exit;
-}
 
 $db         = getDB();
 $sectionId  = (int)($_POST['section_id'] ?? 0);

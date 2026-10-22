@@ -143,6 +143,8 @@ No product code, database data, deployed configuration, backup job, or parent SM
 has been changed by these documents. Existing working-tree changes predate this
 planning step and must not be discarded or included in a planning-only commit.
 
-The next review is the focused school-year/enrollment design. After its written
-review, create its implementation plan. Later subprojects retain their own design
-and plan reviews; approval of this roadmap does not skip those reviews.
+The user approved the focused school-year/enrollment design on 2026-10-22. The
+next review is its implementation plan at
+`../plans/2026-10-22-school-years-enrollment.md`, including execution-method
+selection. Later subprojects retain their own design and plan reviews; approval
+of this roadmap does not skip those reviews.

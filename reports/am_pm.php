@@ -7,7 +7,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
 
 $pageTitle       = 'AM / PM Report';
 $db              = getDB();

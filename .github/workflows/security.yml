@@ -1,0 +1,33 @@
+name: Security checks
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dependency-integrity:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.4']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: shivammathur/setup-php@ec406be512d7077f68eed36e63f4d91bc006edc4 # v2.35.4
+        with:
+          php-version: '${{ matrix.php }}'
+          extensions: pdo_mysql, calendar, gd, mbstring, openssl
+          tools: composer:v2
+          coverage: none
+      - run: composer validate --no-check-publish
+      - run: composer install --no-interaction --no-scripts --prefer-dist
+      - run: composer check-platform-reqs
+      - run: composer audit --locked --format=plain
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: php tests/vendor_integrity_test.php
+      - run: php tests/runtime_support_test.php

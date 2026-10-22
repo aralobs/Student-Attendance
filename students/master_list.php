@@ -4,10 +4,13 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+requireStudentManagement();
+guardCsrfPage(true);
 
 $pageTitle = 'Master List';
 $db        = getDB();
+[$sectionScope, $sectionScopeParams] = studentSectionScope('sec');
 
 // ---------------------------------------------------------------
 // Handle inline adviser update (AJAX POST)
@@ -52,11 +55,13 @@ $sy    = trim($_GET['sy']    ?? '');
 $grade = trim($_GET['grade'] ?? '');
 
 if ($sy === '') {
-    $latest = $db->query("
-        SELECT school_year FROM sections
-        WHERE school_year IS NOT NULL AND school_year != ''
+    $latestStmt = $db->prepare("
+        SELECT school_year FROM sections sec
+        WHERE school_year IS NOT NULL AND school_year != '' AND ({$sectionScope})
         ORDER BY school_year DESC LIMIT 1
-    ")->fetchColumn();
+    ");
+    $latestStmt->execute($sectionScopeParams);
+    $latest = $latestStmt->fetchColumn();
     $sy = $latest ?: '2026-2027';
 }
 
@@ -65,8 +70,8 @@ $gradeLevels = ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grad
 // ---------------------------------------------------------------
 // Fetch sections
 // ---------------------------------------------------------------
-$where  = ['sec.school_year = ?'];
-$params = [$sy];
+$where  = ['sec.school_year = ?', "({$sectionScope})"];
+$params = array_merge([$sy], $sectionScopeParams);
 
 if ($grade !== '') {
     $where[]  = 'sec.grade_level = ?';
@@ -97,15 +102,16 @@ $studentsBySection = [];
 if ($sections) {
     $ids = array_column($sections, 'id');
     $ph  = implode(',', array_fill(0, count($ids), '?'));
+    [$studentScope, $studentScopeParams] = studentRecordScope('s');
 
     $sStmt = $db->prepare("
         SELECT id, lrn, first_name, middle_name, last_name, gender, section_id,
                parent_name, parent_contact
-        FROM students
-        WHERE is_active = 1 AND section_id IN ($ph)
+        FROM students s
+        WHERE is_active = 1 AND section_id IN ($ph) AND ({$studentScope})
         ORDER BY last_name, first_name
     ");
-    $sStmt->execute($ids);
+    $sStmt->execute(array_merge($ids, $studentScopeParams));
     foreach ($sStmt->fetchAll() as $row) {
         $studentsBySection[$row['section_id']][] = $row;
     }
@@ -114,19 +120,21 @@ if ($sections) {
 // ---------------------------------------------------------------
 // Advisers dropdown list
 // ---------------------------------------------------------------
-$advisers = $db->query("
+$advisers = isAdmin() ? $db->query("
     SELECT id, full_name 
     FROM users 
     WHERE role IN ('teacher','admin') AND is_active = 1
     ORDER BY full_name
-")->fetchAll();
+")->fetchAll() : [];
 
 // Distinct school years for filter
-$schoolYears = $db->query("
-    SELECT DISTINCT school_year FROM sections 
-    WHERE school_year IS NOT NULL AND school_year != ''
+$yearStmt = $db->prepare("
+    SELECT DISTINCT school_year FROM sections sec
+    WHERE school_year IS NOT NULL AND school_year != '' AND ({$sectionScope})
     ORDER BY school_year DESC
-")->fetchAll(PDO::FETCH_COLUMN);
+");
+$yearStmt->execute($sectionScopeParams);
+$schoolYears = $yearStmt->fetchAll(PDO::FETCH_COLUMN);
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
@@ -317,6 +325,7 @@ function updateAdviser(selectEl) {
 
     const formData = new FormData();
     formData.append('action', 'update_adviser');
+    formData.append('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
     formData.append('section_id', sectionId);
     formData.append('adviser_id', adviserId);
 

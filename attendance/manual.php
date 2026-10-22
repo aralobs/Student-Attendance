@@ -8,6 +8,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+guardCsrfPage();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
 
 $pageTitle = 'Manual Attendance';
@@ -57,6 +58,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($validStudentId === false || !is_array($data)) { http_response_code(400); exit('Invalid attendance entries.'); }
         if (!isset($allowedStudentIds[$validStudentId])) { http_response_code(403); exit('A submitted student does not belong to this active section roster.'); }
     }
+    $absenceStudents = [];
+    $db->beginTransaction();
+    try {
     foreach ($entries as $studentId => $data) {
         $studentId = (int)$studentId;
         if ($studentId <= 0) continue;
@@ -74,12 +78,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($amStatus, $validStatuses)) $amStatus = null;
         if (!in_array($pmStatus, $validStatuses)) $pmStatus = null;
 
-        // Compute attendance type based on section schedule
-        $mockRecord = ['am_in' => $amIn, 'pm_in' => $pmIn];
+        // Compute attendance type based on the two required scans
+        $schedule = getAttendanceScheduleType($section);
+        if ($schedule !== 'pm_only') $pmIn = null;
+        if ($schedule === 'pm_only') { $amIn = null; $amOut = null; $amStatus = null; }
+        elseif ($schedule === 'am_only') { $pmOut = null; $pmStatus = null; }
+        else { $amOut = null; if ($amIn && !$pmStatus) $pmStatus = 'present'; }
+        $mockRecord = ['am_in' => $amIn, 'am_out' => $amOut, 'pm_in' => $pmIn, 'pm_out' => $pmOut, 'remarks' => $remarks];
         $attendType = computeAttendanceType($mockRecord, $section);
+        if ($attendType === 'remarked') { $amStatus = null; $pmStatus = null; }
 
         // Check for existing record
-        $check = $db->prepare("SELECT id FROM attendance WHERE student_id = ? AND date = ?");
+        $check = $db->prepare("SELECT * FROM attendance WHERE student_id = ? AND date = ? FOR UPDATE");
         $check->execute([$studentId, $submittedDate]);
         $existing = $check->fetch();
 
@@ -120,15 +130,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
         }
 
-        // Send absence SMS if fully absent
-        if ($attendType === 'absent') {
-            $stuStmt = $db->prepare("SELECT * FROM students WHERE id = ?");
-            $stuStmt->execute([$studentId]);
-            $stu = $stuStmt->fetch();
-            if ($stu && !empty($stu['parent_contact'])) {
-                $msg = buildSMSMessage('sms_absence_template', $stu);
-                sendSMS($stu['parent_contact'], $msg, $stu['id'], 'absence');
-            }
+        $attendanceId = $existing ? (int)$existing['id'] : (int)$db->lastInsertId();
+        auditAttendanceAfterWrite($db, $attendanceId, $existing ?: null, 'attendance.manual');
+        if ($attendType === 'absent') $absenceStudents[] = $studentId;
+    }
+    $db->commit();
+    } catch (Throwable $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        error_log('SECURITY_ALERT attendance_write_failed request_id=' . securityRequestId());
+        http_response_code(503); exit('Unable to save attendance. Please try again.');
+    }
+    // Notifications can only follow the committed attendance and its history.
+    foreach ($absenceStudents as $studentId) {
+        $stuStmt = $db->prepare('SELECT * FROM students WHERE id = ?');
+        $stuStmt->execute([$studentId]); $stu = $stuStmt->fetch();
+        if ($stu && !empty($stu['parent_contact'])) {
+            $msg = buildSMSMessage('sms_absence_template', $stu);
+            sendSMS($stu['parent_contact'], $msg, $stu['id'], 'absence');
         }
     }
 
@@ -157,6 +175,7 @@ $students = $db->prepare("
 $students->execute([$date, $sectionId]);
 $students = $students->fetchAll();
 
+$section['schedule_type'] = getAttendanceScheduleType($section);
 $isAmOnly = $section['schedule_type'] === 'am_only';
 $isPmOnly = $section['schedule_type'] === 'pm_only';
 
@@ -200,6 +219,7 @@ include '../includes/sidebar.php';
 </div>
 
 <form method="POST" id="manualAttendanceForm">
+<?= csrfField() ?>
     <!-- Hidden fields -->
     <input type="hidden" name="section_id" value="<?= $sectionId ?>">
 
@@ -279,14 +299,14 @@ include '../includes/sidebar.php';
                             <th>Student</th>
                             <?php if (!$isPmOnly): ?>
                             <th class="text-center"
-                                colspan="3"
+                                colspan="<?= $isAmOnly ? 3 : 2 ?>"
                                 style="background:#f0fdf4;border-left:2px solid #10b981">
                                 ☀️ AM Session
                             </th>
                             <?php endif; ?>
                             <?php if (!$isAmOnly): ?>
                             <th class="text-center"
-                                colspan="3"
+                                colspan="<?= $isPmOnly ? 3 : 2 ?>"
                                 style="background:#eff6ff;border-left:2px solid #3b82f6">
                                 🌙 PM Session
                             </th>
@@ -296,13 +316,13 @@ include '../includes/sidebar.php';
                         <tr style="font-size:0.75rem">
                             <th colspan="2"></th>
                             <?php if (!$isPmOnly): ?>
-                            <th class="text-center" style="background:#f0fdf4">AM In</th>
-                            <th class="text-center" style="background:#f0fdf4">AM Out</th>
+                            <th class="text-center" style="background:#f0fdf4">Time-In</th>
+                            <?php if ($isAmOnly): ?><th class="text-center" style="background:#f0fdf4">Time-Out</th><?php endif; ?>
                             <th class="text-center" style="background:#f0fdf4">AM Status</th>
                             <?php endif; ?>
                             <?php if (!$isAmOnly): ?>
-                            <th class="text-center" style="background:#eff6ff">PM In</th>
-                            <th class="text-center" style="background:#eff6ff">PM Out</th>
+                            <?php if ($isPmOnly): ?><th class="text-center" style="background:#eff6ff">Time-In</th><?php endif; ?>
+                            <th class="text-center" style="background:#eff6ff">Time-Out</th>
                             <th class="text-center" style="background:#eff6ff">PM Status</th>
                             <?php endif; ?>
                             <th></th>
@@ -311,7 +331,7 @@ include '../includes/sidebar.php';
                     <tbody>
                         <?php if (empty($students)): ?>
                         <tr>
-                            <td colspan="<?= 2 + (!$isPmOnly ? 3 : 0) + (!$isAmOnly ? 3 : 0) + 1 ?>"
+                            <td colspan="<?= 3 + ($isAmOnly || $isPmOnly ? 3 : 4) ?>"
                                 class="text-center text-muted py-4">
                                 <i class="bi bi-people fs-3 d-block mb-2 opacity-25"></i>
                                 No students found in this section.
@@ -323,9 +343,8 @@ include '../includes/sidebar.php';
                             <td class="text-muted"><?= $i + 1 ?></td>
                             <td>
                                 <div class="d-flex align-items-center gap-2">
-                                    <img src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($s['photo']) ?>"
-                                         class="student-photo-sm"
-                                         onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=<?= urlencode($s['first_name'].' '.$s['last_name']) ?>&size=40&background=1a56db&color=fff'">
+                                    <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?>"
+                                         class="student-photo-sm">
                                     <div>
                                         <div class="fw-600">
                                             <?= sanitize($s['last_name'].', '.$s['first_name']) ?>
@@ -346,6 +365,7 @@ include '../includes/sidebar.php';
                                        value="<?= $s['am_in'] ? substr($s['am_in'],0,5) : '' ?>"
                                        style="width:110px">
                             </td>
+                            <?php if ($isAmOnly): ?>
                             <!-- AM Out -->
                             <td style="background:#fafffe">
                                 <input type="time"
@@ -354,6 +374,7 @@ include '../includes/sidebar.php';
                                        value="<?= $s['am_out'] ? substr($s['am_out'],0,5) : '' ?>"
                                        style="width:110px">
                             </td>
+                            <?php endif; ?>
                             <!-- AM Status -->
                             <td style="background:#fafffe">
                                 <select name="entries[<?= $s['id'] ?>][am_status]"
@@ -377,14 +398,9 @@ include '../includes/sidebar.php';
                             <?php endif; ?>
 
                             <?php if (!$isAmOnly): ?>
-                            <!-- PM In -->
-                            <td style="background:#f5f8ff">
-                                <input type="time"
-                                       name="entries[<?= $s['id'] ?>][pm_in]"
-                                       class="form-control form-control-sm"
-                                       value="<?= $s['pm_in'] ? substr($s['pm_in'],0,5) : '' ?>"
-                                       style="width:110px">
-                            </td>
+                            <?php if ($isPmOnly): ?>
+                            <td><input type="time" name="entries[<?= $s['id'] ?>][pm_in]" class="form-control form-control-sm" value="<?= $s['pm_in'] ? substr($s['pm_in'],0,5) : '' ?>" style="width:110px"></td>
+                            <?php endif; ?>
                             <!-- PM Out -->
                             <td style="background:#f5f8ff">
                                 <input type="time"

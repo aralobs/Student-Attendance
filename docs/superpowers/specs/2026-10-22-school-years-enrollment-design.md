@@ -1,7 +1,7 @@
 # School years, annual enrollment, and moving up
 
 Date: 2026-10-22 (Asia/Manila)
-Status: Written design for user review; not an implementation plan.
+Status: Approved by the user on 2026-10-22; implementation planning authorized.
 Scope: First architectural subproject of the panel revision roadmap.
 
 ## Intent and success criteria
@@ -240,7 +240,6 @@ explicit excused/pending classifications, absence-streak policy, automatic SMS,
 new analytics presentation, direct PDF download, and scheduled-backup UI are
 separate subprojects in the roadmap. The existing school logo stays in use.
 
-After the user reviews and approves this written design, write its implementation
-plan with the writing-plans skill and present the available execution methods.
-Product implementation starts only after that plan is reviewed and an execution
-method is selected.
+The user approved this written design on 2026-10-22. Its implementation plan is
+`../plans/2026-10-22-school-years-enrollment.md`. Product implementation starts
+only after that plan is reviewed and an execution method is selected.

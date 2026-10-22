@@ -5,8 +5,9 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireAdmin();
+requireCsrfPost();
 
-$id = (int)($_GET['id'] ?? 0);
+$id = (int)($_POST['id'] ?? 0);
 
 if ($id <= 0) {
     setFlash('danger', 'Invalid student ID.');

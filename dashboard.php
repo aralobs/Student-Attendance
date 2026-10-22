@@ -257,17 +257,15 @@ include 'includes/sidebar.php';
                     <thead class="sticky-top bg-white" style="z-index:1">
                         <tr>
                             <th>Student</th>
-                            <th class="text-center">AM In</th>
-                            <th class="text-center">AM Out</th>
-                            <th class="text-center">PM In</th>
-                            <th class="text-center">PM Out</th>
+                            <th class="text-center">Time-In</th>
+                            <th class="text-center">Time-Out</th>
                             <th>Last Event</th>
                             <th class="text-center">Type</th>
                         </tr>
                     </thead>
                     <tbody id="todayLogBody">
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">
+                            <td colspan="5" class="text-center text-muted py-4">
                                 <span class="spinner-border spinner-border-sm me-2"></span>
                                 Loading today's log...
                             </td>
@@ -407,11 +405,11 @@ include 'includes/sidebar.php';
                     </div>
                     <?php if (isAdmin()): ?>
                     <div class="col-6 col-md-3">
-                        <a href="sms/sms.php" class="quick-tile">
+                        <a href="sms/logs.php" class="quick-tile">
                             <i class="bi bi-chat-dots text-danger"></i>
                             <div>
                                 <div class="qt-title">SMS</div>
-                                <div class="qt-sub">Send notifications</div>
+                                <div class="qt-sub">View SMS logs</div>
                             </div>
                         </a>
                     </div>
@@ -469,6 +467,7 @@ $extraJS = <<<JS
             pending:  'secondary'
         };
         const cls = map[type] || 'secondary';
+        if (type === 'remarked') return '<span class="badge bg-secondary">Manual remark</span>';
         const label = (type || '—').replace('_', ' ');
         return '<span class="badge bg-' + cls + '" style="font-size:0.65rem">' +
                esc(label) + '</span>';
@@ -481,7 +480,7 @@ $extraJS = <<<JS
     }
 
     function lastEventCell(r) {
-        const labels = {am_in: 'AM In', am_out: 'AM Out', pm_in: 'PM In', pm_out: 'PM Out'};
+        const labels = {am_in: 'Time-In', am_out: 'Time-Out (AM)', pm_in: 'Time-In (PM)', pm_out: 'Time-Out (PM)'};
         return '<span class="badge bg-secondary">' + esc(labels[r.last_event] || '') + '</span>' +
                '<div class="text-muted small">' + esc(r.last_event_time || '') + '</div>';
     }
@@ -506,7 +505,7 @@ $extraJS = <<<JS
                               (filtered.length === 1 ? '' : 's');
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">' +
                 '<i class="bi bi-inbox me-1"></i>' + (rows.length ? 'No scans match your filter.' : 'No scans today.') + '</td></tr>';
             return;
         }
@@ -519,10 +518,8 @@ $extraJS = <<<JS
                     esc(r.grade) + ' — ' + esc(r.section) +
                 '</div>' +
               '</td>' +
-              '<td class="text-center small">' + fmtCell(r.am_in,  r.am_status) + '</td>' +
-              '<td class="text-center small">' + fmtCell(r.am_out, null)         + '</td>' +
-              '<td class="text-center small">' + fmtCell(r.pm_in,  r.pm_status) + '</td>' +
-              '<td class="text-center small">' + fmtCell(r.pm_out, null)         + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.time_in, r.arrival_status) + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.time_out, null)         + '</td>' +
               '<td>' + lastEventCell(r) + '</td>' +
               '<td class="text-center">' + typeBadge(r.attendance_type) + '</td>' +
             '</tr>'
@@ -530,7 +527,7 @@ $extraJS = <<<JS
     }
 
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">' +
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading today\\'s log...</td></tr>';
         try {
             const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
@@ -558,7 +555,7 @@ $extraJS = <<<JS
             render();
             updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">' +
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">' +
                 'Failed to load today\\'s log: ' + esc(err.message) + '</td></tr>';
             countEl.textContent = '—';
         }

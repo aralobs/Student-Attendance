@@ -6,6 +6,7 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
 requireAdmin();
+guardCsrfPage();
 
 $pageTitle = 'Assign Advisers';
 $db        = getDB();
@@ -108,6 +109,7 @@ include '../includes/sidebar.php';
 </div>
 
 <form method="POST">
+<?= csrfField() ?>
 <input type="hidden" name="sy" value="<?= sanitize($sy) ?>">
 
 <div class="card">

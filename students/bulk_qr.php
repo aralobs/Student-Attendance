@@ -4,15 +4,18 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-require_once '../includes/qr_helper.php';
+require_once '../includes/qr_access.php';
+requireQRManagement();
+require_once '../includes/qr_card.php';
 
 $sectionId = (int)($_GET['section'] ?? 0);
 $db        = getDB();
 
-$sections  = $db->query("SELECT * FROM sections WHERE is_active = 1 ORDER BY section_name")->fetchAll();
+$sections = getAllowedSections();
 
 $students  = [];
 if ($sectionId > 0) {
+    requireQRSectionAccess($sectionId);
     $stmt = $db->prepare("
         SELECT s.*, sec.section_name
         FROM students s
@@ -24,6 +27,7 @@ if ($sectionId > 0) {
     $students = $stmt->fetchAll();
 }
 
+$schoolName = getSetting('school_name') ?? 'San Pablo City Central School';
 $pageTitle = 'Bulk QR Codes';
 include '../includes/header.php';
 include '../includes/sidebar.php';
@@ -74,30 +78,11 @@ include '../includes/sidebar.php';
 <?php if (!empty($students)): ?>
 <div class="row g-3" id="qrGrid">
     <?php foreach ($students as $student):
-        $qrSVG = generateQRCodeSVG($student['qr_token'], 160);
+        $cardSVG = generateStudentQRCardSVG($student, $schoolName);
     ?>
     <div class="col-6 col-md-4 col-lg-3">
-        <div class="card text-center p-2 qr-card-item" style="border:1.5px solid #1a56db; border-radius:10px; font-size:0.75rem">
-
-            <img src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($student['photo']) ?>"
-                 class="rounded-circle mx-auto mt-2 mb-1"
-                 style="width:50px;height:50px;object-fit:cover;border:2px solid #1a56db"
-                 onerror="this.src='https://ui-avatars.com/api/?name=<?= urlencode($student['first_name'].' '.$student['last_name']) ?>&size=50&background=1a56db&color=fff'">
-
-            <div class="fw-700" style="font-size:0.8rem; line-height:1.2">
-                <?= sanitize($student['last_name'] . ', ' . $student['first_name']) ?>
-            </div>
-            <div class="text-muted" style="font-size:0.68rem">
-                <?= sanitize($student['section_name'] ?? '') ?>
-            </div>
-
-            <div class="d-flex justify-content-center my-1">
-                <?= $qrSVG ?>
-            </div>
-
-            <div class="text-muted" style="font-size:0.6rem; word-break:break-all; padding:0 4px">
-                <?= sanitize($student['lrn']) ?>
-            </div>
+        <div class="qr-card-item" style="border:1px solid #d1d5db;border-radius:12px;overflow:hidden">
+            <?= $cardSVG ?>
         </div>
     </div>
     <?php endforeach; ?>
@@ -105,6 +90,7 @@ include '../includes/sidebar.php';
 <?php endif; ?>
 
 <style>
+.qr-card-item > svg { display:block; width:100%; height:auto; }
 @media print {
     .no-print, nav, .top-navbar, .sidebar { display: none !important; }
     .main-content { margin: 0 !important; }

@@ -8,7 +8,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
 
 $pageTitle       = 'Partial Attendance';
 $db              = getDB();
@@ -51,8 +51,8 @@ $records->execute($params);
 $records = $records->fetchAll();
 
 // Breakdown: AM only vs PM only
-$amOnly = array_filter($records, fn($r) => $r['am_in'] && !$r['pm_in']);
-$pmOnly = array_filter($records, fn($r) => !$r['am_in'] && $r['pm_in']);
+$amOnly = array_filter($records, fn($r) => $r[getAttendanceEvents($r)[0]] && empty($r[getAttendanceEvents($r)[1]]));
+$pmOnly = array_filter($records, fn($r) => !$r[getAttendanceEvents($r)[0]] && !empty($r[getAttendanceEvents($r)[1]]));
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
@@ -63,13 +63,13 @@ include '../includes/sidebar.php';
         <h1 class="page-title">
             <i class="bi bi-clock-history me-2 text-warning"></i>Partial Attendance
         </h1>
-        <p class="page-subtitle">Students who attended only AM or only PM</p>
+        <p class="page-subtitle">Students with an incomplete daily Time-In / Time-Out pair</p>
     </div>
     <div class="d-flex gap-2">
         <button onclick="window.print()" class="btn btn-outline-secondary btn-sm no-print">
             <i class="bi bi-printer me-1"></i>Print
         </button>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm no-print">
+        <a href="index_reports.php" class="btn btn-outline-secondary btn-sm no-print">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>
     </div>
@@ -137,7 +137,7 @@ include '../includes/sidebar.php';
             </div>
             <div>
                 <div class="stat-number" style="font-size:1.4rem"><?= count($amOnly) ?></div>
-                <div class="stat-label">AM Only</div>
+                <div class="stat-label">Missing Time-Out</div>
             </div>
         </div>
     </div>
@@ -148,7 +148,7 @@ include '../includes/sidebar.php';
             </div>
             <div>
                 <div class="stat-number" style="font-size:1.4rem"><?= count($pmOnly) ?></div>
-                <div class="stat-label">PM Only</div>
+                <div class="stat-label">Missing Time-In</div>
             </div>
         </div>
     </div>
@@ -169,10 +169,8 @@ include '../includes/sidebar.php';
                         <th>Date</th>
                         <th>Student</th>
                         <th>Grade / Section</th>
-                        <th class="text-center" style="background:#f0fdf4">AM In</th>
-                        <th class="text-center" style="background:#f0fdf4">AM Out</th>
-                        <th class="text-center" style="background:#eff6ff">PM In</th>
-                        <th class="text-center" style="background:#eff6ff">PM Out</th>
+                        <th class="text-center" style="background:#f0fdf4">Time-In</th>
+                        <th class="text-center" style="background:#f0fdf4">Time-Out</th>
                         <th class="text-center">Pattern</th>
                         <th>Remarks</th>
                     </tr>
@@ -180,16 +178,17 @@ include '../includes/sidebar.php';
                 <tbody>
                     <?php if (empty($records)): ?>
                     <tr>
-                        <td colspan="10" class="text-center py-4 text-muted">
+                        <td colspan="8" class="text-center py-4 text-muted">
                             No partial attendance records found.
                         </td>
                     </tr>
                     <?php else: ?>
                     <?php foreach ($records as $i => $r): ?>
                     <?php
-                    $hasAM   = !empty($r['am_in']);
-                    $hasPM   = !empty($r['pm_in']);
-                    $pattern = $hasAM && !$hasPM ? 'AM Only' : (!$hasAM && $hasPM ? 'PM Only' : 'Partial');
+                    $hasAM   = !empty($r[getAttendanceEvents($r)[0]]);
+                    $out = $r[getAttendanceEvents($r)[1]];
+                    $hasPM = !empty($out);
+                    $pattern = $hasAM && !$hasPM ? 'Missing Time-Out' : (!$hasAM && $hasPM ? 'Missing Time-In' : 'Partial');
                     $pColor  = $hasAM && !$hasPM ? 'success' : 'primary';
                     ?>
                     <tr>
@@ -212,16 +211,10 @@ include '../includes/sidebar.php';
                             <?= sanitize($r['grade_level'].' / '.$r['section_name']) ?>
                         </td>
                         <td class="text-center" style="background:#fafffe">
-                            <?= $r['am_in']  ? date('h:i A', strtotime($r['am_in']))  : '<span class="text-danger">—</span>' ?>
+                            <?= $r[getAttendanceEvents($r)[0]]  ? date('h:i A', strtotime($r[getAttendanceEvents($r)[0]]))  : '<span class="text-danger">—</span>' ?>
                         </td>
                         <td class="text-center" style="background:#fafffe">
-                            <?= $r['am_out'] ? date('h:i A', strtotime($r['am_out'])) : '—' ?>
-                        </td>
-                        <td class="text-center" style="background:#f5f8ff">
-                            <?= $r['pm_in']  ? date('h:i A', strtotime($r['pm_in']))  : '<span class="text-danger">—</span>' ?>
-                        </td>
-                        <td class="text-center" style="background:#f5f8ff">
-                            <?= $r['pm_out'] ? date('h:i A', strtotime($r['pm_out'])) : '—' ?>
+                            <?= $out ? date('h:i A', strtotime($out)) : '—' ?>
                         </td>
                         <td class="text-center">
                             <span class="badge bg-<?= $pColor ?>">

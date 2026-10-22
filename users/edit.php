@@ -5,6 +5,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireAdmin();
+guardCsrfPage();
 
 $pageTitle = 'Edit User';
 $id        = (int)($_GET['id'] ?? 0);
@@ -76,8 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Optional password change
     if ($password !== '' || $password2 !== '') {
-        if (strlen($password) < 6) {
-            $errors[] = 'Password must be at least 6 characters.';
+        if ($passwordError = passwordPolicyError($password)) {
+            $errors[] = $passwordError;
         }
         if ($password !== $password2) {
             $errors[] = 'Passwords do not match.';
@@ -86,9 +87,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Save
     if (empty($errors)) {
+        $db->beginTransaction();
+        try {
+        $auditRead = $db->prepare('SELECT role,is_active FROM users WHERE id = ? FOR UPDATE');
+        $auditRead->execute([$id]); $beforeAudit = $auditRead->fetch();
+        if (!$beforeAudit) throw new RuntimeException('Account no longer exists.');
         if ($password !== '') {
             $db->prepare("UPDATE users
-                             SET full_name = ?, username = ?, email = ?, role = ?,
+                             SET session_token = NULL, session_user_agent = NULL,
+                                 session_ip = NULL, session_last_activity = NULL,
+                                 full_name = ?, username = ?, email = ?, role = ?,
                                  is_active = ?, password = ?
                            WHERE id = ?")
                ->execute([
@@ -102,10 +110,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                ]);
         } else {
             $db->prepare("UPDATE users
-                             SET full_name = ?, username = ?, email = ?, role = ?,
+                             SET session_token = CASE WHEN role = ? AND is_active = ? THEN session_token ELSE NULL END,
+                                 full_name = ?, username = ?, email = ?, role = ?,
                                  is_active = ?
                            WHERE id = ?")
                ->execute([
+                   $role,
+                   $is_active,
                    $full_name,
                    $username,
                    $email !== '' ? $email : null,
@@ -115,6 +126,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                ]);
         }
 
+        auditAccountAfterWrite($db, $id, $beforeAudit, $password !== '' ? 'account.password_reset' : 'account.update');
+        $db->commit();
+        } catch (Throwable $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            http_response_code(503); exit('Unable to save the account.');
+        }
         setFlash('success', "User '{$full_name}' updated successfully.");
         header('Location: users.php');
         exit;
@@ -160,6 +177,7 @@ include '../includes/sidebar.php';
         <?php endif; ?>
 
         <form method="post" novalidate>
+<?= csrfField() ?>
             <div class="row g-3">
                 <div class="col-md-6">
                     <label class="form-label">Full Name <span class="text-danger">*</span></label>
@@ -205,7 +223,8 @@ include '../includes/sidebar.php';
                         New Password
                         <small class="text-muted">(leave blank to keep current)</small>
                     </label>
-                    <input type="password" name="password" class="form-control" autocomplete="new-password">
+                    <input type="password" name="password" class="form-control" autocomplete="new-password" minlength="8" maxlength="16">
+                    <small class="text-muted">Password must be 8–16 characters.</small>
                 </div>
 
                 <div class="col-md-6">

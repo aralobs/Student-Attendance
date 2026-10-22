@@ -2,6 +2,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireAdmin();
+guardCsrfPage();
 
 $pageTitle = 'Add User';
 $db        = getDB();
@@ -17,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($fullName))  $errors[] = 'Full name required.';
     if (empty($username))  $errors[] = 'Username required.';
-    if (strlen($password) < 6) $errors[] = 'Password must be at least 6 characters.';
+    if ($passwordError = passwordPolicyError($password)) $errors[] = $passwordError;
     if ($password !== $confirm) $errors[] = 'Passwords do not match.';
     if (!in_array($role, ['admin', 'teacher', 'scanner_operator'], true)) {
         $errors[] = 'Invalid role selected.';
@@ -30,10 +31,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
+        $db->beginTransaction();
+        try {
         $hash = password_hash($password, PASSWORD_BCRYPT);
         $db->prepare("INSERT INTO users (username, password, full_name, email, role) VALUES (?,?,?,?,?)")
            ->execute([$username, $hash, $fullName, $email, $role]);
 
+        auditAccountAfterWrite($db, (int)$db->lastInsertId(), null, 'account.create');
+        $db->commit();
+        } catch (Throwable $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            http_response_code(503); exit('Unable to save the account.');
+        }
         setFlash('success', "User '{$fullName}' created successfully.");
         header('Location: users.php');
         exit;
@@ -60,6 +69,7 @@ include '../includes/sidebar.php';
 <div class="card" style="max-width:550px">
     <div class="card-body">
         <form method="POST">
+<?= csrfField() ?>
             <div class="mb-3">
                 <label class="form-label">Full Name *</label>
                 <input type="text" name="full_name" class="form-control" required
@@ -88,7 +98,8 @@ include '../includes/sidebar.php';
             <div class="row g-3 mb-4">
                 <div class="col">
                     <label class="form-label">Password *</label>
-                    <input type="password" name="password" class="form-control" required minlength="6">
+                    <input type="password" name="password" class="form-control" required minlength="8" maxlength="16" autocomplete="new-password">
+                    <small class="text-muted">Password must be 8–16 characters.</small>
                 </div>
                 <div class="col">
                     <label class="form-label">Confirm Password *</label>

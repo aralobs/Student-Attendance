@@ -1,7 +1,7 @@
 <?php
 
 /**
- * QR Scanner — 4-event attendance system
+ * QR Scanner - two daily scans
  * AM IN → AM OUT → PM IN → PM OUT
  */
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -10,6 +10,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
+requireScannerPermission();
 
 $pageTitle = 'QR Scanner';
 
@@ -97,38 +98,30 @@ include '../includes/sidebar.php';
 
         <div class="card mt-3">
             <div class="card-body py-2">
-                <div class="row g-2 text-center" style="font-size:0.8rem">
-                    <div class="col-3">
-                        <div class="p-2 rounded" style="background:#d1fae5">
-                            <i class="bi bi-sun d-block mb-1"></i>
-                            <strong>AM In</strong>
+                <div class="row g-2 text-center small">
+                    <div class="col-6">
+                        <div id="timeInGuide" class="p-3 rounded" style="background:#fef3c7;border:2px solid transparent">
+                            <i class="bi bi-box-arrow-in-right d-block mb-1"></i>
+                            <strong>Time-In</strong>
+                            <div class="mt-1"><span class="badge bg-warning text-dark">Partial</span></div>
                         </div>
                     </div>
-                    <div class="col-3">
-                        <div class="p-2 rounded" style="background:#fef3c7">
+                    <div class="col-6">
+                        <div id="timeOutGuide" class="p-3 rounded" style="background:#d1fae5;border:2px solid transparent">
                             <i class="bi bi-box-arrow-right d-block mb-1"></i>
-                            <strong>AM Out</strong>
-                        </div>
-                    </div>
-                    <div class="col-3">
-                        <div class="p-2 rounded" style="background:#dbeafe">
-                            <i class="bi bi-moon d-block mb-1"></i>
-                            <strong>PM In</strong>
-                        </div>
-                    </div>
-                    <div class="col-3">
-                        <div class="p-2 rounded" style="background:#f3e8ff">
-                            <i class="bi bi-door-closed d-block mb-1"></i>
-                            <strong>PM Out</strong>
+                            <strong>Time-Out</strong>
+                            <div class="mt-1"><span class="badge bg-success">Full Day</span></div>
                         </div>
                     </div>
                 </div>
+                <div id="scanGuideStatus" class="small text-muted mt-2" role="status" aria-live="polite">The matching step highlights after a successful scan.</div>
             </div>
         </div>
     </div>
 
     <!-- Result + Log -->
     <div class="col-lg-6">
+        <div id="scanFeedback" class="mb-3" role="status" aria-live="polite"></div>
 
         <div class="card mb-3">
             <div class="card-header">
@@ -155,17 +148,15 @@ include '../includes/sidebar.php';
                     <thead class="sticky-top bg-white">
                         <tr>
                             <th>Student</th>
-                            <th class="text-center">AM In</th>
-                            <th class="text-center">AM Out</th>
-                            <th class="text-center">PM In</th>
-                            <th class="text-center">PM Out</th>
+                            <th class="text-center">Time-In</th>
+                            <th class="text-center">Time-Out</th>
                             <th>Last Event</th>
                             <th>Type</th>
                         </tr>
                     </thead>
                     <tbody id="logBody">
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-3">
+                            <td colspan="5" class="text-center text-muted py-3">
                                 Loading...
                             </td>
                         </tr>
@@ -177,37 +168,23 @@ include '../includes/sidebar.php';
 </div>
 
 <?php
-$extraJS = '<script>const scannerContext = ' . json_encode(['user_id' => (int)currentUser()['id'], 'date' => $today]) . ';</script>' . <<<'JSEOF'
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+$extraJS = '<script>const scannerContext = ' . json_encode(['csrf_token' => csrfToken(), 'user_id' => (int)currentUser()['id'], 'date' => $today, 'last_scan' => $_SESSION['scanner_last_result'] ?? null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script><script src="' . BASE_URL . 'assets/js/scanner_render.js"></script>'
+    . '<script src="' . BASE_URL . 'assets/vendor/html5-qrcode-2.3.8.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>' . <<<'JSEOF'
 <script>
 let qrScanner  = null;
 let scanCount  = 0;
 let cooldown   = false;
 let lastToken  = '';
 let lastScannedId = null;
-const lastScanStorageKey = `attendance_last_scan_${scannerContext.user_id}`;
-
 function rememberLastScan(data) {
-    try {
-        localStorage.setItem(lastScanStorageKey, JSON.stringify({date: scannerContext.date, data}));
-    } catch (error) {
-        console.warn('Could not remember last scan:', error);
-    }
+    // The scan endpoint already saved this result in the current PHP session.
+    if (data.success) scannerContext.last_scan = data;
 }
 
 function restoreLastScan() {
-    try {
-        const saved = JSON.parse(localStorage.getItem(lastScanStorageKey) || 'null');
-        if (!saved) return;
-        if (saved.date !== scannerContext.date) {
-            localStorage.removeItem(lastScanStorageKey);
-            return;
-        }
-        if (saved.data?.success && saved.data.student_id && ['am_in', 'am_out', 'pm_in', 'pm_out'].includes(saved.data.event)) {
-            renderScanResult(saved.data);
-        }
-    } catch (error) {
-        console.warn('Could not restore last scan:', error);
+    const saved = scannerContext.last_scan;
+    if (saved?.success && saved.student_id && ['am_in', 'am_out', 'pm_in', 'pm_out'].includes(saved.event)) {
+        renderScanResult(saved);
     }
 }
 
@@ -253,7 +230,8 @@ async function startScanner() {
     } catch (err) {
         setStatus('Error', 'danger');
         showResult('danger', '⚠️ Camera Error',
-            `Could not start camera: ${err}<br>Use manual input below.`);
+            `Could not start camera: ${err}
+Use manual input below.`);
     }
 }
 
@@ -301,89 +279,26 @@ function submitManual() {
 
 // ── Core processor ────────────────────────────────────────
 
-function renderScanResult(data) {
-            const escapeText = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
-            data = {...data};
-            for (const field of ['student', 'grade', 'section', 'time', 'am_in', 'am_out', 'pm_in', 'pm_out']) data[field] = escapeText(data[field]);
-            data.remaining = Array.isArray(data.remaining) ? data.remaining.map(escapeText) : [];
-            const colors = {
-                am_in:  { bg: '#d1fae5', border: '#10b981', icon: '☀️', label: 'AM In'  },
-                am_out: { bg: '#fef3c7', border: '#f59e0b', icon: '🌤️', label: 'AM Out' },
-                pm_in:  { bg: '#dbeafe', border: '#3b82f6', icon: '🌙', label: 'PM In'  },
-                pm_out: { bg: '#f3e8ff', border: '#8b5cf6', icon: '🚪', label: 'PM Out' },
-            };
-            const c = colors[data.event] || colors.am_in;
-
-            const timeGrid = `
-                <div class="row g-1 mt-2 text-center" style="font-size:0.75rem">
-                    <div class="col-3">
-                        <div class="p-1 rounded" style="background:#f1f5f9">
-                            <div class="text-muted">AM In</div>
-                            <strong>${data.am_in || '—'}</strong>
-                        </div>
-                    </div>
-                    <div class="col-3">
-                        <div class="p-1 rounded" style="background:#f1f5f9">
-                            <div class="text-muted">AM Out</div>
-                            <strong>${data.am_out || '—'}</strong>
-                        </div>
-                    </div>
-                    <div class="col-3">
-                        <div class="p-1 rounded" style="background:#f1f5f9">
-                            <div class="text-muted">PM In</div>
-                            <strong>${data.pm_in || '—'}</strong>
-                        </div>
-                    </div>
-                    <div class="col-3">
-                        <div class="p-1 rounded" style="background:#f1f5f9">
-                            <div class="text-muted">PM Out</div>
-                            <strong>${data.pm_out || '—'}</strong>
-                        </div>
-                    </div>
-                </div>`;
-
-            const remaining = Array.isArray(data.remaining) ? data.remaining : [];
-            const remainingHtml = remaining.length > 0
-                ? `<div class="mt-2 small text-muted">
-                       Next: <strong>${remaining.join(' → ')}</strong>
-                   </div>`
-                : `<div class="mt-2 small text-success fw-bold">
-                       ✅ All events completed for today
-                   </div>`;
-
-            const attendanceType = data.attendance_type || 'pending';
-
-            document.getElementById('resultArea').innerHTML = `
-                <div style="background:${c.bg};border:2px solid ${c.border};
-                            border-radius:10px;padding:1rem;
-                            animation:fadeIn .3s ease">
-                    <div class="d-flex align-items-start gap-3">
-                        <div style="font-size:2rem">${c.icon}</div>
-                        <div class="flex-grow-1">
-                            <div class="fw-800 fs-5">${data.student}</div>
-                            <div class="text-muted small">
-                                ${data.grade} — ${data.section}
-                            </div>
-                            <div class="mt-1">
-                                <span class="badge bg-dark">${c.label}</span>
-                                <span class="badge bg-secondary ms-1">${data.time}</span>
-                                <span class="badge bg-${attendanceType === 'full_day' ? 'success' : (attendanceType === 'partial' ? 'warning text-dark' : 'danger')} ms-1">
-                                    ${attendanceType.replace('_',' ').toUpperCase()}
-                                </span>
-                            </div>
-                            ${timeGrid}
-                            ${remainingHtml}
-                            <div class="mt-2 small">
-                                <i class="bi bi-chat-dots me-1"></i>
-                                SMS: ${data.sms_sent ? '<span class="text-muted">Sent</span>' : '<span class="text-muted">—</span>'}
-                                &nbsp;|&nbsp;
-                                <i class="bi bi-envelope me-1"></i>
-                                Email: ${data.email_sent ? '<span class="text-muted">Sent</span>' : '<span class="text-muted">—</span>'}
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-
+function updateScanGuide(data) {
+    if (!data.success) return;
+    const isArrival = ['am_in', 'pm_in'].includes(data.event);
+    const isDeparture = ['am_out', 'pm_out'].includes(data.event);
+    if (!isArrival && !isDeparture) return;
+    const partial = isArrival && data.attendance_type === 'partial';
+    const complete = isDeparture && data.attendance_type === 'full_day';
+    for (const [id, active, color] of [
+        ['timeInGuide', partial, '#d97706'],
+        ['timeOutGuide', complete, '#059669']
+    ]) {
+        const guide = document.getElementById(id);
+        guide.style.borderColor = active ? color : 'transparent';
+        guide.style.boxShadow = active ? `0 0 0 2px ${color}22` : 'none';
+        if (active) guide.setAttribute('aria-current', 'step');
+        else guide.removeAttribute('aria-current');
+    }
+    const status = complete ? 'Full Day' : (partial ? 'Partial' : 'Recorded');
+    document.getElementById('scanGuideStatus').textContent =
+        `Last successful scan: ${data.student || 'Student'} - ${isArrival ? 'Time-In' : 'Time-Out'} - ${status}`;
 }
 
 async function processToken(token) {
@@ -392,10 +307,33 @@ async function processToken(token) {
         const res = await fetch('scan_process.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `token=${encodeURIComponent(token)}`
+            body: new URLSearchParams({token, csrf_token: scannerContext.csrf_token}).toString()
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const raw = await res.text();
+        let data;
+        try {
+            data = JSON.parse(raw);
+        } catch (parseError) {
+            // Web-server/PHP failures can return an empty or HTML body.
+            // Never display that body: it may contain private diagnostics.
+        }
+        if (!data || typeof data !== 'object' || Array.isArray(data)
+            || (typeof data.success !== 'boolean' && data.error !== true)) {
+            const reference = res.headers.get('X-Request-ID');
+            showResult('danger', 'Scan unavailable',
+                (res.redirected ? 'Your session may have expired. Reload the page and sign in again.'
+                    : `The server returned an unreadable scan response (HTTP ${res.status}). Check today's log before attempting another scan.`)
+                + (reference && /^[a-f0-9]{24}$/.test(reference) ? ` Reference: ${reference}` : ''));
+            beep(false);
+            return;
+        }
+        if (!res.ok) {
+            showResult(res.status === 429 ? 'warning' : 'danger',
+                res.status === 429 ? 'Please wait before scanning again' : 'Scan unavailable',
+                data.message || `HTTP ${res.status}`);
+            beep(false);
+            return;
+        }
         if (data.success) {
             scanCount++;
             document.getElementById('scanCount').textContent = scanCount;
@@ -411,8 +349,8 @@ async function processToken(token) {
 
             if (isAlreadyScanned) {
                 showResult('warning', '↩️ Already Scanned',
-                    `<div class="fw-600">You're already scanned</div>
-                     <div class="small text-muted mt-1">Please wait a moment before scanning again.</div>`);
+                    `You're already scanned
+Please wait a moment before scanning again.`);
                 beep(false);
             } else {
                 showResult('danger', '❌ Scan Rejected', msg || 'Unknown error');
@@ -421,7 +359,8 @@ async function processToken(token) {
         }
     } catch (err) {
         showResult('danger', '⚠️ Network Error',
-            `Could not reach server.<br><small>${err.message}</small>`);
+            `Could not reach server.
+${err.message}`);
         beep(false);
     }
 }
@@ -429,8 +368,6 @@ async function processToken(token) {
 // ── Log ──────────────────────────────────────────────────
 
 async function refreshLog() {
-    const tbody = document.getElementById('logBody');
-
     try {
         const res = await fetch('get_today_log.php?scans_only=1');
 
@@ -451,77 +388,7 @@ async function refreshLog() {
             throw new Error('Unexpected response shape');
         }
 
-        if (data.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">No scans today</td></tr>`;
-            return;
-        }
-
-        const eventStyle = {
-            am_in:  { label: 'AM In',  bg: '#d1fae5', color: '#065f46', icon: '☀️' },
-            am_out: { label: 'AM Out', bg: '#fef3c7', color: '#92400e', icon: '🌤️' },
-            pm_in:  { label: 'PM In',  bg: '#dbeafe', color: '#1e40af', icon: '🌙' },
-            pm_out: { label: 'PM Out', bg: '#f3e8ff', color: '#6b21a8', icon: '🚪' },
-        };
-
-        const lastEventCell = (r) => {
-            if (!r.last_event || !eventStyle[r.last_event]) {
-                return `<span class="text-muted" style="font-size:0.7rem">—</span>`;
-            }
-            const e = eventStyle[r.last_event];
-            return `
-                <span class="badge" style="background:${e.bg};color:${e.color};font-size:0.65rem">
-                    ${e.icon} ${e.label}
-                </span>
-                <div class="text-muted" style="font-size:0.65rem">${r.last_event_time || ''}</div>`;
-        };
-
-        tbody.innerHTML = data.map(r => {
-            const isNew = lastScannedId != null && r.student_id == lastScannedId;
-
-            const rowClass =
-                r.attendance_type === 'absent'  ? 'table-danger' :
-                r.attendance_type === 'pending' ? 'table-light'  : '';
-
-            const badgeClass =
-                r.attendance_type === 'full_day' ? 'success' :
-                r.attendance_type === 'partial'  ? 'warning text-dark' :
-                r.attendance_type === 'absent'   ? 'danger' :
-                r.attendance_type === 'pending'  ? 'secondary' :
-                                                    'secondary';
-
-            const fmtCell = (time, status) => {
-                if (!time) {
-                    return status === 'absent'
-                        ? '<span class="badge bg-danger" style="font-size:0.6rem">Absent</span>'
-                        : '<span class="text-muted">—</span>';
-                }
-                const late = status === 'late'
-                    ? ' <span class="badge bg-warning text-dark" style="font-size:0.6rem">Late</span>'
-                    : '';
-                return time + late;
-            };
-
-            const typeLabel = (r.attendance_type || '').replace('_', ' ');
-
-            return `
-                <tr class="${rowClass} ${isNew ? 'table-warning' : ''}"
-                    style="${isNew ? 'animation:pulse 1.2s ease 2' : ''}">
-                    <td>
-                        <div class="fw-600 small">${r.name}</div>
-                        <div class="text-muted" style="font-size:0.7rem">${r.grade} — ${r.section}</div>
-                    </td>
-                    <td class="text-center small">${fmtCell(r.am_in,  r.am_status)}</td>
-                    <td class="text-center small">${fmtCell(r.am_out, null)}</td>
-                    <td class="text-center small">${fmtCell(r.pm_in,  r.pm_status)}</td>
-                    <td class="text-center small">${fmtCell(r.pm_out, null)}</td>
-                    <td>${lastEventCell(r)}</td>
-                    <td>
-                        <span class="badge bg-${badgeClass}" style="font-size:0.65rem">
-                            ${typeLabel}
-                        </span>
-                    </td>
-                </tr>`;
-        }).join('');
+        renderScannerLog(data, lastScannedId);
 
         if (lastScannedId != null) {
             setTimeout(() => { lastScannedId = null; }, 2500);
@@ -529,27 +396,11 @@ async function refreshLog() {
 
     } catch (e) {
         console.error('refreshLog failed:', e);
-        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">
-            Failed to load log: ${e.message}
-        </td></tr>`;
+        scannerLogMessage(`Failed to load log: ${e.message}`, true);
     }
 }
 
 // ── Helpers ──────────────────────────────────────────────
-
-function showResult(type, title, body) {
-    const colors = {
-        success:'#d1fae5', warning:'#fef3c7',
-        danger:'#fee2e2',  info:'#e0f2fe'
-    };
-    document.getElementById('resultArea').innerHTML = `
-        <div style="background:${colors[type]||'#f1f5f9'};
-                    border-radius:10px;padding:1rem;
-                    animation:fadeIn .3s ease">
-            <h6 class="fw-800 mb-2">${title}</h6>
-            <div>${body}</div>
-        </div>`;
-}
 
 function setStatus(text, color) {
     const el = document.getElementById('scannerStatus');

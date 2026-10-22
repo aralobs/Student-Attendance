@@ -7,7 +7,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
 
 $pageTitle       = 'By Student';
 $db              = getDB();
@@ -196,9 +196,8 @@ include '../includes/sidebar.php';
                         <td><?= $i + 1 ?></td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
-                                <img src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($s['photo']) ?>"
-                                     class="student-photo-sm"
-                                     onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=<?= urlencode($s['first_name'].' '.$s['last_name']) ?>&size=40&background=1a56db&color=fff'">
+                                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?>"
+                                     class="student-photo-sm">
                                 <div>
                                     <div class="fw-600">
                                         <?= sanitize($s['last_name'].', '.$s['first_name']) ?>

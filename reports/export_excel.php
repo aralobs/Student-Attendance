@@ -4,7 +4,7 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
 
 $date       = $_GET['date']    ?? date('Y-m-d');
 $gradeLevel = $_GET['grade']   ?? '';
@@ -58,8 +58,7 @@ fputcsv($out, []);
 fputcsv($out, [
     '#', 'LRN', 'Last Name', 'First Name',
     'Grade', 'Section', 'Schedule',
-    'AM In', 'AM Out', 'AM Status',
-    'PM In', 'PM Out', 'PM Status',
+    'Time-In', 'Time-Out', 'AM Status', 'PM Status',
     'Attendance Type', 'Remarks'
 ]);
 
@@ -72,11 +71,9 @@ foreach ($records as $i => $r) {
         $r['grade_level']   ?? '',
         $r['section_name']  ?? '',
         $r['schedule_type'] ?? '',
-        $r['am_in']  ? date('h:i A', strtotime($r['am_in']))  : '',
-        $r['am_out'] ? date('h:i A', strtotime($r['am_out'])) : '',
+        $r[getAttendanceEvents($r)[0]]  ? date('h:i A', strtotime($r[getAttendanceEvents($r)[0]]))  : '',
+        ($out = $r[getAttendanceEvents($r)[1]]) ? date('h:i A', strtotime($out)) : '',
         $r['am_status'] ?? '',
-        $r['pm_in']  ? date('h:i A', strtotime($r['pm_in']))  : '',
-        $r['pm_out'] ? date('h:i A', strtotime($r['pm_out'])) : '',
         $r['pm_status'] ?? '',
         $r['attendance_type'] ?? '',
         $r['remarks'] ?? '',

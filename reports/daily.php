@@ -8,7 +8,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
 
 $pageTitle  = 'Daily Attendance Report';
 $db         = getDB();
@@ -214,11 +214,9 @@ include '../includes/sidebar.php';
                         <th>LRN</th>
                         <th>Student Name</th>
                         <th>Grade / Section</th>
-                        <th class="text-center" style="background:#f0fdf4">AM In</th>
-                        <th class="text-center" style="background:#f0fdf4">AM Out</th>
+                        <th class="text-center" style="background:#f0fdf4">Time-In</th>
+                        <th class="text-center" style="background:#f0fdf4">Time-Out</th>
                         <th class="text-center" style="background:#f0fdf4">AM</th>
-                        <th class="text-center" style="background:#eff6ff">PM In</th>
-                        <th class="text-center" style="background:#eff6ff">PM Out</th>
                         <th class="text-center" style="background:#eff6ff">PM</th>
                         <th class="text-center">Type</th>
                         <th>Remarks</th>
@@ -227,7 +225,7 @@ include '../includes/sidebar.php';
                 <tbody>
                     <?php if (empty($records)): ?>
                     <tr>
-                        <td colspan="12" class="text-center py-5 text-muted">
+                        <td colspan="10" class="text-center py-5 text-muted">
                             <i class="bi bi-inbox fs-2 d-block mb-2 opacity-25"></i>
                             No attendance records for this date.
                             <?php if ($calEntry && isHolidayOrNoClass($date)): ?>
@@ -255,53 +253,11 @@ include '../includes/sidebar.php';
                             <div class="text-muted"><?= sanitize($r['section_name'] ?? '—') ?></div>
                         </td>
 
-                        <!-- AM -->
-                        <td class="text-center" style="background:#fafffe">
-                            <?= $r['am_in']
-                                ? date('h:i A', strtotime($r['am_in']))
-                                : '—' ?>
-                        </td>
-                        <td class="text-center" style="background:#fafffe">
-                            <?= $r['am_out']
-                                ? date('h:i A', strtotime($r['am_out']))
-                                : '—' ?>
-                        </td>
-                        <td class="text-center" style="background:#fafffe">
-                            <?php if ($r['am_status']): ?>
-                            <span class="badge bg-<?= $r['am_status']==='present'
-                                ? 'success'
-                                : ($r['am_status']==='late' ? 'warning text-dark' : 'danger') ?>">
-                                <?= ucfirst($r['am_status']) ?>
-                            </span>
-                            <?php else: echo '—'; endif; ?>
-                        </td>
-
-                        <!-- PM -->
-                        <?php if ($r['schedule_type'] === 'am_only'): ?>
-                        <td colspan="3" class="text-center text-muted small"
-                            style="background:#f9f9f9">AM Only</td>
-                        <?php else: ?>
-                        <td class="text-center" style="background:#f5f8ff">
-                            <?= $r['pm_in']
-                                ? date('h:i A', strtotime($r['pm_in']))
-                                : '—' ?>
-                        </td>
-                        <td class="text-center" style="background:#f5f8ff">
-                            <?= $r['pm_out']
-                                ? date('h:i A', strtotime($r['pm_out']))
-                                : '—' ?>
-                        </td>
-                        <td class="text-center" style="background:#f5f8ff">
-                            <?php if ($r['pm_status']): ?>
-                            <span class="badge bg-<?= $r['pm_status']==='present'
-                                ? 'success'
-                                : ($r['pm_status']==='late' ? 'warning text-dark' : 'danger') ?>">
-                                <?= ucfirst($r['pm_status']) ?>
-                            </span>
-                            <?php else: echo '—'; endif; ?>
-                        </td>
-                        <?php endif; ?>
-
+                        <?php $out = $r[getAttendanceEvents($r)[1]]; ?>
+                        <td class="text-center small"><?= $r[getAttendanceEvents($r)[0]] ? date('h:i A', strtotime($r[getAttendanceEvents($r)[0]])) : '-' ?></td>
+                        <td class="text-center small"><?= $out ? date('h:i A', strtotime($out)) : '-' ?></td>
+                        <td class="text-center"><?= getAttendanceScheduleType($r) === 'pm_only' ? 'N/A' : sessionStatusBadge($r['am_status']) ?></td>
+                        <td class="text-center"><?= getAttendanceScheduleType($r) === 'am_only' ? 'N/A' : sessionStatusBadge($r['pm_status']) ?></td>
                         <td class="text-center">
                             <?= attendanceTypeBadge($r['attendance_type']) ?>
                         </td>
@@ -318,10 +274,10 @@ include '../includes/sidebar.php';
                 <tfoot class="table-light fw-700">
                     <tr>
                         <td colspan="4" class="text-end">TOTALS</td>
-                        <td colspan="3" class="text-center" style="background:#f0fdf4">
+                        <td colspan="2" class="text-center" style="background:#f0fdf4">
                             AM Late: <?= $summary['am_late'] ?>
                         </td>
-                        <td colspan="3" class="text-center" style="background:#eff6ff">
+                        <td colspan="2" class="text-center" style="background:#eff6ff">
                             PM Late: <?= $summary['pm_late'] ?>
                         </td>
                         <td class="text-center">

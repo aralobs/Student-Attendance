@@ -4,18 +4,17 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+require_once '../includes/student_photos.php';
+requireStudentManagement();
+guardCsrfPage();
 
 $pageTitle = 'Add Student';
 $db        = getDB();
 $errors    = [];
 
 // Get sections with grade level for dropdown
-$sections = $db->query("
-    SELECT * FROM sections
-    WHERE is_active = 1
-    ORDER BY " . gradeLevelOrderSQL('grade_level') . ", section_name
-")->fetchAll();
+$sections = getAllowedSections();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $lrn           = trim($_POST['lrn']            ?? '');
@@ -29,6 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $parentName    = trim($_POST['parent_name']    ?? '');
     $parentContact = trim($_POST['parent_contact'] ?? '');
     $parentEmail   = trim($_POST['parent_email']   ?? '');
+    requireStudentCreationSection($sectionId);
 
     if (empty($lrn))       $errors[] = 'LRN is required.';
     if (empty($firstName)) $errors[] = 'First name is required.';
@@ -65,9 +65,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($_FILES['photo']['size'] > 2 * 1024 * 1024) {
             $errors[] = 'Photo must be under 2MB.';
         } else {
-            $photo = 'student_' . time() . '_' . rand(1000,9999) . '.' . $ext;
-            $dest  = BASE_PATH . 'uploads/students/' . $photo;
-            if (!move_uploaded_file($_FILES['photo']['tmp_name'], $dest)) {
+            try {
+                $photo = storeStudentPhotoUpload($_FILES['photo']);
+            } catch (Throwable $error) {
                 $errors[] = 'Failed to upload photo.';
             }
         }
@@ -76,19 +76,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $qrToken = generateQRToken($lrn);
 
-        $stmt = $db->prepare("
+        $insertSql = "
             INSERT INTO students
                 (lrn, first_name, middle_name, last_name, gender, birth_date,
                  address, section_id, grade_level, school_year, photo, qr_token,
                  parent_name, parent_contact, parent_email)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        ");
-        $stmt->execute([
+        ";
+        $insertParams = [
             $lrn, $firstName, $middleName, $lastName,
             $gender, $birthDate ?: null, $address,
             $sectionId ?: null, $gradeLevel, $schoolYear, $photo, $qrToken,
             $parentName, $parentContact, $parentEmail
-        ]);
+        ];
+        if (isAdmin()) {
+            $insertSql .= ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)';
+        } else {
+            [$sectionScope, $sectionParams] = studentSectionScope('sec');
+            $insertSql .= " SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? FROM sections sec WHERE sec.id = ? AND ({$sectionScope})";
+            $insertParams = array_merge($insertParams, [$sectionId], $sectionParams);
+        }
+        $stmt = $db->prepare($insertSql);
+        $stmt->execute($insertParams);
+        if ($stmt->rowCount() !== 1) { http_response_code(403); exit('Section access has changed. Reload the student form.'); }
 
         $newId  = $db->lastInsertId();
 
@@ -137,6 +146,7 @@ include '../includes/sidebar.php';
 <?php endif; ?>
 
 <form method="POST" enctype="multipart/form-data" novalidate>
+<?= csrfField() ?>
     <div class="row g-4">
 
         <!-- Photo -->
@@ -147,7 +157,7 @@ include '../includes/sidebar.php';
                 </div>
                 <div class="card-body text-center">
                     <img id="photoPreview"
-                         src="https://ui-avatars.com/api/?name=New+Student&size=150&background=ebf0ff&color=1a56db"
+                         src="<?= BASE_URL ?>assets/img/student-placeholder.svg"
                          class="rounded-circle mb-3"
                          style="width:120px;height:120px;object-fit:cover;border:3px solid #1a56db">
                     <div>

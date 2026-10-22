@@ -27,13 +27,22 @@
 </div>
 
 <!-- Bootstrap 5 JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="<?= BASE_URL ?>assets/vendor/bootstrap-5.3.0.bundle.min.js" integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz" crossorigin="anonymous"></script>
 <!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="<?= BASE_URL ?>assets/vendor/chart-4.4.0.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 <!-- Main JS -->
 <script src="<?= BASE_URL ?>assets/js/main.js"></script>
 
 <?php if (isset($extraJS)) echo $extraJS; ?>
+
+<?php if (isTeacher()): ?>
+<div id="endOfDayAlert" hidden role="status" aria-live="polite" class="alert alert-warning shadow mb-0"
+     style="position:fixed;bottom:16px;right:16px;max-width:min(420px,calc(100vw - 32px));z-index:1040"
+     data-endpoint="<?= BASE_URL ?>attendance/end_of_day_status.php" data-review="<?= BASE_URL ?>attendance/end_of_day.php">
+    <a class="alert-link" href="<?= BASE_URL ?>attendance/end_of_day.php">End of Day Review</a>
+</div>
+<script src="<?= BASE_URL ?>assets/js/end_of_day_alerts.js"></script>
+<?php endif; ?>
 
 <!-- ─── Session heartbeat ─────────────────────────────────────
      Pings the server every 10s. If another browser has logged

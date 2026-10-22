@@ -4,6 +4,9 @@
         "ext-pdo": "*",
         "ext-pdo_mysql": "*",
         "ext-calendar": "*",
+        "ext-gd": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
         "bacon/bacon-qr-code": "^2.0",
         "phpmailer/phpmailer": "^7.1"
     },

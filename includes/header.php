@@ -17,6 +17,8 @@ if (!headers_sent()) {
 }
 
 requireLogin();
+require_once __DIR__ . '/browser_security.php';
+sendBrowserSecurityHeaders();
 $currentUser = currentUser();
 $flash = null;
 ?>
@@ -25,7 +27,9 @@ $flash = null;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $pageTitle ?? 'Attendance System' ?> — SPCCS Kinder</title>
+    <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken(), ENT_QUOTES, 'UTF-8') ?>">
+    <script src="<?= BASE_URL ?>assets/js/privacy_storage.js" defer></script>
+    <title><?= htmlspecialchars((string)($pageTitle ?? 'Attendance System'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> — SPCCS Kinder</title>
 
     <!-- Anti-cache meta tags (fallback for older browsers) -->
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
