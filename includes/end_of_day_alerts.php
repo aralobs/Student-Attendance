@@ -32,18 +32,32 @@ function endOfDayRows(string $date, array $user, ?DateTimeImmutable $now = null)
     if ($date > $now->format('Y-m-d') || isHolidayOrNoClass($date)
         || ((int)date('N', strtotime($date)) > 5 && (getCalendarEntry($date)['type'] ?? '') !== 'school_day')) return [];
     $db = getDB();
+    $managed=enrollmentModelEnabled($db);
+    $placementJoin='JOIN sections sec ON sec.id = s.section_id';
+    $ownershipJoin=''; $enrollmentFilter="s.enrollment_status = 'active'";
+    $creationColumns='s.created_at AS student_created_at, sec.created_at AS section_created_at';
+    $params=[$date,$date,$user['id']];
+    if ($managed) {
+        $placementJoin='JOIN student_enrollments e ON e.student_id=s.id JOIN school_years y ON y.id=e.school_year_id
+            JOIN enrollment_sections es ON es.enrollment_id=e.id JOIN sections sec ON sec.id=es.section_id';
+        $ownershipJoin=' AND a.enrollment_id=e.id AND a.assignment_id=es.id';
+        $enrollmentFilter="y.state='active' AND e.state='active' AND sec.school_year_id=y.id AND sec.grade_level=es.grade_level
+            AND ? BETWEEN y.starts_on AND y.ends_on AND ? BETWEEN e.starts_on AND e.ends_on AND ? BETWEEN es.starts_on AND es.ends_on";
+        $params=[$date,$date,$date,$date,$date,$user['id']];
+        $creationColumns='NULL AS student_created_at,NULL AS section_created_at';
+    }
     // No fallback to the whole school when a teacher has no assigned sections.
     $stmt = $db->prepare("SELECT s.id AS student_id, s.first_name, s.last_name, s.parent_contact,
-        s.created_at AS student_created_at, sec.created_at AS section_created_at,
+        $creationColumns,
         sec.id AS section_id, sec.section_name, sec.grade_level, sec.schedule_type, sec.am_out_end, sec.pm_out_end,
         a.id AS attendance_id, a.am_in, a.am_out, a.pm_in, a.pm_out, a.attendance_type, a.remarks,
         n.status AS notification_status
-        FROM students s JOIN sections sec ON sec.id = s.section_id
-        LEFT JOIN attendance a ON a.student_id = s.id AND a.date = ?
+        FROM students s $placementJoin
+        LEFT JOIN attendance a ON a.student_id = s.id AND a.date = ? $ownershipJoin
         LEFT JOIN end_of_day_parent_alerts n ON n.student_id = s.id AND n.date = ?
-        WHERE s.is_active = 1 AND s.enrollment_status = 'active' AND sec.is_active = 1"
+        WHERE s.is_active = 1 AND $enrollmentFilter AND sec.is_active = 1"
         . ' AND sec.adviser_id = ? ORDER BY sec.section_name, s.last_name, s.first_name');
-    $stmt->execute([$date, $date, $user['id']]);
+    $stmt->execute($params);
     $rows = [];
     foreach ($stmt->fetchAll() as $row) {
         $reason = endOfDayReason($row, $row, $date, $now);
@@ -67,22 +81,40 @@ function submitEndOfDayReview(string $date, array $entries, array $user, ?callab
     $db = getDB(); $deliveries = []; $saved = 0;
     $db->beginTransaction();
     try {
+        $managed=enrollmentModelEnabled($db);
+        ksort($entries,SORT_NUMERIC);
+        $contexts=$managed?lockAttendanceEnrollmentBatch($db,array_keys($entries),$date,$user):[];
         foreach ($entries as $id => $entry) {
             $remark = trim($entry['remarks'] ?? '');
             if ($remark === '' && empty($entry['notify'])) continue;
             $row = $rows[$id];
+            if ($managed) {
+                $ctx=$contexts[$id]['context'];
+                if ($ctx['section_id']!==(int)$row['section_id']) throw new DomainException('The review section changed.');
+                $readProfile=$db->prepare('SELECT created_at AS student_created_at,parent_contact,first_name,last_name FROM students WHERE id=? FOR UPDATE');
+                $readProfile->execute([$id]);
+                $section=array_merge($contexts[$id]['section'],$readProfile->fetch(PDO::FETCH_ASSOC));
+                $section['section_created_at']=null; $section['student_created_at']=null;
+            } else {
             $scope = $db->prepare("SELECT sec.*, s.created_at AS student_created_at, sec.created_at AS section_created_at,
                 s.parent_contact, s.first_name, s.last_name FROM students s JOIN sections sec ON sec.id = s.section_id
                 WHERE s.id = ? AND s.is_active = 1 AND s.enrollment_status = 'active' AND sec.is_active = 1"
                 . ' AND sec.adviser_id = ? FOR UPDATE');
             $scope->execute([$id, $user['id']]);
             $section = $scope->fetch();
+            }
             if (!$section) throw new InvalidArgumentException('A section assignment changed. Reload the review list.');
             $row = array_merge($row, $section);
             if (!empty($entry['notify']) && empty($row['parent_contact'])) throw new InvalidArgumentException('The parent phone number was removed. Reload the review list.');
-            $db->prepare("INSERT INTO attendance (student_id, date, attendance_type) VALUES (?, ?, 'absent') ON DUPLICATE KEY UPDATE id = id")->execute([$id, $date]);
+            if ($managed) {
+                $db->prepare("INSERT INTO attendance(student_id,date,attendance_type,enrollment_id,assignment_id) VALUES(?,?,'absent',?,?) ON DUPLICATE KEY UPDATE id=id")
+                    ->execute([$id,$date,$ctx['enrollment_id'],$ctx['assignment_id']]);
+            } else {
+                $db->prepare("INSERT INTO attendance (student_id, date, attendance_type) VALUES (?, ?, 'absent') ON DUPLICATE KEY UPDATE id = id")->execute([$id, $date]);
+            }
             $read = $db->prepare('SELECT * FROM attendance WHERE student_id = ? AND date = ? FOR UPDATE');
             $read->execute([$id, $date]); $current = $read->fetch();
+            if ($managed) verifyAttendanceEnrollment($current,$ctx);
             // A simultaneous manual edit or checkout invalidates this review item.
             $reason = endOfDayReason(array_merge($row, $current), $row, $date, new DateTimeImmutable('now'));
             if (!$reason) throw new InvalidArgumentException('An attendance record changed. Reload the review list before submitting.');

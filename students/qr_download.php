@@ -19,7 +19,7 @@ if (!$student) {
     http_response_code(404);
     exit('Student not found');
 }
-requireQRSectionAccess((int)($student['section_id'] ?? 0));
+$student=requireQRStudentAccess($id,$student);
 
 // Generate in memory: no PII-derived filenames or shared temporary files.
 $card = generateStudentQRCardSVG($student, getSetting('school_name') ?? 'San Pablo City Central School');

@@ -22,6 +22,7 @@ if (!in_array($role, ['admin', 'teacher', 'scanner_operator'], true)) {
 $isScanner = $role === 'scanner_operator';
 
 $db    = getDB();
+require_once '../includes/enrollment_operations.php';
 $today = date('Y-m-d');
 $now   = date('H:i:s');
 
@@ -43,6 +44,17 @@ $scanFilter = $scansOnly ? 'AND (a.am_in IS NOT NULL OR a.am_out IS NOT NULL OR 
 $logOrder = $scansOnly
     ? "GREATEST(COALESCE(a.am_in, '00:00:00'), COALESCE(a.am_out, '00:00:00'), COALESCE(a.pm_in, '00:00:00'), COALESCE(a.pm_out, '00:00:00')) DESC, a.id DESC"
     : "FIELD(sec.grade_level, 'Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'), sec.section_name, s.last_name, s.first_name";
+$placementJoin='LEFT JOIN sections sec ON sec.id = s.section_id';
+$ownershipJoin=''; $enrollmentFilter="AND s.enrollment_status = 'active'";
+if (enrollmentModelEnabled($db)) {
+    $placementJoin='JOIN student_enrollments e ON e.student_id=s.id JOIN school_years y ON y.id=e.school_year_id
+        JOIN enrollment_sections es ON es.enrollment_id=e.id JOIN sections sec ON sec.id=es.section_id';
+    $ownershipJoin=' AND a.enrollment_id=e.id AND a.assignment_id=es.id';
+    $enrollmentFilter="AND y.state='active' AND e.state='active' AND sec.school_year_id=y.id AND sec.grade_level=es.grade_level
+        AND ? BETWEEN y.starts_on AND y.ends_on AND ? BETWEEN e.starts_on AND e.ends_on AND ? BETWEEN es.starts_on AND es.ends_on";
+    // This predicate precedes the adviser predicate in the SQL below.
+    $params=array_merge([$today,$today,$today,$today],$role==='teacher'?[(int)$user['id']]:[]);
+}
 $stmt = $db->prepare("
     SELECT
         s.id             AS student_id,
@@ -58,11 +70,11 @@ $stmt = $db->prepare("
         a.am_status, a.pm_status,
         a.attendance_type, a.remarks
     FROM students s
-    LEFT JOIN sections sec ON sec.id = s.section_id
+    {$placementJoin}
     LEFT JOIN attendance a
-           ON a.student_id = s.id AND a.date = ?
+           ON a.student_id = s.id AND a.date = ? {$ownershipJoin}
     WHERE s.is_active = 1
-      AND s.enrollment_status = 'active'
+      {$enrollmentFilter}
       AND sec.is_active = 1
       {$adviserFilter}
       {$scanFilter}

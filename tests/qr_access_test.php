@@ -3,6 +3,8 @@
 $root = dirname(__DIR__);
 $fixture = __DIR__ . '/.qr-access-' . bin2hex(random_bytes(6));
 foreach (['', '/config', '/includes', '/students'] as $dir) mkdir($fixture . $dir);
+// Explicit legacy adapter mode; annual authorization uses realSQL elsewhere.
+file_put_contents($fixture.'/includes/enrollment_operations.php','<?php function enrollmentModelEnabled($db){return false;}');
 file_put_contents($fixture . '/config/database.php', <<<'PHP'
 <?php
 $case = $argv[1]; $queries = 0; $generated = 0;
@@ -108,7 +110,7 @@ try {
     echo "QR access checks passed ($checks cases); in-memory QR rendering passed.\n";
 } finally {
     foreach (array_merge($endpoints, ['config/database.php', 'includes/functions.php',
-        'includes/qr_access.php', 'includes/qr_helper.php', 'includes/qr_card.php', 'includes/header.php', 'request.php']) as $file) {
+        'includes/qr_access.php', 'includes/qr_helper.php', 'includes/qr_card.php', 'includes/header.php', 'includes/enrollment_operations.php','request.php']) as $file) {
         if (is_file($fixture . '/' . $file)) unlink($fixture . '/' . $file);
     }
     foreach (['/students', '/includes', '/config', ''] as $dir) rmdir($fixture . $dir);

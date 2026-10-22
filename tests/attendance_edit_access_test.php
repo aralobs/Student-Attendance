@@ -2,6 +2,9 @@
 // Isolated endpoint checks: no live database or notification provider calls.
 $root=dirname(__DIR__);$fixture=__DIR__.'/.attendance-access-'.bin2hex(random_bytes(6));
 foreach(['','/config','/includes','/attendance'] as $dir) mkdir($fixture.$dir);
+// This legacy adapter fixture deliberately selects version0; managed SQL is
+// exercised separately against disposable MySQL in enrollment_attendance_test.
+file_put_contents($fixture.'/includes/enrollment_operations.php','<?php function enrollmentModelEnabled($db){return false;}');
 $stub= <<<'PHP'
 <?php
 $case=$argv[1];$writes=0;$schedule=null;
@@ -63,6 +66,6 @@ try {
  }
  echo "Attendance access checks passed (22 cases).\n";
 } finally {
- foreach(['config/database.php','includes/functions.php','request.php','attendance/manual.php','attendance/override.php'] as $file)if(is_file($fixture.'/'.$file))unlink($fixture.'/'.$file);
+ foreach(['config/database.php','includes/functions.php','includes/enrollment_operations.php','request.php','attendance/manual.php','attendance/override.php'] as $file)if(is_file($fixture.'/'.$file))unlink($fixture.'/'.$file);
  foreach(['/attendance','/includes','/config',''] as $dir)rmdir($fixture.$dir);
 }

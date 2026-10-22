@@ -11,7 +11,9 @@ if (!$lock) { fwrite(STDERR, "Finalizer lock is unavailable.\n"); exit(1); }
 if (!flock($lock, LOCK_EX | LOCK_NB)) { fclose($lock); echo "Finalizer already running.\n"; exit; }
 $exitCode = 0;
 try {
-    $from = getDB()->query("SELECT MIN(GREATEST(DATE(s.created_at), DATE(sec.created_at))) FROM students s JOIN sections sec ON sec.id = s.section_id WHERE s.is_active = 1 AND s.enrollment_status = 'active' AND sec.is_active = 1")->fetchColumn();
+    $from = enrollmentModelEnabled(getDB())
+        ? getDB()->query("SELECT MIN(GREATEST(y.starts_on,e.starts_on,es.starts_on)) FROM student_enrollments e JOIN school_years y ON y.id=e.school_year_id JOIN enrollment_sections es ON es.enrollment_id=e.id JOIN sections sec ON sec.id=es.section_id JOIN students s ON s.id=e.student_id WHERE y.state='active' AND e.state='active' AND s.is_active=1 AND sec.is_active=1 AND sec.school_year_id=y.id")->fetchColumn()
+        : getDB()->query("SELECT MIN(GREATEST(DATE(s.created_at), DATE(sec.created_at))) FROM students s JOIN sections sec ON sec.id = s.section_id WHERE s.is_active = 1 AND s.enrollment_status = 'active' AND sec.is_active = 1")->fetchColumn();
     $lastDate = getSetting('attendance_absence_last_date');
     if ($from && $lastDate && preg_match('/^\d{4}-\d{2}-\d{2}$/', $lastDate) && $lastDate <= date('Y-m-d')) {
         $from = max($from, $lastDate);

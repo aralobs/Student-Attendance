@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/functions.php';
+require_once __DIR__ . '/enrollment_operations.php';
 
 function requireAttendanceFinalizerWorker(): void {
     if (PHP_SAPI !== 'cli') throw new RuntimeException('Attendance finalization is restricted to the scheduled worker.');
@@ -13,6 +14,8 @@ function reconcileAttendanceCompletion(string $date, ?int $sectionId = null, ?PD
     $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
     if (!$parsed || $parsed->format('Y-m-d') !== $date) throw new InvalidArgumentException('Invalid attendance date');
     $db = $db ?? getDB();
+    if (enrollmentModelEnabled($db)) return finalizeEnrollmentAttendanceDate($db,$date,$sectionId,
+        new DateTimeImmutable('now',new DateTimeZone('Asia/Manila')),true);
     $query = $db->prepare("SELECT a.id, a.am_in, a.am_out, a.pm_in, a.pm_out, a.attendance_type,
         sec.grade_level, sec.schedule_type
         FROM attendance a JOIN students s ON s.id = a.student_id
@@ -70,6 +73,8 @@ function finalizeAttendanceAbsences(string $date, ?int $sectionId = null, ?DateT
     $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
     if (!$parsed || $parsed->format('Y-m-d') !== $date) throw new InvalidArgumentException('Invalid attendance date');
     if ($date > $now->format('Y-m-d')) return 0;
+    $db=getDB();
+    if (enrollmentModelEnabled($db)) return finalizeEnrollmentAttendanceDate($db,$date,$sectionId,$now);
     $completionChanged = reconcileAttendanceCompletion($date, $sectionId);
     if (isHolidayOrNoClass($date)) return $completionChanged;
     if ((int)date('N', strtotime($date)) > 5 && (getCalendarEntry($date)['type'] ?? '') !== 'school_day') return $completionChanged;
@@ -116,6 +121,64 @@ function finalizeAttendanceAbsences(string $date, ?int $sectionId = null, ?DateT
         } catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
     }
     return $changed + $completionChanged;
+}
+
+/** Managed worker implementation, separately injectable for disposable-DB tests.
+ * Each student's transaction takes shared structural locks before profile and
+ * attendance. Eligibility is re-read for this learning date, never from caches. */
+function finalizeEnrollmentAttendanceDate(PDO $db, string $date, ?int $sectionId, DateTimeImmutable $now, bool $reconcileOnly = false): int
+{
+    requireAttendanceFinalizerWorker();
+    unset($GLOBALS['security_audit_actor'],$GLOBALS['security_audit_device']);
+    validatedSchoolYearDate($date);
+    if ($date>$now->format('Y-m-d')) return 0;
+    $calendar=$db->prepare('SELECT type FROM school_calendar WHERE date=?'); $calendar->execute([$date]);
+    $calendarType=$calendar->fetchColumn();
+    $noAbsences=$reconcileOnly || in_array($calendarType,['holiday','no_class'],true)
+        || ((int)(new DateTimeImmutable($date))->format('N')>5 && $calendarType!=='school_day');
+    $changed=0;
+    foreach (enrollmentOperationalRows($db,$date,$sectionId) as $candidate) {
+        $db->beginTransaction();
+        try {
+            $locked=lockAttendanceEnrollment($db,(int)$candidate['student_id'],$date,null,$sectionId);
+            $ctx=$locked['context']; $section=$locked['section'];
+            $read=$db->prepare('SELECT * FROM attendance WHERE student_id=? AND date=? FOR UPDATE');
+            $read->execute([$ctx['student_id'],$date]); $before=$read->fetch(PDO::FETCH_ASSOC);
+            if ($before) verifyAttendanceEnrollment($before,$ctx);
+            $record=$before?:[];
+            $hasScan=false;
+            foreach (['am_in','am_out','pm_in','pm_out'] as $field) $hasScan=$hasScan || !empty($record[$field]);
+            if ($hasScan && ($record['attendance_type']??'')!=='holiday') {
+                $type=computeAttendanceType($record,$section);
+                if ($type!=='absent' && $type!==$record['attendance_type']) {
+                    $db->prepare('UPDATE attendance SET attendance_type=? WHERE id=?')->execute([$type,$record['id']]);
+                    auditAttendanceAfterWrite($db,(int)$record['id'],$before,'attendance.reconcile'); $changed++;
+                }
+            } elseif (!$noAbsences) {
+                // Verified annual dates are the entry boundary in managed mode.
+                // Legacy profile/section creation timestamps are not eligibility.
+                $final=closedSessionAbsences($record,$section,$date,$now);
+                if (($record['am_status']??null)!==($final['am_status']??null) || ($record['pm_status']??null)!==($final['pm_status']??null)) {
+                    if (!$before) {
+                        $db->prepare("INSERT INTO attendance(student_id,date,enrollment_id,assignment_id,am_status,pm_status,attendance_type) VALUES(?,?,?,?,?,?,'absent')")
+                            ->execute([$ctx['student_id'],$date,$ctx['enrollment_id'],$ctx['assignment_id'],$final['am_status']??null,$final['pm_status']??null]);
+                        $id=(int)$db->lastInsertId();
+                    } else {
+                        $id=(int)$before['id'];
+                        $schedule=getAttendanceScheduleType($section);
+                        $absent=$schedule==='am_only'?($final['am_status']??'')==='absent':($schedule==='pm_only'?($final['pm_status']??'')==='absent':
+                            (($final['am_status']??'')==='absent' && ($final['pm_status']??'')==='absent'));
+                        $db->prepare('UPDATE attendance SET am_status=?,pm_status=?,attendance_type=? WHERE id=?')
+                            ->execute([$final['am_status']??null,$final['pm_status']??null,$absent?'absent':$before['attendance_type'],$id]);
+                    }
+                    auditAttendanceAfterWrite($db,$id,$before?:null,'attendance.finalize'); $changed++;
+                }
+            }
+            $db->commit();
+        } catch (DomainException $error) { if ($db->inTransaction()) $db->rollBack(); /* Revoked, closed or unmapped: no ordinary write. */ }
+        catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
+    }
+    return $changed;
 }
 
 function finalizeAttendanceRange(string $from, string $to, ?int $sectionId = null): int

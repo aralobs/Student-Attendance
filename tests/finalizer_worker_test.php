@@ -12,6 +12,7 @@ class WorkerDB {
     function fetchColumn(){return $GLOBALS['case']==='empty'?false:date('Y-m-d',strtotime('-60 days'));}
 }
 function getDB(){return new WorkerDB;}
+function enrollmentModelEnabled($db){return false;}
 function getSetting($key){return $GLOBALS['case']==='progress'?date('Y-m-d',strtotime('-10 days')):null;}
 function finalizeAttendanceRange($from,$to){if($GLOBALS['case']==='failure')throw new RuntimeException('SECRET database error');$GLOBALS['state']['from']=$from;$GLOBALS['state']['to']=$to;return 3;}
 function updateSetting($key,$value){$GLOBALS['state']['cursor']=$value;}

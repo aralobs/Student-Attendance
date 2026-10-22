@@ -3,6 +3,8 @@
 $root = dirname(__DIR__);
 $fixture = __DIR__ . '/.today-log-access-' . bin2hex(random_bytes(6));
 foreach (['', '/config', '/includes', '/attendance'] as $dir) mkdir($fixture . $dir);
+// Explicit version0 adapter fixture, preserving every existing log assertion.
+file_put_contents($fixture.'/includes/enrollment_operations.php','<?php function enrollmentModelEnabled($db){return false;}');
 file_put_contents($fixture . '/config/database.php', <<<'PHP'
 <?php
 $case = $argv[1]; $reads = 0; $finalized = 0;
@@ -114,6 +116,6 @@ try {
     }
     echo "Live attendance log access checks passed ($checks cases, isolated SQL database).\n";
 } finally {
-    foreach (['config/database.php','includes/functions.php','includes/attendance_finalizer.php','request.php','attendance/get_today_log.php'] as $file) unlink($fixture.'/'.$file);
+    foreach (['config/database.php','includes/functions.php','includes/attendance_finalizer.php','includes/enrollment_operations.php','request.php','attendance/get_today_log.php'] as $file) unlink($fixture.'/'.$file);
     foreach (['/attendance','/includes','/config',''] as $dir) rmdir($fixture.$dir);
 }

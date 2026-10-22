@@ -28,7 +28,7 @@ if (!$student) {
 }
 
 // Generate QR SVG inline (no file needed)
-requireQRSectionAccess((int)($student['section_id'] ?? 0));
+$student=requireQRStudentAccess($id,$student);
 $cardSVG = generateStudentQRCardSVG($student, getSetting('school_name') ?? 'San Pablo City Central School');
 
 $pageTitle = 'QR Code — ' . $student['first_name'];

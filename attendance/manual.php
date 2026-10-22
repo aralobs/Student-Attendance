@@ -10,10 +10,12 @@ require_once '../includes/functions.php';
 requireLogin();
 guardCsrfPage();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
+require_once '../includes/enrollment_operations.php';
 
 $pageTitle = 'Manual Attendance';
 $db        = getDB();
 $today     = date('Y-m-d');
+$managed = enrollmentModelEnabled($db);
 
 $allowedSections = getAllowedSections();
 
@@ -50,9 +52,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         exit;
     }
     if (!is_array($entries)) { http_response_code(400); exit('Invalid attendance entries.'); }
+    if ($managed) {
+        $allowedStudentIds=array_fill_keys(array_column(enrollmentOperationalRows($db,$submittedDate,$sectionId,currentUser()),'student_id'),true);
+    } else {
     $roster = $db->prepare('SELECT id FROM students WHERE section_id = ? AND is_active = 1');
     $roster->execute([$sectionId]);
     $allowedStudentIds = array_fill_keys(array_column($roster->fetchAll(), 'id'), true);
+    }
     foreach ($entries as $studentId => $data) {
         $validStudentId = filter_var($studentId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($validStudentId === false || !is_array($data)) { http_response_code(400); exit('Invalid attendance entries.'); }
@@ -61,9 +67,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $absenceStudents = [];
     $db->beginTransaction();
     try {
+    ksort($entries,SORT_NUMERIC);
+    $contexts=$managed?lockAttendanceEnrollmentBatch($db,array_keys($entries),$submittedDate,currentUser(),$sectionId):[];
     foreach ($entries as $studentId => $data) {
         $studentId = (int)$studentId;
         if ($studentId <= 0) continue;
+        if ($managed) $section=$contexts[$studentId]['section'];
 
         $amIn     = !empty($data['am_in'])     ? $data['am_in']    : null;
         $amOut    = !empty($data['am_out'])     ? $data['am_out']   : null;
@@ -92,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $check = $db->prepare("SELECT * FROM attendance WHERE student_id = ? AND date = ? FOR UPDATE");
         $check->execute([$studentId, $submittedDate]);
         $existing = $check->fetch();
+        if ($managed && $existing) verifyAttendanceEnrollment($existing,$contexts[$studentId]['context']);
 
         if ($existing) {
             $db->prepare("
@@ -113,6 +123,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 currentUser()['id'],
                 $existing['id']
             ]);
+        } elseif ($managed) {
+            $ctx=$contexts[$studentId]['context'];
+            $db->prepare('INSERT INTO attendance(student_id,date,enrollment_id,assignment_id,am_in,am_out,am_status,pm_in,pm_out,pm_status,attendance_type,remarks,recorded_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)')
+                ->execute([$studentId,$submittedDate,$ctx['enrollment_id'],$ctx['assignment_id'],$amIn,$amOut,$amStatus,$pmIn,$pmOut,$pmStatus,$attendType,$remarks,currentUser()['id']]);
         } else {
             $db->prepare("
                 INSERT INTO attendance (
@@ -156,6 +170,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // ── Load students with existing attendance for the date ───────
+if ($managed) {
+    $students=enrollmentOperationalRows($db,$date,$sectionId,currentUser());
+    $read=$db->prepare('SELECT id AS att_id,am_in,am_out,am_status,pm_in,pm_out,pm_status,attendance_type,remarks FROM attendance WHERE student_id=? AND date=? AND enrollment_id=? AND assignment_id=?');
+    foreach ($students as &$student) {
+        $read->execute([$student['student_id'],$date,$student['enrollment_id'],$student['assignment_id']]);
+        $student=array_merge($student,$read->fetch(PDO::FETCH_ASSOC)?:array_fill_keys(['att_id','am_in','am_out','am_status','pm_in','pm_out','pm_status','attendance_type','remarks'],null));
+    }
+    unset($student);
+} else {
 $students = $db->prepare("
     SELECT s.*,
            a.id              AS att_id,
@@ -174,6 +197,7 @@ $students = $db->prepare("
 ");
 $students->execute([$date, $sectionId]);
 $students = $students->fetchAll();
+}
 
 $section['schedule_type'] = getAttendanceScheduleType($section);
 $isAmOnly = $section['schedule_type'] === 'am_only';

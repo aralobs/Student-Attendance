@@ -1,7 +1,8 @@
 <?php
 // Isolated MySQL fixture; no live parent messages or attendance changes.
 putenv('PII_ENCRYPTION_KEY=' . base64_encode(random_bytes(32)));
-$name = 'eod_test_' . bin2hex(random_bytes(8));
+$name = 'enrollment_test_' . bin2hex(random_bytes(8));
+if (!preg_match('/\Aenrollment_test_[0-9a-f]{16}\z/',$name)) throw new RuntimeException('Invalid disposable database name');
 putenv('MYSQLDATABASE=' . $name);
 require_once dirname(__DIR__) . '/includes/end_of_day_alerts.php';
 $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
@@ -11,6 +12,7 @@ function assertEod(bool $ok, string $message): void { if (!$ok) throw new Runtim
 try {
     $admin->exec("CREATE DATABASE `$name`"); $created = true; $db = getDB();
     $db->exec('CREATE TABLE system_settings (setting_key VARCHAR(100) PRIMARY KEY, setting_value TEXT)');
+    $db->exec("INSERT INTO system_settings VALUES('enrollment_model_version','0')");
     updateSetting('sms_missing_checkout_template', 'CUSTOM: {student_name} did not scan Time-Out on {date}. Section: {section}.');
     $db->exec(file_get_contents(dirname(__DIR__) . '/migrations/security_audit.sql'));
     $db->exec("CREATE TABLE attendance (id INT AUTO_INCREMENT PRIMARY KEY, student_id INT, date DATE,

@@ -4,6 +4,7 @@ require_once '../includes/functions.php';
 requireLogin();
 requireCsrfPost();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
+require_once '../includes/enrollment_operations.php';
 
 
 $id           = (int)($_POST['attendance_id'] ?? 0);
@@ -27,6 +28,16 @@ $db->beginTransaction();
 try {
 
 // Get the attendance record and its section
+if (enrollmentModelEnabled($db)) {
+    // Identify without locking attendance, then take the common structural prefix.
+    $read=$db->prepare('SELECT student_id,date FROM attendance WHERE id=?'); $read->execute([$id]); $identity=$read->fetch();
+    if (!$identity) throw new DomainException('Attendance record not found.');
+    $locked=lockAttendanceEnrollment($db,(int)$identity['student_id'],$identity['date'],currentUser());
+    $read=$db->prepare('SELECT * FROM attendance WHERE id=? FOR UPDATE'); $read->execute([$id]); $existing=$read->fetch();
+    if (!$existing || $existing['date']!==$identity['date'] || $existing['student_id']!=$identity['student_id']) throw new DomainException('Attendance ownership changed.');
+    verifyAttendanceEnrollment($existing,$locked['context']);
+    $existing=array_merge($existing,['section_id'=>$locked['context']['section_id'],'grade_level'=>$locked['section']['grade_level'],'schedule_type'=>$locked['section']['schedule_type']]);
+} else {
 $stmt = $db->prepare("
     SELECT a.*, s.section_id, sec.grade_level, sec.schedule_type
     FROM attendance a
@@ -36,6 +47,7 @@ $stmt = $db->prepare("
 ");
 $stmt->execute([$id]);
 $existing = $stmt->fetch();
+}
 
 if (!$existing) {
     setFlash('danger', 'Attendance record not found.');

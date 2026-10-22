@@ -29,7 +29,7 @@ if (!$student) {
     http_response_code(404);
     exit('Student not found');
 }
-requireQRSectionAccess((int)($student['section_id'] ?? 0));
+$student=requireQRStudentAccess((int)$id,$student);
 
 // Serve the QR image directly
 serveQRCode($student['qr_token'], $size);

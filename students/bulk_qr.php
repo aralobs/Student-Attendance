@@ -16,6 +16,9 @@ $sections = getAllowedSections();
 $students  = [];
 if ($sectionId > 0) {
     requireQRSectionAccess($sectionId);
+    if (enrollmentModelEnabled($db)) {
+        $students=enrollmentOperationalRows($db,date('Y-m-d'),$sectionId,currentUser());
+    } else {
     $stmt = $db->prepare("
         SELECT s.*, sec.section_name
         FROM students s
@@ -25,6 +28,7 @@ if ($sectionId > 0) {
     ");
     $stmt->execute([$sectionId]);
     $students = $stmt->fetchAll();
+    }
 }
 
 $schoolName = getSetting('school_name') ?? 'San Pablo City Central School';

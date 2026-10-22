@@ -52,6 +52,13 @@ if (isHolidayOrNoClass($today)) {
 }
 
 // ── Find student + section schedule ───────────────────────────
+if (enrollmentModelEnabled($db)) {
+    // This boundary supplies today's date; a QR never chooses a historical date.
+    $lookup=$db->prepare('SELECT id FROM students WHERE qr_token=? AND is_active=1');
+    $lookup->execute([$token]); $studentId=$lookup->fetchColumn();
+    $student=$studentId ? enrollmentOperationalStudent($db,(int)$studentId,$today,
+        $scannerUser['role']==='scanner_operator'?null:$scannerUser) : null;
+} else {
 $stmt = $db->prepare("
     SELECT s.*,
            sec.section_name, sec.schedule_type,
@@ -66,6 +73,7 @@ $stmt = $db->prepare("
 ");
 $stmt->execute([$token, $scannerUser['role'] === 'teacher' ? 1 : 0, (int)$scannerUser['id']]);
 $student = $stmt->fetch();
+}
 
 if (!$student) {
     enforceAbuseLimits($db, scannerProbeBuckets((int)$scannerUser['id'], 1), true);

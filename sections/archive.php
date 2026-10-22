@@ -19,6 +19,15 @@ if ($id <= 0) {
 }
 
 $db   = getDB();
+require_once '../includes/enrollment_operations.php';
+if (enrollmentModelEnabled($db)) {
+    try {
+        $found=setEnrollmentEntityActive($db,currentUser(),'section',$id,false);
+        setFlash($found?'success':'danger',$found?'Record visibility updated.':'Record not found.');
+    } catch (DomainException $error) { setFlash('danger',$error->getMessage()); }
+    catch (Throwable $error) { setFlash('danger','Unable to update the record. Please try again.'); }
+    header('Location: sections.php'); exit;
+}
 $stmt = $db->prepare("SELECT * FROM sections WHERE id = ? AND is_active = 1");
 $stmt->execute([$id]);
 $section = $stmt->fetch();

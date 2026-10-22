@@ -13,7 +13,9 @@ function checkScan(bool $condition, string $message): void
     if (!$condition) throw new RuntimeException($message);
 }
 
-$name = 'scan_test_' . bin2hex(random_bytes(8));
+putenv('PII_ENCRYPTION_KEY=' . base64_encode(random_bytes(32)));
+$name = 'enrollment_test_' . bin2hex(random_bytes(8));
+if (!preg_match('/\Aenrollment_test_[0-9a-f]{16}\z/',$name)) throw new RuntimeException('Invalid disposable database name');
 $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false];
 $admin = new PDO($dsn, DB_USER, DB_PASS, $options);
@@ -24,6 +26,7 @@ try {
     $admin->exec("CREATE DATABASE `$name`");
     $created = true;
     $db = new PDO($dsn . ';dbname=' . $name, DB_USER, DB_PASS, $options);
+    $db->exec("CREATE TABLE system_settings(setting_key VARCHAR(100) PRIMARY KEY,setting_value TEXT); INSERT INTO system_settings VALUES('enrollment_model_version','0')");
     $db->exec("CREATE TABLE attendance (
         id INT AUTO_INCREMENT PRIMARY KEY, student_id INT NOT NULL, date DATE NOT NULL,
         am_in TIME NULL, am_out TIME NULL, pm_in TIME NULL, pm_out TIME NULL,
@@ -63,6 +66,7 @@ PHP;
     copy(dirname(__DIR__) . '/includes/pii_security.php', $fixture . '/includes/pii_security.php');
     copy(dirname(__DIR__) . '/includes/csrf.php', $fixture . '/includes/csrf.php');
     copy(dirname(__DIR__) . '/includes/abuse_security.php', $fixture . '/includes/abuse_security.php');
+    foreach (['enrollment_operations','enrollment_access','enrollment_repository','school_years'] as $dependency) copy(dirname(__DIR__).'/includes/'.$dependency.'.php',$fixture.'/includes/'.$dependency.'.php');
     $db->exec(file_get_contents(dirname(__DIR__) . '/migrations/security_abuse_controls.sql'));
     file_put_contents($fixture . '/includes/mail_helper.php', <<<'PHP'
 <?php
