@@ -157,6 +157,7 @@ include '../includes/sidebar.php';
             <i class="bi bi-printer me-1"></i>Print
         </button>
         <?php if (isAdmin()): ?>
+        <?php if (enrollmentModelEnabled($db)): ?><a href="moving_up.php" class="btn btn-outline-success">Moving Up</a><?php endif; ?>
         <a href="section_advisers.php?sy=<?= urlencode($sy) ?>" class="btn btn-outline-primary">
             <i class="bi bi-person-badge me-1"></i>Bulk Assign Advisers
         </a>

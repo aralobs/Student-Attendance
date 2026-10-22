@@ -101,6 +101,7 @@ include '../includes/sidebar.php';
             <i class="bi bi-list-columns-reverse me-1"></i>Master List
         </a>
         <?php if (isAdmin()): ?>
+        <?php if (enrollmentModelEnabled($db)): ?><a href="moving_up.php" class="btn btn-outline-success">Moving Up</a><?php endif; ?>
         <a href="section_advisers.php" class="btn btn-outline-secondary">
             <i class="bi bi-person-badge me-1"></i>Assign Advisers
         </a>
@@ -177,6 +178,12 @@ include '../includes/sidebar.php';
 <div class="card mb-3 d-none" id="bulkBar">
     <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
         <span class="me-2"><strong id="bulkCount">0</strong> selected</span>
+        <?php if (enrollmentModelEnabled($db)): ?>
+        <?php if (isAdmin()): ?>
+        <a href="moving_up.php" class="btn btn-sm btn-success">Choose source roster in Moving Up</a>
+        <?php endif; ?>
+        <span class="small text-muted">Same-year placement changes require enrollment correction.</span>
+        <?php else: ?>
         <select class="form-select form-select-sm w-auto" id="bulkSection">
             <option value="">— Assign to section —</option>
             <?php foreach ($sections as $sec): ?>
@@ -188,6 +195,7 @@ include '../includes/sidebar.php';
         <button class="btn btn-sm btn-success" onclick="bulkAssignSection()">
             <i class="bi bi-check2 me-1"></i>Apply
         </button>
+        <?php endif; ?>
         <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
             Clear
         </button>

@@ -11,6 +11,7 @@
  */
 
 // Current script + folder, resolved ONCE
+require_once __DIR__ . '/school_years.php';
 $currentFile = basename($_SERVER['PHP_SELF']);                 // e.g. attendance.php
 $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slashes
 ?>
@@ -369,6 +370,9 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 </li>
 
                 <li class="nav-section-label mt-2">ADMIN</li>
+                <?php if (enrollmentModelEnabled(getDB())): ?>
+                <li class="nav-item"><a href="<?= BASE_URL ?>students/moving_up.php" class="nav-link <?= $currentFile === 'moving_up.php' ? 'active' : '' ?>"><i class="bi bi-arrow-up-right-circle me-2"></i>Moving Up</a></li>
+                <?php endif; ?>
 
                 <li class="nav-item">
                     <a href="<?= BASE_URL ?>users/users.php"
