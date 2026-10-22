@@ -115,4 +115,33 @@ withEnrollmentFixture(function (array $f): void {
     checkEnrollment((int)$db->query('SELECT COUNT(*) FROM sms_logs')->fetchColumn() === 0, 'Year saves send no messages');
 });
 
+withEnrollmentFixture(function (array $f): void {
+    require_once dirname(__DIR__) . '/includes/enrollment_commands.php';
+    $db=$f['db'];
+    $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES ('enrollment_model_version','1') ON DUPLICATE KEY UPDATE setting_value='1'");
+    createAnnualEnrollment($db,$f['admin'],101,2,20,'2027-06-01','2028-03-31');
+    $edit=['id'=>2,'expected_version'=>1,'label'=>'2027-2028','starts_on'=>'2027-06-01','ends_on'=>'2028-03-31'];
+    $yearBefore=$db->query('SELECT * FROM school_years WHERE id=2')->fetch();
+    $eventCount=(int)$db->query('SELECT COUNT(*) FROM security_events')->fetchColumn();
+    $historyCount=(int)$db->query('SELECT COUNT(*) FROM security_change_history')->fetchColumn();
+    expectEnrollmentError(DomainException::class,fn()=>savePlannedSchoolYear($db,$f['admin'],array_replace($edit,['starts_on'=>'2027-07-01'])));
+    expectEnrollmentError(DomainException::class,fn()=>savePlannedSchoolYear($db,$f['admin'],array_replace($edit,['ends_on'=>'2028-03-01'])));
+    expectEnrollmentError(DomainException::class,fn()=>savePlannedSchoolYear($db,$f['admin'],array_replace($edit,['label'=>'2030-2031'])));
+    checkEnrollment($db->query('SELECT * FROM school_years WHERE id=2')->fetch()===$yearBefore,'Rejected dependent edits preserve year dates, label and version');
+    checkEnrollment($db->query('SELECT DISTINCT school_year FROM sections WHERE school_year_id=2')->fetchAll(PDO::FETCH_COLUMN)===['2027-2028'],'Rejected year rename preserves synchronized section labels');
+    checkEnrollment((int)$db->query('SELECT COUNT(*) FROM security_events')->fetchColumn()===$eventCount && (int)$db->query('SELECT COUNT(*) FROM security_change_history')->fetchColumn()===$historyCount,'Rejected dependent edits create no audit history');
+    checkEnrollment(!$db->inTransaction(),'Rejected dependent edits leave no open transaction');
+    checkEnrollment(savePlannedSchoolYear($db,$f['admin'],array_replace($edit,['starts_on'=>'2027-05-01','ends_on'=>'2028-04-01']))===2,'Safe referenced year date extension is permitted');
+    $safe=$db->query('SELECT * FROM school_years WHERE id=2')->fetch();
+    checkEnrollment((int)$safe['version']===2 && $safe['starts_on']==='2027-05-01' && $safe['ends_on']==='2028-04-01','Safe referenced edit increments version and preserves explicit dates');
+    // A section reference by itself also freezes the year label.
+    $sectionOnly=savePlannedSchoolYear($db,$f['admin'],['label'=>'2029-2030','starts_on'=>'2029-06-01','ends_on'=>'2030-03-31']);
+    $db->exec("INSERT INTO sections(section_name,grade_level,school_year,school_year_id) VALUES ('Synthetic Planned','Grade 3','2029-2030',$sectionOnly)");
+    expectEnrollmentError(DomainException::class,fn()=>savePlannedSchoolYear($db,$f['admin'],['id'=>$sectionOnly,'expected_version'=>1,'label'=>'2030-2031','starts_on'=>'2029-06-01','ends_on'=>'2030-03-31']));
+    // Inspect assignment bounds independently of enrollment bounds; damaged history must not be made valid by a year edit.
+    $db->exec("UPDATE enrollment_sections SET ends_on='2028-04-15' WHERE enrollment_id IN (SELECT id FROM student_enrollments WHERE school_year_id=2)");
+    expectEnrollmentError(DomainException::class,fn()=>savePlannedSchoolYear($db,$f['admin'],array_replace($edit,['expected_version'=>2,'ends_on'=>'2028-04-01'])));
+    checkEnrollment($db->query('SELECT * FROM school_years WHERE id=2')->fetch()===$safe,'Out-of-bounds assignment rejects without changing year/version');
+});
+
 echo 'School-year checks passed (' . $GLOBALS['enrollment_checks'] . " checks; synthetic SQL, no provider calls).\n";

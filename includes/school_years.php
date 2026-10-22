@@ -105,6 +105,31 @@ function savePlannedSchoolYear(PDO $db, array $actor, array $input): int
         if ($id !== null && (!$before || $before['state'] !== 'planned' || $before['version'] !== $version)) {
             throw new DomainException('School year is missing, no longer planned, or changed since it was opened.');
         }
+        if ($before !== null) {
+            // The control/year locks serialize structural changes. Lock dependent
+            // entities in the shared section/profile/enrollment/assignment order
+            // before validating their current boundaries or performing any DML.
+            $sectionsRead = $db->prepare('SELECT id FROM sections WHERE school_year_id=? ORDER BY id FOR UPDATE');
+            $sectionsRead->execute([$id]);
+            $sectionIds = $sectionsRead->fetchAll(PDO::FETCH_COLUMN);
+            $profilesRead = $db->prepare('SELECT s.id FROM students s WHERE EXISTS (SELECT 1 FROM student_enrollments e WHERE e.student_id=s.id AND e.school_year_id=?) ORDER BY s.id FOR UPDATE');
+            $profilesRead->execute([$id]);
+            $profilesRead->fetchAll(PDO::FETCH_COLUMN);
+            $enrollmentsRead = $db->prepare('SELECT id,starts_on,ends_on FROM student_enrollments WHERE school_year_id=? ORDER BY id FOR UPDATE');
+            $enrollmentsRead->execute([$id]);
+            $enrollments = $enrollmentsRead->fetchAll(PDO::FETCH_ASSOC);
+            $assignmentsRead = $db->prepare('SELECT a.id,a.starts_on,a.ends_on FROM enrollment_sections a WHERE a.enrollment_id IN (SELECT e.id FROM student_enrollments e WHERE e.school_year_id=?) ORDER BY a.id FOR UPDATE');
+            $assignmentsRead->execute([$id]);
+            $assignments = $assignmentsRead->fetchAll(PDO::FETCH_ASSOC);
+            if ($before['label'] !== $label && ($sectionIds || $enrollments)) {
+                throw new DomainException('A referenced school-year label cannot change. Keep the existing label.');
+            }
+            foreach ([$enrollments,$assignments] as $records) foreach ($records as $record) {
+                if ($record['starts_on'] < $start || $record['ends_on'] > $end) {
+                    throw new DomainException('School-year dates must contain every existing enrollment and section assignment.');
+                }
+            }
+        }
         if ($id === null) {
             $db->prepare("INSERT INTO school_years (label,starts_on,ends_on,state) VALUES (?,?,?,'planned')")->execute([$label,$start,$end]);
             $id = (int)$db->lastInsertId();

@@ -378,6 +378,7 @@ include '../includes/sidebar.php';
 
 <?php
 $gradeDefaultsJson = json_encode($gradeDefaults, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+$sectionYearConfigJson = json_encode(['managed'=>$managedEnrollment,'defaultValue'=>$managedEnrollment ? $selectedYearId : (getSetting('school_year') ?? '')], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
 // NOWDOC — safe from PHP interpolation so JS template literals work.
 $jsCode = <<<'HTML'
@@ -408,7 +409,9 @@ function openModal(sec) {
     document.getElementById('secGrade').value   = sec?.grade_level  ?? Object.keys(GRADE_DEFAULTS)[0];
     document.getElementById('secName').value    = sec?.section_name ?? '';
     document.getElementById('secAdviser').value = sec?.adviser_id   ?? '';
-    document.getElementById('secYear').value = <?= $managedEnrollment ? 'sec?.school_year_id ?? ' . json_encode($selectedYearId) : 'sec?.school_year ?? ' . json_encode(getSetting('school_year') ?? '') ?>;
+    document.getElementById('secYear').value = SECTION_YEAR_CONFIG.managed
+        ? (sec?.school_year_id ?? SECTION_YEAR_CONFIG.defaultValue)
+        : (sec?.school_year ?? SECTION_YEAR_CONFIG.defaultValue);
 
     // Populate times
     const t = v => (v ?? '').slice(0, 5);
@@ -492,7 +495,7 @@ function toggleScheduleFields(scheduleType) {
 </script>
 HTML;
 
-$extraJS = '<script>const CAN_MANAGE_SECTIONS = ' . (isAdmin() ? 'true' : 'false') . '; const GRADE_DEFAULTS = ' . $gradeDefaultsJson . ';</script>' . "\n" . $jsCode;
+$extraJS = '<script>const CAN_MANAGE_SECTIONS = ' . (isAdmin() ? 'true' : 'false') . '; const GRADE_DEFAULTS = ' . $gradeDefaultsJson . '; const SECTION_YEAR_CONFIG = ' . $sectionYearConfigJson . ';</script>' . "\n" . $jsCode;
 
 include '../includes/footer.php';
 ?>
