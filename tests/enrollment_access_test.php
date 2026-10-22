@@ -14,6 +14,21 @@ withEnrollmentFixture(function ($f) {
     $db->beginTransaction();
     checkEnrollment(requireEnrollmentWrite($db,$f['teacher'],101,'2026-10-22')['assignment_id'] === 2001 && $db->inTransaction(), 'Guard respects caller transaction');
     $db->rollBack();
+    $second = new PDO('mysql:host=' . (getenv('MYSQLHOST') ?: '127.0.0.1') . ';port=' . (getenv('MYSQLPORT') ?: '3307')
+        . ';dbname=' . $f['database'] . ';charset=utf8mb4', getenv('MYSQLUSER') !== false ? getenv('MYSQLUSER') : 'root',
+        getenv('MYSQLPASSWORD') !== false ? getenv('MYSQLPASSWORD') : '', [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+    $db->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    $db->beginTransaction();
+    checkEnrollment((int)$db->query('SELECT adviser_id FROM sections WHERE id=10')->fetchColumn() === 7, 'Establish old adviser snapshot');
+    $second->beginTransaction();
+    $second->exec('UPDATE sections SET adviser_id=8 WHERE id=10');
+    $second->commit();
+    checkEnrollment((int)$db->query('SELECT adviser_id FROM sections WHERE id=10')->fetchColumn() === 7, 'Consistent snapshot still sees revoked adviser');
+    expectEnrollmentError(DomainException::class,fn()=>requireEnrollmentWrite($db,$f['teacher'],101,'2026-10-22'));
+    checkEnrollment(requireEnrollmentWrite($db,$f['otherTeacher'],101,'2026-10-22')['section_id'] === 10, 'Current adviser authorized despite old snapshot');
+    checkEnrollment($db->inTransaction(), 'Snapshot guard retains caller transaction ownership');
+    $db->rollBack();
+    $second = null;
     $db->exec("UPDATE sections SET adviser_id=8,is_active=0 WHERE id=10; UPDATE students SET section_id=20,is_active=0 WHERE id=101;
       UPDATE school_years SET state='closed' WHERE id=1; UPDATE student_enrollments SET state='completed' WHERE id=1001");
     checkEnrollment(listEnrollmentRoster($db,1,10,'2026-10-01','2026-10-31',$f['teacher'])['total'] === 0, 'Former adviser revoked on history');

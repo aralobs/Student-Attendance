@@ -23,7 +23,9 @@ function requireEnrollmentWrite(PDO $db, array $actor, int $studentId, string $d
     if ($scope === '1 = 0') throw new DomainException('Enrollment write access denied.');
     $ctx = getEnrollmentContext($db,$studentId,$date,'write',$db->inTransaction());
     if (!$ctx) throw new DomainException('No eligible active enrollment for this date.');
-    $q = $db->prepare("SELECT sec.id FROM sections sec WHERE sec.id=? AND ($scope)");
+    // Context already holds this section's shared lock. Reuse a current locking
+    // read so an earlier REPEATABLE READ snapshot cannot restore a revoked adviser.
+    $q = $db->prepare("SELECT sec.id FROM sections sec WHERE sec.id=? AND ($scope)" . ($db->inTransaction() ? ' LOCK IN SHARE MODE' : ''));
     $q->execute(array_merge([$ctx['section_id']],$params));
     if (!$q->fetchColumn()) throw new DomainException('Enrollment write access denied.');
     return $ctx;
