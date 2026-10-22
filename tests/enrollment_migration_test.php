@@ -96,6 +96,24 @@ withEnrollmentFixture(function (array $f): void {
 });
 
 withEnrollmentFixture(function (array $f): void {
+    $db=$f['db'];
+    $db->exec("UPDATE school_years SET state='closed' WHERE id=1; UPDATE sections SET school_year_id=NULL WHERE id=10");
+    $before=$db->query('SELECT * FROM sections WHERE id=10')->fetch();
+    $auditBefore=(int)$db->query('SELECT COUNT(*) FROM security_events')->fetchColumn();
+    $map=['inventory_fingerprint'=>inventoryEnrollmentHistory($db)['fingerprint'],
+        'school_years'=>[['id'=>1,'label'=>'2026-2027','starts_on'=>'2026-06-01','ends_on'=>'2027-03-31']],
+        'sections'=>[['section_id'=>10,'school_year_id'=>1]],'enrollments'=>[],'attendance'=>[]];
+    expectEnrollmentError(DomainException::class,fn()=>applyEnrollmentMappings($db,$f['admin'],$map));
+    checkEnrollment($before===$db->query('SELECT * FROM sections WHERE id=10')->fetch(),'Closed-year section mapping is rejected without changing section data');
+    checkEnrollment($auditBefore===(int)$db->query('SELECT COUNT(*) FROM security_events')->fetchColumn(),'Closed-year mapping rejects before any audit DML');
+    checkEnrollment((int)$db->query('SELECT COUNT(*) FROM enrollment_migration_issues')->fetchColumn()===0,'Closed-year mapping rejects before any issue DML');
+    $map['sections']=[['section_id'=>11,'school_year_id'=>1]];
+    $linked=$db->query('SELECT * FROM sections WHERE id=11')->fetch();
+    checkEnrollment(applyEnrollmentMappings($db,$f['admin'],$map)===['enrollments'=>[],'assignments'=>[]],'Already-linked closed-year mapping remains harmless');
+    checkEnrollment($linked===$db->query('SELECT * FROM sections WHERE id=11')->fetch(),'Closed-year identical section mapping preserves existing data');
+});
+
+withEnrollmentFixture(function (array $f): void {
     $run=static function(array $args) use ($f): array {
         $env=getenv(); $env['MYSQLDATABASE']=$f['database']; $env['APP_ENV']='testing';
         $process=proc_open(array_merge([PHP_BINARY,__DIR__.'/../migrations/school_year_enrollment.php'],$args),[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,null,$env);

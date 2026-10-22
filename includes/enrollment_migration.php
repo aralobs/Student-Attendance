@@ -201,6 +201,7 @@ function applyEnrollmentMappings(PDO $db, array $actor, array $mapping): array
         foreach ($mapping['sections'] as $section) {
             $id=(int)$section['section_id']; $label=$ref($section); $existing=$locked['sections'][$id]??null;
             if (!$existing || ($existing['school_year_id']!==null && (int)$existing['school_year_id']!==(int)$years[$label]['id'])) throw new DomainException('Section year mapping conflicts.');
+            if ($existing['school_year_id']===null && $years[$label]['state']==='closed') throw new DomainException('Closed years require the correction flow.');
             $sectionYears[$id]=$label;
         }
         $planned=[]; $plannedAssignments=[]; $seenNatural=[];
