@@ -1,0 +1,48 @@
+<?php
+require_once __DIR__ . '/support/enrollment_fixture.php';
+if (is_file(__DIR__ . '/../includes/enrollment_repository.php')) require_once __DIR__ . '/../includes/enrollment_repository.php';
+withEnrollmentFixture(function ($f) {
+    checkEnrollment(function_exists('getEnrollmentContext'), 'Date-based enrollment context service is missing');
+    $db = $f['db'];
+    $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES ('enrollment_model_version','1') ON DUPLICATE KEY UPDATE setting_value='1'");
+    $db->exec("UPDATE students SET section_id=20 WHERE id=101");
+    $ctx = getEnrollmentContext($db,101,'2026-10-22');
+    checkEnrollment($ctx['school_year_id'] === 1 && $ctx['section_id'] === 10, 'Resolve date, not latest placement');
+    foreach (['student_id','enrollment_id','assignment_id','school_year_id','section_id','version'] as $key) checkEnrollment(is_int($ctx[$key]), 'Normalize '.$key);
+    checkEnrollment(getEnrollmentContext($db,101,'2026-06-01') !== null && getEnrollmentContext($db,101,'2027-03-31') !== null, 'Inclusive bounds');
+    checkEnrollment(getEnrollmentContext($db,101,'2026-05-31') === null, 'Reject date before entry');
+    $db->exec("UPDATE student_enrollments SET starts_on='2026-07-01',ends_on='2027-02-28' WHERE id=1001");
+    $bounds=getEnrollmentContext($db,101,'2026-10-22');
+    checkEnrollment($bounds['starts_on']==='2026-07-01' && $bounds['ends_on']==='2027-02-28', 'Context is intersection of all boundaries');
+    $month=listEnrollmentRoster($db,1,10,'2026-06-15','2026-07-31',$f['admin']);
+    checkEnrollment($month['rows'][0]['assignments'][0]['starts_on']==='2026-07-01', 'Partial interval clips to enrollment entry');
+    checkEnrollment(listEnrollmentRoster($db,1,10,'2026-05-01','2026-05-31',$f['admin'])['total']===0, 'No school-year overlap returns empty roster');
+    $db->exec("UPDATE student_enrollments SET starts_on='2026-06-01',ends_on='2027-03-31' WHERE id=1001");
+    expectEnrollmentError(InvalidArgumentException::class,fn()=>getEnrollmentContext($db,101,'2026-02-30'));
+    expectEnrollmentError(InvalidArgumentException::class,fn()=>getEnrollmentContext($db,101,'2026-10-22','unknown'));
+    expectEnrollmentError(LogicException::class,fn()=>getEnrollmentContext($db,101,'2026-10-22','write',true));
+    $db->exec("UPDATE enrollment_sections SET ends_on='2026-09-30' WHERE id=2001;
+      INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES
+      (2010,1001,11,'Grade 3','2026-10-01','2026-10-31'),(2011,1001,10,'Grade 3','2026-11-01','2027-03-31')");
+    $roster = listEnrollmentRoster($db,1,10,'2026-09-15','2026-11-15',$f['teacher']);
+    checkEnrollment($roster['total'] === 1 && count($roster['rows']) === 1, 'Returning member counted once');
+    checkEnrollment(array_column($roster['rows'][0]['assignments'],'starts_on') === ['2026-09-15','2026-11-01'], 'Clip start ranges');
+    checkEnrollment(array_column($roster['rows'][0]['assignments'],'ends_on') === ['2026-09-30','2026-11-15'], 'Clip end ranges');
+    checkEnrollment(listEnrollmentRoster($db,1,10,'2026-09-15','2026-11-15',$f['admin'],2,1)['rows'] === [], 'Pagination counts enrollments');
+    expectEnrollmentError(InvalidArgumentException::class,fn()=>listEnrollmentRoster($db,1,10,'2026-11-15','2026-09-15',$f['admin']));
+    $db->exec("UPDATE students SET is_active=0 WHERE id=101; UPDATE sections SET is_active=0 WHERE id=10;
+      UPDATE school_years SET state='closed' WHERE id=1; UPDATE student_enrollments SET state='completed' WHERE id=1001");
+    checkEnrollment(getEnrollmentContext($db,101,'2026-09-20') !== null, 'Read closed archived history');
+    checkEnrollment(getEnrollmentContext($db,101,'2026-09-20','write') === null && getEnrollmentContext($db,101,'2026-09-20','scan') === null, 'Closed and archived cannot write');
+    checkEnrollment(listEnrollmentRoster($db,1,10,'2026-09-15','2026-11-15',$f['admin'])['total'] === 1, 'Preserve archived history');
+    $db->exec("UPDATE student_enrollments SET state='cancelled' WHERE id=1001");
+    checkEnrollment(getEnrollmentContext($db,101,'2026-09-20') === null, 'Cancelled never resolves');
+    $db->exec("UPDATE student_enrollments SET state='active' WHERE id=1001; UPDATE enrollment_sections SET ends_on='2026-10-15' WHERE id=2001");
+    expectEnrollmentError(DomainException::class,fn()=>getEnrollmentContext($db,101,'2026-10-10'));
+    expectEnrollmentError(DomainException::class,fn()=>listEnrollmentRoster($db,1,10,'2026-10-01','2026-10-20',$f['teacher']));
+    $db->exec("INSERT INTO enrollment_migration_issues(record_type,record_id,reason_code) VALUES ('student',101,'unmapped')");
+    checkEnrollment(countEnrollmentMigrationIssues($db) === 1, 'Unresolved mapping count visible');
+    $db->exec('DELETE FROM enrollment_sections WHERE enrollment_id=1006');
+    checkEnrollment(getEnrollmentContext($db,106,'2026-10-22') === null, 'Missing assignment never uses profile');
+});
+echo "Enrollment context checks passed (" . $GLOBALS['enrollment_checks'] . ").\n";

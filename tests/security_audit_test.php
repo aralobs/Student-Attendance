@@ -29,7 +29,7 @@ try {
     }
     foreach (['','/config','/includes','/attendance','/users','/students','/sessions'] as $dir) mkdir($fixture . $dir);
     foreach (['config/database.php','config/deployment_security.php','config/hosting_environment.php','config/schedule_rules.php','includes/functions.php','includes/sms_status.php','includes/notification_templates.php','includes/session_security.php',
-        'includes/student_access.php','includes/student_photos.php','includes/csrf.php','includes/abuse_security.php','includes/settings_security.php','includes/pii_security.php','includes/security_audit.php',
+        'includes/student_access.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php','includes/student_photos.php','includes/csrf.php','includes/abuse_security.php','includes/settings_security.php','includes/pii_security.php','includes/security_audit.php',
         'students/edit.php','attendance/override.php','attendance/manual.php','users/edit.php','index.php','security_audit.php','includes/header.php','includes/sidebar.php','includes/footer.php'] as $file) copy($root . '/' . $file,$fixture . '/' . $file);
     copy($root . '/includes/browser_security.php',$fixture . '/includes/browser_security.php');
 

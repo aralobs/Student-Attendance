@@ -213,8 +213,19 @@ function isKioskMode(): bool {
 // ─── Teacher section access ──────────────────────────────────
 
 function getAllowedSections() {
+    require_once __DIR__ . '/enrollment_access.php';
     $db   = getDB();
     $user = currentUser();
+
+    if (enrollmentModelEnabled($db)) {
+        [$scope,$params] = enrollmentSectionScope('s',$user);
+        $stmt = $db->prepare("SELECT s.*,u.full_name AS adviser_name FROM sections s
+            LEFT JOIN users u ON s.adviser_id=u.id
+            WHERE s.is_active=1 AND ($scope) AND s.school_year_id=(SELECT id FROM school_years WHERE state='active')
+            ORDER BY FIELD(s.grade_level,'Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'),s.section_name");
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
 
     if (isAdmin()) {
         return $db->query("
@@ -240,6 +251,15 @@ function getAllowedSections() {
 }
 
 function canAccessSection(int $sectionId): bool {
+    require_once __DIR__ . '/enrollment_access.php';
+    if (!isAdmin() && !isTeacher()) return false;
+    if (enrollmentModelEnabled(getDB())) {
+        [$scope,$params] = enrollmentSectionScope('sec',currentUser());
+        $stmt=getDB()->prepare("SELECT sec.id FROM sections sec WHERE sec.id=? AND ($scope)
+            AND sec.school_year_id=(SELECT id FROM school_years WHERE state='active')");
+        $stmt->execute(array_merge([$sectionId],$params));
+        return (bool)$stmt->fetchColumn();
+    }
     if (isAdmin()) return true;
     $db   = getDB();
     $user = currentUser();

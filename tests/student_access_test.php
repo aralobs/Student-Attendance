@@ -19,6 +19,8 @@ class TestDB extends PDO {
             return $position === false ? 0 : $position + 1;
         });
         $this->exec("CREATE TABLE users (id INTEGER, full_name TEXT, role TEXT, is_active INTEGER);
+            CREATE TABLE system_settings (setting_key TEXT,setting_value TEXT);
+            INSERT INTO system_settings VALUES ('enrollment_model_version','0');
             INSERT INTO users VALUES (7,'Assigned Teacher','teacher',1),(8,'Other Teacher','teacher',1);
             CREATE TABLE sections (id INTEGER, section_name TEXT, grade_level TEXT, school_year TEXT,
                 adviser_id INTEGER, is_active INTEGER, schedule_type TEXT);
@@ -68,7 +70,7 @@ require_once __DIR__ . '/../config/database.php';
 function requireLogin() { if ($GLOBALS['case'] === 'guest') { http_response_code(401); exit; } }
 function isAdmin() { return str_starts_with($GLOBALS['case'], 'admin'); }
 function isTeacher() { return str_starts_with($GLOBALS['case'], 'teacher'); }
-function currentUser() { return ['id' => $GLOBALS['case'] === 'teacher_empty' ? 9 : 7]; }
+function currentUser() { return ['id' => $GLOBALS['case'] === 'teacher_empty' ? 9 : 7, 'role'=>isAdmin() ? 'admin' : (isTeacher() ? 'teacher' : 'scanner_operator')]; }
 function securityAuditChange(...$args) {}
 function setFlash(...$args) {}
 function gradeLevelOrderSQL($column) { return $column; }
@@ -105,6 +107,9 @@ if ($case === 'teacher_add_unassigned') $_POST['section_id'] = 0;
 if ($case === 'teacher_add_inactive') $_POST['section_id'] = 30;
 PHP);
 copy($root . '/includes/student_access.php', $fixture . '/includes/student_access.php');
+foreach (['enrollment_access.php','enrollment_repository.php','school_years.php'] as $dependency) copy($root . '/includes/' . $dependency,$fixture . '/includes/' . $dependency);
+// This fixture already supplies its audit stub in functions.php; service reads do not audit.
+file_put_contents($fixture . '/includes/security_audit.php', "<?php\n");
 copy($root . '/includes/student_photos.php', $fixture . '/includes/student_photos.php');
 $cases = [
     'view' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>200,'teacher_foreign'=>302,
@@ -157,9 +162,42 @@ try {
             $checks++;
         }
     }
-    echo "Student authorization checks passed ($checks cases, isolated SQL database).\n";
+    // Exercise converted adapter predicates without replacing any legacy assertions.
+    file_put_contents($fixture . '/scope_probe.php', <<<'PHP'
+<?php
+require __DIR__.'/includes/student_access.php';
+$db=getDB();
+$db->exec("UPDATE system_settings SET setting_value='1'; ALTER TABLE sections ADD COLUMN school_year_id INTEGER;
+  UPDATE sections SET school_year_id=CASE WHEN id=11 THEN 2 ELSE 1 END;
+  UPDATE sections SET is_active=0 WHERE id=11;
+  CREATE TABLE school_years(id INTEGER,state TEXT,starts_on TEXT,ends_on TEXT);
+  INSERT INTO school_years VALUES (1,'active','2026-06-01','2027-03-31'),(2,'closed','2025-06-01','2026-03-31');
+  CREATE TABLE student_enrollments(id INTEGER,student_id INTEGER,school_year_id INTEGER,state TEXT,starts_on TEXT,ends_on TEXT);
+  INSERT INTO student_enrollments VALUES (1001,1,1,'active','2026-06-01','2027-03-31'),(1002,1,2,'completed','2025-06-01','2026-03-31');
+  CREATE TABLE enrollment_sections(id INTEGER,enrollment_id INTEGER,section_id INTEGER,starts_on TEXT,ends_on TEXT);
+  INSERT INTO enrollment_sections VALUES (2001,1001,10,'2026-06-01','2027-03-31'),(2002,1002,11,'2025-06-01','2026-03-31');
+  UPDATE students SET section_id=20 WHERE id=1");
+[$scope,$params]=studentSectionScope('sec');
+$q=$db->prepare("SELECT sec.id FROM sections sec WHERE ($scope) ORDER BY id"); $q->execute($params);
+if ($q->fetchAll(PDO::FETCH_COLUMN)!==[10]) throw new RuntimeException('Managed sections must default to active year');
+[$scope,$params]=studentRecordScope('s');
+$q=$db->prepare("SELECT s.id FROM students s WHERE ($scope)"); $q->execute($params);
+if ($q->fetchAll(PDO::FETCH_COLUMN)!==[1]) throw new RuntimeException('Managed access must follow annual placement');
+[$scope,$params]=studentRecordScope('s',2,true);
+$q=$db->prepare("SELECT s.id FROM students s WHERE ($scope)"); $q->execute($params);
+if ($q->fetchAll(PDO::FETCH_COLUMN)!==[1]) throw new RuntimeException('Explicit historical year retained');
+$db->exec('UPDATE sections SET adviser_id=8 WHERE id=11');
+$q->execute($params);
+if ($q->fetchAll(PDO::FETCH_COLUMN)!==[]) throw new RuntimeException('Historical reassignment must revoke adapter access');
+echo 'MANAGED_SCOPES_OK';
+PHP);
+    $process=proc_open([PHP_BINARY,$fixture.'/scope_probe.php','teacher'],[1=>['pipe','w'],2=>['pipe','w']],$pipes,$fixture);
+    $output=stream_get_contents($pipes[1]); $errors=stream_get_contents($pipes[2]);
+    fclose($pipes[1]); fclose($pipes[2]); $exit=proc_close($process);
+    if ($exit!==0 || $errors!=='' || !str_contains($output,'MANAGED_SCOPES_OK')) throw new RuntimeException('Managed scope probe failed: '.$errors.' '.$output);
+    echo "Student authorization checks passed ($checks cases plus 4 managed scopes, isolated SQL database).\n";
 } finally {
     foreach (array_keys($cases) as $endpoint) if (is_file($fixture.'/students/'.$endpoint.'.php')) unlink($fixture.'/students/'.$endpoint.'.php');
-    foreach (['config/database.php','includes/functions.php','includes/student_access.php','includes/student_photos.php','includes/header.php','request.php'] as $file) unlink($fixture.'/'.$file);
+    foreach (['config/database.php','includes/functions.php','includes/student_access.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php','includes/security_audit.php','includes/student_photos.php','includes/header.php','request.php','scope_probe.php'] as $file) if (is_file($fixture.'/'.$file)) unlink($fixture.'/'.$file);
     foreach (['/students','/includes','/config',''] as $dir) rmdir($fixture.$dir);
 }
