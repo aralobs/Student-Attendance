@@ -12,9 +12,23 @@ guardCsrfPage();
 $pageTitle = 'Add Student';
 $db        = getDB();
 $errors    = [];
+$managedEnrollment = enrollmentModelEnabled($db);
+$enrollmentYear = null;
+if ($managedEnrollment) {
+    require_once '../includes/enrollment_commands.php';
+    $enrollmentYears = $db->query("SELECT * FROM school_years WHERE state IN ('active','planned') ORDER BY starts_on")->fetchAll();
+    $activeYear = getActiveSchoolYear($db);
+    $selectedYearId = (int)($_POST['school_year_id'] ?? $_GET['school_year_id'] ?? $activeYear['id']);
+    foreach ($enrollmentYears as $year) if ((int)$year['id'] === $selectedYearId) $enrollmentYear = $year;
+}
 
 // Get sections with grade level for dropdown
 $sections = getAllowedSections();
+if ($managedEnrollment) {
+    [$scope,$params] = enrollmentSectionScope('sec',currentUser());
+    $q = $db->prepare("SELECT sec.* FROM sections sec WHERE sec.is_active=1 AND sec.school_year_id=? AND ($scope) ORDER BY sec.grade_level,sec.section_name");
+    $q->execute(array_merge([$selectedYearId],$params)); $sections = $q->fetchAll();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $lrn           = trim($_POST['lrn']            ?? '');
@@ -28,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $parentName    = trim($_POST['parent_name']    ?? '');
     $parentContact = trim($_POST['parent_contact'] ?? '');
     $parentEmail   = trim($_POST['parent_email']   ?? '');
-    requireStudentCreationSection($sectionId);
+    if (!$managedEnrollment) requireStudentCreationSection($sectionId);
 
     if (empty($lrn))       $errors[] = 'LRN is required.';
     if (empty($firstName)) $errors[] = 'First name is required.';
@@ -52,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         $check = $db->prepare("SELECT id FROM students WHERE lrn = ?");
         $check->execute([$lrn]);
-        if ($check->fetch()) $errors[] = "LRN {$lrn} already exists.";
+        if ($check->fetch()) $errors[] = $managedEnrollment ? 'This LRN already exists. Use Returning Student Enrollment; contact an administrator if the profile is unavailable.' : "LRN {$lrn} already exists.";
     }
 
     // Photo upload
@@ -75,6 +89,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         $qrToken = generateQRToken($lrn);
+
+        if ($managedEnrollment) {
+            try {
+                $newId = createStudentWithEnrollment($db,currentUser(),[
+                    'lrn'=>$lrn,'first_name'=>$firstName,'middle_name'=>$middleName,'last_name'=>$lastName,
+                    'gender'=>$gender,'birth_date'=>$birthDate ?: null,'address'=>$address,'photo'=>$photo,'qr_token'=>$qrToken,
+                    'parent_name'=>$parentName,'parent_contact'=>$parentContact,'parent_email'=>$parentEmail,
+                ],$selectedYearId,$sectionId,(string)($_POST['starts_on'] ?? ''),(string)($_POST['ends_on'] ?? ''));
+            } catch (DomainException|InvalidArgumentException $error) { $errors[] = $error->getMessage(); }
+            catch (Throwable $error) { $errors[] = 'Unable to save the student and enrollment. Please try again.'; }
+        } else {
 
         $insertSql = "
             INSERT INTO students
@@ -100,7 +125,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($stmt->rowCount() !== 1) { http_response_code(403); exit('Section access has changed. Reload the student form.'); }
 
         $newId  = $db->lastInsertId();
+        }
 
+        if (empty($errors)) {
         // Auto-generate QR code using BaconQrCode
         if (file_exists(BASE_PATH . 'includes/qr_helper.php')) {
             require_once BASE_PATH . 'includes/qr_helper.php';
@@ -114,6 +141,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         setFlash('success', "Student {$firstName} {$lastName} added successfully!");
         header('Location: students.php');
         exit;
+        }
     }
 }
 
@@ -122,6 +150,10 @@ include '../includes/sidebar.php';
 ?>
 
 <?php showFlash(); ?>
+<?php if ($managedEnrollment): ?><p><a href="enroll.php">Returning Student Enrollment</a> — reuse an existing LRN and QR identity.</p>
+<form method="get" class="mb-3"><label class="form-label" for="enrollmentYear">School year</label><select class="form-select" id="enrollmentYear" name="school_year_id" onchange="this.form.submit()">
+<?php foreach ($enrollmentYears as $year): ?><option value="<?= (int)$year['id'] ?>" <?= (int)$year['id'] === $selectedYearId ? 'selected' : '' ?>><?= sanitize($year['label']) ?></option><?php endforeach; ?>
+</select><noscript><button class="btn btn-secondary">Choose year</button></noscript></form><?php endif; ?>
 
 <div class="page-header">
     <div>
@@ -147,6 +179,11 @@ include '../includes/sidebar.php';
 
 <form method="POST" enctype="multipart/form-data" novalidate>
 <?= csrfField() ?>
+<?php if ($managedEnrollment && $enrollmentYear): ?>
+<input type="hidden" name="school_year_id" value="<?= $selectedYearId ?>">
+<div class="row g-3 mb-3"><div class="col-md-6"><label class="form-label">Enrollment starts on</label><input class="form-control" type="date" name="starts_on" required min="<?= sanitize($enrollmentYear['starts_on']) ?>" max="<?= sanitize($enrollmentYear['ends_on']) ?>" value="<?= sanitize($_POST['starts_on'] ?? ($enrollmentYear['state'] === 'active' ? min($enrollmentYear['ends_on'],max(date('Y-m-d'),$enrollmentYear['starts_on'])) : $enrollmentYear['starts_on'])) ?>"><small>For late entry, enter the student's actual first day.</small></div>
+<div class="col-md-6"><label class="form-label">Enrollment ends on</label><input class="form-control" type="date" name="ends_on" required min="<?= sanitize($enrollmentYear['starts_on']) ?>" max="<?= sanitize($enrollmentYear['ends_on']) ?>" value="<?= sanitize($_POST['ends_on'] ?? $enrollmentYear['ends_on']) ?>"></div></div>
+<?php endif; ?>
     <div class="row g-4">
 
         <!-- Photo -->

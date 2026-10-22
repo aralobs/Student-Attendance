@@ -105,6 +105,7 @@ include '../includes/sidebar.php';
             <i class="bi bi-person-badge me-1"></i>Assign Advisers
         </a>
         <?php endif; ?>
+        <?php if (enrollmentModelEnabled($db)): ?><a href="enroll.php" class="btn btn-outline-primary">Returning Student Enrollment</a><?php endif; ?>
         <a href="add.php" class="btn btn-primary">
             <i class="bi bi-person-plus-fill me-1"></i>Add Student
         </a>

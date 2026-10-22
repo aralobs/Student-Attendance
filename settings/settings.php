@@ -5,6 +5,7 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/school_years.php';
 requireAdmin();
 
 $pageTitle = 'Settings';
@@ -16,7 +17,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'school_id',
         'school_head',
         'school_address',
-        'school_year',
         'grade_level',
         'time_in_start',
         'time_in_end',
@@ -171,9 +171,10 @@ include '../includes/sidebar.php';
                         </div>
                         <div class="col-md-4">
                             <label for="schoolYear" class="form-label">School Year</label>
-                            <input type="text" id="schoolYear" name="school_year" class="form-control"
-                                placeholder="2026-2027"
-                                value="<?= htmlspecialchars($settings['school_year'] ?? '') ?>">
+                            <?php $managedActiveYear = getActiveSchoolYear($db); ?>
+                            <input type="text" id="schoolYear" class="form-control" readonly
+                                value="<?= htmlspecialchars($managedActiveYear['label'] ?? $settings['school_year'] ?? '') ?>">
+                            <a href="school_years.php">Manage school years and verified dates</a>
                         </div>
                     </div>
                     <div class="mb-3">

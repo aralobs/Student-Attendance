@@ -393,6 +393,9 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
 
                 <li class="nav-item"><a href="<?= BASE_URL ?>security_audit.php" class="nav-link <?= $currentFile === 'security_audit.php' ? 'active' : '' ?>"><i class="bi bi-shield-check me-2"></i>Security Audit <?php $auditAlertCount = securityAuditAlertCount(); if ($auditAlertCount): ?><span class="badge bg-danger ms-1" title="Flagged events in the last 24 hours"><?= $auditAlertCount ?></span><?php endif; ?></a></li>
                   <li class="nav-item">
+                    <a href="<?= BASE_URL ?>settings/school_years.php" class="nav-link <?= $currentFile === 'school_years.php' ? 'active' : '' ?>"><i class="bi bi-calendar-range me-2"></i>School Years</a>
+                </li>
+                <li class="nav-item">
                     <a href="<?= BASE_URL ?>settings/settings.php"
                        class="nav-link <?= $currentFile === 'settings.php' ? 'active' : '' ?>">
                         <i class="bi bi-gear-fill me-2"></i>Settings

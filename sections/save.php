@@ -8,6 +8,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/school_years.php';
 requireLogin();
 requireCsrfPost();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Section editing is restricted to administrators and teachers.'); }
@@ -19,7 +20,7 @@ $gradeLevel   = trim($_POST['grade_level']    ?? '');
 $rule = getScheduleForGrade($gradeLevel);
 $scheduleType = $_POST['schedule_type'] ?? ($rule['default_type'] ?? 'full_day');
 $adviserId    = !empty($_POST['adviser_id']) ? (int)$_POST['adviser_id'] : null;
-$schoolYear   = trim($_POST['school_year']    ?? '2026-2027');
+$schoolYear   = trim($_POST['school_year']    ?? '');
 
 $allowedGrades    = getGradeLevels();
 $allowedSchedules = ['full_day', 'am_only', 'pm_only'];
@@ -91,6 +92,21 @@ if (!$validTimes || $inStart > $inEnd
 }
 
 $db = getDB();
+
+if (enrollmentModelEnabled($db)) {
+    require_once '../includes/enrollment_commands.php';
+    try {
+        saveManagedEnrollmentSection($db,currentUser(),[
+            'id'=>$id,'section_name'=>$sectionName,'grade_level'=>$gradeLevel,'schedule_type'=>$scheduleType,
+            'adviser_id'=>$adviserId,'school_year_id'=>(int)($_POST['school_year_id'] ?? 0),
+            'am_in_start'=>$amInStart,'am_in_end'=>$amInEnd,'am_late_threshold'=>$amLateThreshold,'am_out_start'=>$amOutStart,'am_out_end'=>$amOutEnd,
+            'pm_in_start'=>$pmInStart,'pm_in_end'=>$pmInEnd,'pm_late_threshold'=>$pmLateThreshold,'pm_out_start'=>$pmOutStart,'pm_out_end'=>$pmOutEnd,
+        ]);
+        setFlash('success','Section saved.');
+    } catch (DomainException|InvalidArgumentException $error) { setFlash('danger',$error->getMessage()); }
+    catch (Throwable $error) { setFlash('danger','Unable to save the section. Please try again.'); }
+    header('Location: sections.php?school_year_id=' . (int)($_POST['school_year_id'] ?? 0)); exit;
+}
 
 if ($id > 0) {
     // ── Update ──────────────────────────────────────────────

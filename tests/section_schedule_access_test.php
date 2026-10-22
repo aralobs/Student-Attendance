@@ -8,10 +8,18 @@ file_put_contents($fixture . '/config/database.php', <<<'PHP'
 $case = $argv[1]; $saved = [];
 http_response_code(200);
 register_shutdown_function(function () { echo "\nRESULT:" . json_encode(['status' => http_response_code(), 'saved' => $GLOBALS['saved']]); });
-class FakeStatement {
-    function execute($params = []) { $GLOBALS['saved'][] = $params; }
+class FakeStatement extends PDOStatement {
+    public function __construct() {}
+    function execute(?array $params = null): bool { $GLOBALS['saved'][] = $params; return true; }
 }
-class FakeDB { function prepare($sql) { return new FakeStatement; } }
+class FakeDB extends PDO {
+    function __construct() { parent::__construct('sqlite::memory:'); }
+    function prepare(string $sql, array $options = []): PDOStatement|false {
+        // The real model guard reads a synthetic legacy-mode setting only.
+        if (str_starts_with($sql,'SELECT setting_value')) return parent::prepare('SELECT 0 WHERE ? IS NOT NULL');
+        return new FakeStatement;
+    }
+}
 function getDB() { return new FakeDB; }
 PHP);
 file_put_contents($fixture . '/includes/functions.php', <<<'PHP'
@@ -40,6 +48,8 @@ if ($case === 'admin_invalid') $_POST['schedule_type'] = 'invalid';
 PHP);
 copy($root . '/config/schedule_rules.php', $fixture . '/config/schedule_rules.php');
 copy($root . '/sections/save.php', $fixture . '/sections/save.php');
+copy($root . '/includes/school_years.php', $fixture . '/includes/school_years.php');
+file_put_contents($fixture . '/includes/security_audit.php', "<?php\n");
 file_put_contents($fixture . '/includes/functions.php', "\nfunction startSession(): void {}\n", FILE_APPEND);
 file_put_contents($fixture . '/includes/functions.php', 'require_once ' . var_export($root . '/includes/csrf.php', true) . ';' . "\n" . '$_SESSION["app_csrf"] = str_repeat("a", 64); $_POST["csrf_token"] = $_SESSION["app_csrf"];' . "\n", FILE_APPEND);
 
@@ -64,6 +74,6 @@ try {
     }
     echo "Section schedule access checks passed (12 cases).\n";
 } finally {
-    foreach (['config/database.php', 'config/schedule_rules.php', 'includes/functions.php', 'request.php', 'sections/save.php'] as $file) unlink($fixture . '/' . $file);
+    foreach (['config/database.php', 'config/schedule_rules.php', 'includes/functions.php', 'includes/school_years.php', 'includes/security_audit.php', 'request.php', 'sections/save.php'] as $file) unlink($fixture . '/' . $file);
     foreach (['/sections', '/includes', '/config', ''] as $dir) rmdir($fixture . $dir);
 }

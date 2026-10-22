@@ -7,6 +7,7 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+require_once '../includes/school_years.php';
 require_once '../config/schedule_rules.php';
 requireLogin();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Section editing is restricted to administrators and teachers.'); }
@@ -14,6 +15,12 @@ if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Section editing
 $pageTitle = 'Sections';
 $db        = getDB();
 $grades    = getGradeLevels();
+$managedEnrollment = enrollmentModelEnabled($db);
+$selectedYearId = null;
+if ($managedEnrollment) {
+    $managedYears = $db->query('SELECT * FROM school_years ORDER BY starts_on DESC')->fetchAll();
+    $selectedYearId = (int)($_GET['school_year_id'] ?? getActiveSchoolYear($db)['id']);
+}
 
 // ── Active / Archived view ────────────────────────────────────
 $view      = $_GET['view'] ?? 'active';
@@ -21,6 +28,7 @@ $isArchive = isAdmin() && $view === 'archived';
 $activeVal = $isArchive ? 0 : 1;
 
 $scopeSQL = isAdmin() ? '' : ' AND s.adviser_id = ?';
+if ($managedEnrollment) $scopeSQL .= ' AND s.school_year_id = ?';
 $stmt = $db->prepare("
     SELECT s.*, u.full_name AS adviser_name
     FROM sections s
@@ -30,6 +38,7 @@ $stmt = $db->prepare("
 ");
 $sectionParams = [$activeVal];
 if (!isAdmin()) $sectionParams[] = currentUser()['id'];
+if ($managedEnrollment) $sectionParams[] = $selectedYearId;
 $stmt->execute($sectionParams);
 $sections = $stmt->fetchAll();
 
@@ -52,6 +61,8 @@ include '../includes/sidebar.php';
 ?>
 
 <?php showFlash(); ?>
+<?php if ($managedEnrollment): ?><form method="get" class="mb-3"><input type="hidden" name="view" value="<?= $isArchive ? 'archived' : 'active' ?>"><label class="form-label">School year</label><select class="form-select" name="school_year_id" onchange="this.form.submit()">
+<?php foreach ($managedYears as $year): ?><option value="<?= (int)$year['id'] ?>" <?= (int)$year['id'] === $selectedYearId ? 'selected' : '' ?>><?= sanitize($year['label']) ?> (<?= sanitize($year['state']) ?>)</option><?php endforeach; ?></select><noscript><button>Choose year</button></noscript></form><?php endif; ?>
 
 <div class="page-header">
     <div>
@@ -61,12 +72,12 @@ include '../includes/sidebar.php';
         <p class="page-subtitle">Manage grade levels and class sections</p>
     </div>
     <div class="d-flex gap-2 align-items-center">
-        <a href="?view=active"
+        <a href="?view=active<?= $managedEnrollment ? '&amp;school_year_id=' . $selectedYearId : '' ?>"
            class="btn btn-sm <?= !$isArchive ? 'btn-primary' : 'btn-outline-primary' ?>">
             <i class="bi bi-list-ul me-1"></i>Active
         </a>
         <?php if (isAdmin()): ?>
-        <a href="?view=archived"
+        <a href="?view=archived<?= $managedEnrollment ? '&amp;school_year_id=' . $selectedYearId : '' ?>"
            class="btn btn-sm <?= $isArchive ? 'btn-primary' : 'btn-outline-primary' ?>">
             <i class="bi bi-archive me-1"></i>Archived
         </a>
@@ -244,10 +255,9 @@ include '../includes/sidebar.php';
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">School Year</label>
-                            <input type="text" name="school_year" id="secYear"
-                                   class="form-control"
-                                   placeholder="2026-2027"
-                                   value="2026-2027">
+                            <?php if ($managedEnrollment): ?><select name="school_year_id" id="secYear" class="form-select" required>
+                            <?php foreach ($managedYears as $year): ?><option value="<?= (int)$year['id'] ?>" <?= (int)$year['id'] === $selectedYearId ? 'selected' : '' ?>><?= sanitize($year['label']) ?> (<?= sanitize($year['state']) ?>)</option><?php endforeach; ?></select>
+                            <?php else: ?><input type="text" name="school_year" id="secYear" class="form-control" value="<?= sanitize(getSetting('school_year') ?? '') ?>"><?php endif; ?>
                         </div>
 
                         <div class="col-12">
@@ -398,7 +408,7 @@ function openModal(sec) {
     document.getElementById('secGrade').value   = sec?.grade_level  ?? Object.keys(GRADE_DEFAULTS)[0];
     document.getElementById('secName').value    = sec?.section_name ?? '';
     document.getElementById('secAdviser').value = sec?.adviser_id   ?? '';
-    document.getElementById('secYear').value    = sec?.school_year  ?? '2026-2027';
+    document.getElementById('secYear').value = <?= $managedEnrollment ? 'sec?.school_year_id ?? ' . json_encode($selectedYearId) : 'sec?.school_year ?? ' . json_encode(getSetting('school_year') ?? '') ?>;
 
     // Populate times
     const t = v => (v ?? '').slice(0, 5);
