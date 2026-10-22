@@ -12,8 +12,14 @@ withEnrollmentFixture(function (array $f): void {
     $row=$db->query("SELECT * FROM attendance WHERE student_id=101 AND date='2026-10-22'")->fetch();
     checkEnrollment((int)$row['enrollment_id']===1001 && (int)$row['assignment_id']===2001,'Scan records annual ownership atomically');
     $before=$row['am_in'];
-    expectEnrollmentError(DomainException::class,fn()=>saveAttendanceScan($db,101,'2026-10-23',array_merge($section,['id'=>11]),7,new DateTimeImmutable('2026-10-23 07:00:00')));
-    checkEnrollment((int)$db->query("SELECT COUNT(*) FROM attendance WHERE date='2026-10-23'")->fetchColumn()===0,'Forged section writes nothing');
+    checkEnrollment(getEnrollmentContext($db,101,'2026-10-19','write')['section_id']===10,'Forged-section test uses an otherwise eligible past assignment');
+    try {
+        saveAttendanceScan($db,101,'2026-10-19',array_merge($section,['id'=>11]),7,new DateTimeImmutable('2026-10-19 07:00:00'));
+        throw new RuntimeException('Forged supplied section was accepted');
+    } catch (DomainException $error) {
+        checkEnrollment($error->getMessage()==='No eligible enrollment in the selected section.','Forged section reaches the section ownership guard');
+    }
+    checkEnrollment((int)$db->query("SELECT COUNT(*) FROM attendance WHERE student_id=101 AND date='2026-10-19'")->fetchColumn()===0,'Forged section writes nothing');
     $duplicate=saveAttendanceScan($db,101,'2026-10-22',$section,7,new DateTimeImmutable('2026-10-22 07:00:01'));
     checkEnrollment(!$duplicate['success'],'Duplicate scan remains rejected');
     checkEnrollment($db->query("SELECT am_in FROM attendance WHERE student_id=101 AND date='2026-10-22'")->fetchColumn()===$before,'Duplicate preserves scan');
@@ -25,7 +31,6 @@ withEnrollmentFixture(function (array $f): void {
     $db->exec("UPDATE student_enrollments SET ends_on='2026-10-20' WHERE id=1001");
     expectEnrollmentError(DomainException::class,fn()=>saveAttendanceScan($db,101,'2026-10-21',$section,7,new DateTimeImmutable('2026-10-21 07:00:00')));
     $db->exec("UPDATE student_enrollments SET ends_on='2027-02-28' WHERE id=1001");
-    expectEnrollmentError(DomainException::class,fn()=>saveAttendanceScan($db,101,'2026-10-23',$section,7,new DateTimeImmutable('2026-10-23 07:00:00')));
     $db->exec("INSERT INTO student_enrollments(id,student_id,school_year_id,state,starts_on,ends_on) VALUES(3001,101,2,'prepared','2027-06-01','2028-03-31'); INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(4001,3001,20,'Grade 4','2027-06-01','2028-03-31')");
     $next=$db->query('SELECT * FROM sections WHERE id=20')->fetch();
     expectEnrollmentError(DomainException::class,fn()=>saveAttendanceScan($db,101,'2027-06-01',$next,7,new DateTimeImmutable('2027-06-01 07:00:00')));
@@ -37,12 +42,21 @@ withEnrollmentFixture(function (array $f): void {
 
 withEnrollmentFixture(function(array $f): void {
     $db=$f['db'];
+    // Keep current-operation/archive fixtures eligible as the real clock moves.
+    // Historical dates stay fixed; the planned year remains strictly disjoint.
+    $operationalEnd=max('2027-03-31',(new DateTimeImmutable('today',new DateTimeZone('Asia/Manila')))->modify('+31 days')->format('Y-m-d'));
+    $plannedStart=max('2027-06-01',(new DateTimeImmutable($operationalEnd))->modify('+1 day')->format('Y-m-d'));
+    $plannedEnd=(new DateTimeImmutable($plannedStart))->modify('+1 year -1 day')->format('Y-m-d');
+    $db->prepare('UPDATE school_years SET ends_on=? WHERE id=1')->execute([$operationalEnd]);
+    $db->prepare('UPDATE school_years SET starts_on=?,ends_on=? WHERE id=2')->execute([$plannedStart,$plannedEnd]);
+    $db->prepare('UPDATE student_enrollments SET ends_on=? WHERE school_year_id=1')->execute([$operationalEnd]);
+    $db->prepare('UPDATE enrollment_sections SET ends_on=? WHERE enrollment_id IN (1001,1006)')->execute([$operationalEnd]);
     $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES('enrollment_model_version','1');
         INSERT INTO users(id,username,password,full_name,role) VALUES(9,'synthetic_scanner','unused','Synthetic Scanner','scanner_operator');
         UPDATE students SET created_at='2026-01-01',section_id=20,enrollment_status='promoted';
         UPDATE sections SET created_at='2026-01-01';
-        UPDATE enrollment_sections SET ends_on='2026-10-15' WHERE id=2001;
-        INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(2002,1001,11,'Grade 3','2026-10-16','2027-03-31')");
+        UPDATE enrollment_sections SET ends_on='2026-10-15' WHERE id=2001");
+    $db->prepare("INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(2002,1001,11,'Grade 3','2026-10-16',?)")->execute([$operationalEnd]);
     $old=$db->query('SELECT * FROM sections WHERE id=10')->fetch();
     $current=$db->query('SELECT * FROM sections WHERE id=11')->fetch();
     $scan=saveAttendanceScan($db,101,'2026-10-14',$old,7,new DateTimeImmutable('2026-10-14 07:00:00'));
@@ -73,8 +87,8 @@ withEnrollmentFixture(function(array $f): void {
     $db->exec("UPDATE student_enrollments SET starts_on='2026-10-13',ends_on='2026-10-20' WHERE id=1001");
     checkEnrollment(finalizeEnrollmentAttendanceDate($db,'2026-10-12',10,$now)===0,'Before entry is ineligible for absence');
     checkEnrollment(finalizeEnrollmentAttendanceDate($db,'2026-10-22',11,$now)===0,'After exit never reconciles or finalizes');
-    $db->exec("UPDATE student_enrollments SET starts_on='2026-06-01',ends_on='2027-03-31' WHERE id=1001;
-        INSERT INTO attendance(student_id,date) VALUES(101,'2026-10-19')");
+    $db->prepare("UPDATE student_enrollments SET starts_on='2026-06-01',ends_on=? WHERE id=1001")->execute([$operationalEnd]);
+    $db->exec("INSERT INTO attendance(student_id,date) VALUES(101,'2026-10-19')");
     checkEnrollment(finalizeEnrollmentAttendanceDate($db,'2026-10-19',11,$now)===0,'Unmapped attendance is excluded from ordinary finalization');
     expectEnrollmentError(DomainException::class,fn()=>saveAttendanceScan($db,101,'2026-10-19',$current,9,new DateTimeImmutable('2026-10-19 07:00:00')));
     checkEnrollment(enrollmentOperationalStudent($db,101,'2026-10-22',$f['otherTeacher'])['section_id']==11,'Current card uses annual section despite future profile cache');
@@ -84,7 +98,8 @@ withEnrollmentFixture(function(array $f): void {
     checkEnrollment(enrollmentHistoricalPhoto($db,101,1001,$f['teacher'])!==null,'Historical assigned teacher may read selected enrollment photo');
     $db->exec('UPDATE sections SET adviser_id=8 WHERE id=10');
     checkEnrollment(enrollmentHistoricalPhoto($db,101,1001,$f['teacher'])===null,'Revoked adviser denied historical photo');
-    $db->exec("INSERT INTO student_enrollments(id,student_id,school_year_id,state,starts_on,ends_on) VALUES(3001,101,2,'prepared','2027-06-01','2028-03-31'); INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(4001,3001,20,'Grade 4','2027-06-01','2028-03-31')");
+    $db->prepare("INSERT INTO student_enrollments(id,student_id,school_year_id,state,starts_on,ends_on) VALUES(3001,101,2,'prepared',?,?)")->execute([$plannedStart,$plannedEnd]);
+    $db->prepare("INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(4001,3001,20,'Grade 4',?,?)")->execute([$plannedStart,$plannedEnd]);
     $states=$db->query('SELECT * FROM student_enrollments ORDER BY id')->fetchAll();
     $assignments=$db->query('SELECT * FROM enrollment_sections ORDER BY id')->fetchAll();
     checkEnrollment(setEnrollmentEntityActive($db,$f['admin'],'student',101,false),'Archive succeeds');
@@ -192,6 +207,14 @@ PHP);
     $processes=[];
     try {
         $db=$f['db'];
+        $futureDate=(new DateTimeImmutable('today',new DateTimeZone('Asia/Manila')))->modify('+1 day')->format('Y-m-d');
+        $operationalEnd=max('2027-03-31',(new DateTimeImmutable($futureDate))->modify('+30 days')->format('Y-m-d'));
+        $plannedStart=max('2027-06-01',(new DateTimeImmutable($operationalEnd))->modify('+1 day')->format('Y-m-d'));
+        $plannedEnd=(new DateTimeImmutable($plannedStart))->modify('+1 year -1 day')->format('Y-m-d');
+        $db->prepare('UPDATE school_years SET ends_on=? WHERE id=1')->execute([$operationalEnd]);
+        $db->prepare('UPDATE school_years SET starts_on=?,ends_on=? WHERE id=2')->execute([$plannedStart,$plannedEnd]);
+        $db->prepare('UPDATE student_enrollments SET ends_on=? WHERE school_year_id=1')->execute([$operationalEnd]);
+        $db->prepare('UPDATE enrollment_sections SET ends_on=? WHERE enrollment_id IN (1001,1006)')->execute([$operationalEnd]);
         $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES('enrollment_model_version','1'); UPDATE students SET section_id=20,created_at='2026-01-01'; UPDATE sections SET created_at='2026-01-01'");
         $post=['section_id'=>10,'attendance_date'=>'2026-10-20','entries'=>[101=>['am_in'=>'07:00','pm_out'=>'']]];
         $result=$run('attendance/manual.php',$f['teacher'],$post);
@@ -202,13 +225,11 @@ PHP);
         checkEnrollment($run('attendance/manual.php',$f['teacher'],$post)['status']===403,'Mixed annual manual roster batch denied');
         unset($post['entries'][106]);
         checkEnrollment($run('attendance/manual.php',$f['otherTeacher'],$post)['status']===403,'Foreign adviser manual POST denied');
-        $post['attendance_date']='2026-10-23';
-        checkEnrollment($run('attendance/manual.php',$f['teacher'],$post)['status']===503,'Future manual POST rejected atomically');
-        checkEnrollment((int)$db->query("SELECT COUNT(*) FROM attendance WHERE date='2026-10-23'")->fetchColumn()===0,'Future manual rejection leaves no attendance');
         $override=['attendance_id'=>$record['id'],'am_in'=>'07:10','redirect_date'=>'2026-10-20'];
         checkEnrollment($run('attendance/override.php',$f['teacher'],$override)['status']===302,'Managed override follows record date annual assignment');
         checkEnrollment($db->query('SELECT am_in FROM attendance WHERE id='.(int)$record['id'])->fetchColumn()==='07:10:00','Managed override saves eligible edit');
-        $db->exec("UPDATE enrollment_sections SET ends_on='2026-10-20' WHERE id=2001; INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(2002,1001,11,'Grade 3','2026-10-21','2027-03-31')");
+        $db->exec("UPDATE enrollment_sections SET ends_on='2026-10-20' WHERE id=2001");
+        $db->prepare("INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(2002,1001,11,'Grade 3','2026-10-21',?)")->execute([$operationalEnd]);
         checkEnrollment($run('attendance/override.php',$f['teacher'],$override)['status']===302,'Backdated override retains former assignment scope');
         checkEnrollment($run('attendance/override.php',$f['otherTeacher'],$override)['status']===503,'Current new-section adviser cannot edit former dated assignment');
         $qr=$run('students/qr_download.php',$f['otherTeacher'],[],['id'=>101],'GET');
@@ -236,7 +257,8 @@ PHP);
         $run('students/archive.php',$f['admin'],['id'=>101]); $run('students/restore.php',$f['admin'],['id'=>101]);
         checkEnrollment($db->query('SELECT state FROM student_enrollments WHERE id=1001')->fetchColumn()==='completed','Restore adapter cannot reopen completed enrollment');
         // Rebuild this disposable synthetic context for real competing scan tests.
-        $db->exec("UPDATE school_years SET state='active' WHERE id=1; UPDATE student_enrollments SET state='active' WHERE school_year_id=1; DELETE FROM enrollment_sections WHERE id=2002; UPDATE enrollment_sections SET ends_on='2027-03-31' WHERE id=2001");
+        $db->exec("UPDATE school_years SET state='active' WHERE id=1; UPDATE student_enrollments SET state='active' WHERE school_year_id=1; DELETE FROM enrollment_sections WHERE id=2002");
+        $db->prepare('UPDATE enrollment_sections SET ends_on=? WHERE id=2001')->execute([$operationalEnd]);
         $waitReady=function(array $ready) {
             $deadline=microtime(true)+10;
             do { if (count(array_filter($ready,'is_file'))===count($ready)) return; usleep(10000); } while(microtime(true)<$deadline);
@@ -268,6 +290,24 @@ PHP);
         checkEnrollment(count(array_filter($results,fn($r)=>str_starts_with($r['body'],'accepted')))===1,'Managed duplicate scans have exactly one winner');
         checkEnrollment(count(array_filter($results,fn($r)=>str_starts_with($r['body'],'duplicate')))===1,'Managed duplicate scan loser observes cooldown');
         checkEnrollment((int)$db->query("SELECT COUNT(*) FROM attendance WHERE student_id=101 AND date='2026-10-22'")->fetchColumn()===1,'Managed race creates one owned attendance row');
+        // Real tomorrow, otherwise eligible annual ownership: these assertions
+        // must reach the future guard even after the original fixture term ends.
+        $futureContext=getEnrollmentContext($db,101,$futureDate,'write');
+        checkEnrollment($futureContext!==null && $futureContext['assignment_id']===2001 && $futureContext['section_id']===10,'Dynamic future date has otherwise eligible active annual ownership');
+        $section=$db->query('SELECT * FROM sections WHERE id=10')->fetch();
+        try {
+            saveAttendanceScan($db,101,$futureDate,$section,7,new DateTimeImmutable($futureDate.' 07:00:00'));
+            throw new RuntimeException('Future scan was accepted');
+        } catch (DomainException $error) {
+            checkEnrollment($error->getMessage()==='Future attendance cannot be recorded.','Dynamic future scan reaches the explicit future-date guard');
+        }
+        $futureCount=$db->prepare('SELECT COUNT(*) FROM attendance WHERE student_id=101 AND date=?');
+        $futureCount->execute([$futureDate]);
+        checkEnrollment((int)$futureCount->fetchColumn()===0,'Future scan rejection leaves no attendance');
+        $futurePost=['section_id'=>10,'attendance_date'=>$futureDate,'entries'=>[101=>['am_in'=>'07:00','pm_out'=>'']]];
+        checkEnrollment($run('attendance/manual.php',$f['teacher'],$futurePost)['status']===503,'Dynamic future manual POST rejected atomically');
+        $futureCount->execute([$futureDate]);
+        checkEnrollment((int)$futureCount->fetchColumn()===0,'Future manual rejection leaves no attendance');
     } finally {
         if ($f['db']->inTransaction()) $f['db']->rollBack();
         foreach($processes as [$process,$pipes]) { proc_terminate($process); foreach($pipes as $pipe) if(is_resource($pipe)) fclose($pipe); proc_close($process); }
