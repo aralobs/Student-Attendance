@@ -61,9 +61,16 @@ $whereSQL = implode(' AND ', $where);
 $orderSQL = gradeLevelOrderSQL('sec.grade_level');
 
 $reportEnrollmentSelect = $reportContext['managed'] ? 's.enrollment_id,' : '';
+// Managed summaries combine the selected annual ranges. Labels come from the
+// same authorized roster instead of one arbitrary section in the SQL group.
+$placementSelect = $reportContext['managed']
+    ? "'' AS grade_level, '' AS section_name, '' AS schedule_type"
+    : 'sec.grade_level, sec.section_name, sec.schedule_type';
+$sectionOrder = $reportContext['managed'] ? 'MIN(sec.section_name)' : 'sec.section_name';
+if ($reportContext['managed']) $orderSQL='MIN('.$orderSQL.')';
 $students = $db->prepare("
     SELECT s.id, {$reportEnrollmentSelect} s.first_name, s.last_name, s.lrn, s.photo,
-           sec.grade_level, sec.section_name, sec.schedule_type,
+           {$placementSelect},
            SUM(a.attendance_type = 'full_day') AS full_day,
            SUM(a.attendance_type = 'partial')  AS partial,
            SUM(a.attendance_type = 'absent')   AS absent,
@@ -75,10 +82,19 @@ $students = $db->prepare("
         AND MONTH(a.date) = ? AND YEAR(a.date) = ?
     WHERE {$whereSQL}
     GROUP BY s.id
-    ORDER BY {$orderSQL}, sec.section_name, s.last_name
+    ORDER BY {$orderSQL}, {$sectionOrder}, s.last_name
 ");
 $students->execute($params);
 $students = $students->fetchAll();
+if ($reportContext['managed']) {
+    $placements=[];
+    foreach (enrollmentDirectoryRows($reportContext,'',$sectionId ?: null,$gradeLevel) as $member) $placements[(int)$member['id']]=$member;
+    foreach ($students as &$row) {
+        $member=$placements[(int)$row['id']];
+        $row['grade_level']=$member['grade_level']; $row['section_name']=$member['section_name'];
+    }
+    unset($row);
+}
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
@@ -196,7 +212,7 @@ enrollmentReportNotice($reportContext);
                     <?php foreach ($students as $i => $s): ?>
                     <?php
                     $attended = ($s['full_day'] ?? 0) + (($s['partial'] ?? 0) * 0.5);
-                    $memberDays = $reportContext['managed'] ? enrollmentReportPossible($reportContext,null,null,(int)$s['id']) : $schoolDays;
+                    $memberDays = $reportContext['managed'] ? enrollmentReportPossible($reportContext,$sectionId ?: null,$gradeLevel ?: null,(int)$s['id']) : $schoolDays;
                     $rate     = $memberDays > 0
                         ? round(($attended / $memberDays) * 100, 1)
                         : 0;

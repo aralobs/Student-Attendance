@@ -94,9 +94,80 @@ register_shutdown_function(function () {
         'sf4'=>$GLOBALS['sf4Attendance'] ?? null,'summary'=>$GLOBALS['summary'] ?? null,'school_days'=>$GLOBALS['schoolDays'] ?? null,
         'sf2_overrides'=>$GLOBALS['sf2SummaryOverrides'] ?? [], 'sf4_rows'=>$GLOBALS['sf4Rows'] ?? [],
         'roster_count'=>isset($GLOBALS['students']) && is_array($GLOBALS['students']) ? count($GLOBALS['students']) : null,
+        'student_totals'=>array_map(static fn($row)=>array_intersect_key($row,array_flip(['id','grade_level','section_name','full_day','partial','absent','total_recorded'])),is_array($GLOBALS['students'] ?? null) ? $GLOBALS['students'] : []),
+        'member_days'=>$GLOBALS['memberDays'] ?? null,
         'recent_ids'=>array_column($GLOBALS['recent'] ?? [],'assignment_id')]);
 });
 PHP);
+    file_put_contents($path.'/remark_lock_worker.php', <<<'PHP'
+<?php
+require_once __DIR__.'/includes/sf2_remarks.php';
+$db=getDB();
+file_put_contents($request['ready'],(string)$db->query('SELECT CONNECTION_ID()')->fetchColumn());
+try { saveSF2Remark($db,101,10,10,2026,'Synthetic lock-order remark',0); echo 'SAVED'; }
+catch (DomainException $error) { echo 'DENIED'; }
+PHP);
+    $lockProbe=function(string $change) use($path,$f): void {
+        $db=$f['db'];
+        $dsn='mysql:host='.(getenv('MYSQLHOST') ?: '127.0.0.1').';port='.(getenv('MYSQLPORT') ?: '3307').';dbname='.$f['database'].';charset=utf8mb4';
+        $observer=new PDO($dsn,getenv('MYSQLUSER') !== false ? getenv('MYSQLUSER') : 'root',getenv('MYSQLPASSWORD') !== false ? getenv('MYSQLPASSWORD') : '',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+        $holderId=(int)$db->query('SELECT CONNECTION_ID()')->fetchColumn();
+        $ready=$path.'/remark-ready-'.$change;
+        $payload=base64_encode(json_encode(['database'=>$f['database'],'actor'=>$f['teacher'],'get'=>[],'route'=>'remark_lock_worker.php','ready'=>$ready],JSON_THROW_ON_ERROR));
+        $worker=null; $pipes=[];
+        try {
+            $db->exec('DELETE FROM sf2_remarks; DELETE FROM sf2_remark_history');
+            $db->beginTransaction();
+            $db->query('SELECT id FROM school_years WHERE id=1 FOR UPDATE')->fetchAll();
+            $worker=proc_open([PHP_BINARY,$path.'/remark_lock_worker.php',$payload],[1=>['pipe','w'],2=>['pipe','w']],$pipes,$path);
+            $wait=$observer->prepare('SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS w
+                JOIN information_schema.INNODB_TRX waiting ON waiting.trx_id=w.requesting_trx_id
+                JOIN information_schema.INNODB_TRX holding ON holding.trx_id=w.blocking_trx_id
+                WHERE waiting.trx_mysql_thread_id=? AND holding.trx_mysql_thread_id=?');
+            $deadline=microtime(true)+10; $blocked=false;
+            do {
+                if (is_file($ready)) { $wait->execute([(int)file_get_contents($ready),$holderId]); $blocked=(int)$wait->fetchColumn()>0; }
+                if ($blocked) break;
+                usleep(10000);
+            } while (microtime(true)<$deadline);
+            if (!$blocked) {
+                $workerId=is_file($ready) ? (int)file_get_contents($ready) : 0;
+                $state=$observer->prepare('SELECT STATE FROM information_schema.PROCESSLIST WHERE ID=?');
+                $state->execute([$workerId]); $workerState=$state->fetchColumn();
+                $db->rollBack();
+                $output=stream_get_contents($pipes[1]); $errors=stream_get_contents($pipes[2]);
+                fclose($pipes[1]); fclose($pipes[2]); $pipes=[]; $exit=proc_close($worker); $worker=null;
+                throw new RuntimeException('Remark lock probe did not observe wait; ready='.(int)($workerId>0).'; state='.($workerState===false ? 'disconnected' : $workerState).'; exit='.$exit.'; saved='.(int)str_starts_with($output,'SAVED').'; denied='.(int)str_starts_with($output,'DENIED').'; errors='.$errors);
+            }
+            checkEnrollment(true,'Remark worker reaches an observed InnoDB wait on the held year');
+            $sectionAvailable=false;
+            try {
+                $observer->beginTransaction();
+                $observer->query('SELECT id FROM sections WHERE id=10 FOR UPDATE NOWAIT')->fetchAll();
+                $sectionAvailable=true;
+            } catch (PDOException $error) {
+                if ((int)($error->errorInfo[1] ?? 0)!==1205) throw $error;
+            } finally { if ($observer->inTransaction()) $observer->rollBack(); }
+            if ($sectionAvailable) {
+                if ($change==='adviser') $db->exec('UPDATE sections SET adviser_id=8 WHERE id=10');
+                if ($change==='mapping') $db->exec('UPDATE sections SET school_year_id=2 WHERE id=10');
+                if ($change==='year') $db->exec("UPDATE school_years SET state='closed' WHERE id=1");
+            }
+            $db->commit();
+            $output=stream_get_contents($pipes[1]); $errors=stream_get_contents($pipes[2]);
+            fclose($pipes[1]); fclose($pipes[2]); $pipes=[]; $exit=proc_close($worker); $worker=null;
+            checkEnrollment($sectionAvailable,'Waiting for the year leaves the section lockable (year-first remark locks)');
+            checkEnrollment($exit===0 && $errors==='','Remark lock worker completes after releasing the year: '.$errors);
+            $saved=$change==='unchanged';
+            checkEnrollment(str_starts_with($output,$saved ? 'SAVED' : 'DENIED'),'Remark save revalidates locked '.$change.' state');
+            checkEnrollment((int)$db->query('SELECT COUNT(*) FROM sf2_remarks')->fetchColumn()===($saved ? 1 : 0),'Lock-state change preserves remark write boundary');
+        } finally {
+            if ($db->inTransaction()) $db->rollBack();
+            if ($observer->inTransaction()) $observer->rollBack();
+            if (is_resource($worker)) { proc_terminate($worker); foreach ($pipes as $pipe) fclose($pipe); proc_close($worker); }
+            $db->exec("UPDATE sections SET school_year_id=1,adviser_id=7 WHERE id=10; UPDATE school_years SET state='active' WHERE id=1; DELETE FROM sf2_remarks; DELETE FROM sf2_remark_history");
+        }
+    };
     $run=function(string $route,array $actor,array $get=[],array $post=[]) use($path,$f): array {
         if ($post) $post['csrf_token']=str_repeat('a',64);
         $payload=base64_encode(json_encode(['database'=>$f['database'],'actor'=>$actor,'get'=>$get,'post'=>$post,'method'=>$post ? 'POST' : 'GET','route'=>$route],JSON_THROW_ON_ERROR));
@@ -108,6 +179,7 @@ PHP);
     try {
         $db=$f['db']; $get=['month'=>10,'year'=>2026,'section'=>10,'school_year_id'=>1];
         $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES('enrollment_model_version','1')");
+        foreach (['unchanged','adviser','mapping','year'] as $change) $lockProbe($change);
         $before=$run('reports/sf2.php',$f['teacher'],$get);
         checkEnrollment($before['status']===200 && str_contains($before['body'],'sf2PrintRoot') && $before['sf2']['TOTAL']['present']===0.5,'Rendered SF2 uses recorded sessions');
         checkEnrollment(str_contains($before['body'],'name="school_year_id" value="1"'),'SF2 filter retains selected historical year');
@@ -122,6 +194,21 @@ PHP);
         $prepared=$run('reports/sf2.php',$f['teacher'],$get);
         checkEnrollment($prepared['sf2']===$before['sf2'],'Future preparation preserves rendered SF2 totals');
         $db->exec("UPDATE enrollment_sections SET ends_on='2026-10-21' WHERE id=2001; INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(2002,1001,11,'Grade 3','2026-10-22','2026-10-25'),(2003,1001,10,'Grade 3','2026-10-26','2027-03-31'); UPDATE students SET section_id=11 WHERE id=101; INSERT INTO attendance(student_id,date,attendance_type,enrollment_id,assignment_id,recorded_by) VALUES(101,'2026-10-22','absent',1001,2002,8)");
+        // Give the destination a distinct grade to prove both label dimensions, then
+        // restore it before the existing same-grade report assertions continue.
+        $db->exec("UPDATE sections SET grade_level='Grade 4' WHERE id=11; UPDATE enrollment_sections SET grade_level='Grade 4' WHERE id=2002");
+        foreach (['by_student','date_range'] as $route) {
+            $combined=$run('reports/'.$route.'.php',$f['admin'],['month'=>10,'year'=>2026,'school_year_id'=>1,'date_from'=>'2026-10-01','date_to'=>'2026-10-31']);
+            $learner=array_values(array_filter($combined['student_totals'],fn($row)=>(int)$row['id']===101));
+            checkEnrollment(count($learner)===1 && $learner[0]['section_name']==='Current A / Current B' && $learner[0]['grade_level']==='Grade 3 / Grade 4','Combined '.$route.' labels every contributing section and grade');
+            checkEnrollment((int)$learner[0]['partial']===1 && (int)$learner[0]['absent']===1,'Combined '.$route.' totals count both assignments exactly once');
+            checkEnrollment(str_contains($combined['body'],'Grade 3 / Grade 4 / Current A / Current B'),'Rendered '.$route.' presents the combined placement labels with the totals');
+            $filtered=$run('reports/'.$route.'.php',$f['admin'],['month'=>10,'year'=>2026,'school_year_id'=>1,'date_from'=>'2026-10-01','date_to'=>'2026-10-31','grade'=>'Grade 4']);
+            $row=$filtered['student_totals'][0];
+            checkEnrollment(count($filtered['student_totals'])===1 && $row['grade_level']==='Grade 4' && $row['section_name']==='Current B'
+                && (int)$row['partial']===0 && (int)$row['absent']===1 && $filtered['member_days']===2,'Filtered '.$route.' labels, totals and eligible days share the same contributing ranges');
+        }
+        $db->exec("UPDATE sections SET grade_level='Grade 3' WHERE id=11; UPDATE enrollment_sections SET grade_level='Grade 3' WHERE id=2002");
         $transferred=$run('reports/sf2.php',$f['teacher'],$get);
         checkEnrollment($transferred['sf2']===$before['sf2'] && $transferred['roster_count']===1,'Return to section renders one annual row with original totals');
         checkEnrollment(($transferred['sf2_overrides']['attendancePct']['M'] ?? null)===2.5,'SF2 printed percentage divides by eligible source student-days');

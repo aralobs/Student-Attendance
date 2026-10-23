@@ -36,18 +36,28 @@ function saveSF2Remark(PDO $db, int $studentId, int $sectionId, int $month, int 
         throw new InvalidArgumentException('Invalid report details. Remarks must contain at most 1,000 characters.');
     }
     if (!isAdmin() && !isTeacher()) throw new DomainException('Report access denied.');
+    // Resolve the candidate before opening the transaction. This lookup holds no
+    // locks and must not establish an old consistent-read snapshot for membership.
+    $managed=enrollmentModelEnabled($db);
+    $candidateYearId=0;
+    if ($managed) {
+        $q=$db->prepare('SELECT school_year_id FROM sections WHERE id=?');
+        $q->execute([$sectionId]); $candidateYearId=(int)$q->fetchColumn();
+    }
     $db->beginTransaction();
     try {
-        if (enrollmentModelEnabled($db)) {
-            // Year/section locks precede profile and remark locks; activation and adviser
-            // changes cannot race a save. Closed-year correction is a separate workflow.
-            $q=$db->prepare('SELECT y.* FROM school_years y JOIN sections sec ON sec.school_year_id=y.id WHERE sec.id=? LOCK IN SHARE MODE');
-            $q->execute([$sectionId]); $selectedYear=$q->fetch();
+        if ($managed) {
+            // Separate current locking reads enforce year -> section order regardless
+            // of optimizer join order. A changed mapping fails; never lock a new year
+            // after acquiring a section. Closed-year correction is a separate workflow.
+            $q=$db->prepare('SELECT * FROM school_years WHERE id=? LOCK IN SHARE MODE');
+            $q->execute([$candidateYearId]); $selectedYear=$q->fetch();
             if (!$selectedYear || $selectedYear['state']!=='active') throw new DomainException('Closed-year remarks require a reviewed correction.');
             [$scope,$params]=enrollmentSectionScope('sec',currentUser(),true);
-            $q=$db->prepare("SELECT sec.id FROM sections sec WHERE sec.id=? AND ($scope) LOCK IN SHARE MODE");
+            $q=$db->prepare("SELECT sec.id,sec.school_year_id FROM sections sec WHERE sec.id=? AND ($scope) LOCK IN SHARE MODE");
             $q->execute(array_merge([$sectionId],$params));
-            if (!$q->fetch()) throw new DomainException('Report access denied.');
+            $lockedSection=$q->fetch();
+            if (!$lockedSection || (int)$lockedSection['school_year_id']!==$candidateYearId) throw new DomainException('Report access denied.');
             $from=sprintf('%04d-%02d-01',$year,$month);
             $report=loadEnrollmentReport($db,currentUser(),(int)$selectedYear['id'],$sectionId,$from,date('Y-m-t',strtotime($from)));
             if (!in_array($studentId,array_column($report['roster'],'student_id'),true)) throw new DomainException('Report access denied.');
