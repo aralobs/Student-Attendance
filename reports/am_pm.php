@@ -8,13 +8,18 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'AM / PM Report';
 $db              = getDB();
 $month           = (int)($_GET['month']   ?? date('n'));
 $year            = (int)($_GET['year']    ?? date('Y'));
 $gradeLevel      = $_GET['grade']         ?? '';
-$allowedSections = getAllowedSections();
+$reportFrom = sprintf('%04d-%02d-01', $year, $month);
+$reportTo = date('Y-m-t', strtotime($reportFrom));
+$reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, ($sectionId ?? 0) ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 $grades          = getGradeLevels();
 
 // School days
@@ -23,7 +28,7 @@ $schoolDays  = 0;
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0,0,0,$month,$d,$year));
-    if (!in_array($dow,[6,7]) && !isHolidayOrNoClass($ds)) $schoolDays++;
+    if (!in_array($dow,[6,7]) && enrollmentReportDay($reportContext, $ds) && !isHolidayOrNoClass($ds)) $schoolDays++;
 }
 
 // Stats per section
@@ -39,8 +44,8 @@ foreach ($allowedSections as $sec) {
                 SUM(a.am_status = 'late')      AS am_late,
                 SUM(a.am_status = 'absent')    AS am_absent,
                 0 AS pm_present, 0 AS pm_late, 0 AS pm_absent
-            FROM students s
-            LEFT JOIN attendance a ON a.student_id = s.id
+            FROM {$reportStudents} s
+            LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
                 AND MONTH(a.date) = ? AND YEAR(a.date) = ?
             WHERE s.section_id = ? AND s.is_active = 1
         ");
@@ -52,8 +57,8 @@ foreach ($allowedSections as $sec) {
                 SUM(a.pm_status = 'present')   AS pm_present,
                 SUM(a.pm_status = 'late')      AS pm_late,
                 SUM(a.pm_status = 'absent')    AS pm_absent
-            FROM students s
-            LEFT JOIN attendance a ON a.student_id = s.id
+            FROM {$reportStudents} s
+            LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
                 AND MONTH(a.date) = ? AND YEAR(a.date) = ?
             WHERE s.section_id = ? AND s.is_active = 1
         ");
@@ -67,8 +72,8 @@ foreach ($allowedSections as $sec) {
                 SUM(a.pm_status = 'present')   AS pm_present,
                 SUM(a.pm_status = 'late')      AS pm_late,
                 SUM(a.pm_status = 'absent')    AS pm_absent
-            FROM students s
-            LEFT JOIN attendance a ON a.student_id = s.id
+            FROM {$reportStudents} s
+            LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
                 AND MONTH(a.date) = ? AND YEAR(a.date) = ?
             WHERE s.section_id = ? AND s.is_active = 1
         ");
@@ -80,6 +85,7 @@ foreach ($allowedSections as $sec) {
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <div class="page-header">
@@ -104,6 +110,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-3">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">

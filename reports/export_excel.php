@@ -5,13 +5,16 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $date       = $_GET['date']    ?? date('Y-m-d');
 $gradeLevel = $_GET['grade']   ?? '';
 $sectionId  = (int)($_GET['section'] ?? 0);
 
 $db              = getDB();
-$allowedSections = getAllowedSections();
+$reportContext = prepareEnrollmentReport($db, $date, $date, $sectionId ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 
 $where  = ['a.date = ?', 's.is_active = 1'];
 $params = [$date];
@@ -32,8 +35,8 @@ $stmt = $db->prepare("
     SELECT a.*,
            s.first_name, s.last_name, s.lrn,
            sec.section_name, sec.grade_level, sec.schedule_type
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE {$whereSQL}
     ORDER BY {$orderSQL}, sec.section_name, s.last_name
@@ -50,6 +53,10 @@ $out = fopen('php://output', 'w');
 // School header
 fputcsv($out, [getSetting('school_name') ?? 'SPCCS']);
 fputcsv($out, ['Daily Attendance Report']);
+if ($reportContext['managed']) {
+    fputcsv($out, ['School year: '.$reportContext['year']['label']]);
+    if ($reportContext['data']['unresolved_count']) fputcsv($out, ['Unresolved historical ownership exceptions: '.$reportContext['data']['unresolved_count'].'. Totals exclude records without verified ownership.']);
+}
 fputcsv($out, ['Date: ' . date('F j, Y', strtotime($date))]);
 fputcsv($out, ['Generated: ' . date('F j, Y h:i A')]);
 fputcsv($out, []);
@@ -72,7 +79,7 @@ foreach ($records as $i => $r) {
         $r['section_name']  ?? '',
         $r['schedule_type'] ?? '',
         $r[getAttendanceEvents($r)[0]]  ? date('h:i A', strtotime($r[getAttendanceEvents($r)[0]]))  : '',
-        ($out = $r[getAttendanceEvents($r)[1]]) ? date('h:i A', strtotime($out)) : '',
+        ($timeOut = $r[getAttendanceEvents($r)[1]]) ? date('h:i A', strtotime($timeOut)) : '',
         $r['am_status'] ?? '',
         $r['pm_status'] ?? '',
         $r['attendance_type'] ?? '',

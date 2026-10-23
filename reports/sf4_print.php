@@ -17,7 +17,7 @@ if ($sectionIds && $schoolDates) {
     $stmt = $db->prepare("SELECT s.section_id, s.gender, sec.schedule_type,
         SUM(a.am_status IN ('present', 'late')) AS am_present,
         SUM(a.pm_status IN ('present', 'late')) AS pm_present
-        FROM attendance a JOIN students s ON s.id = a.student_id
+        FROM {$reportAttendance} a JOIN {$reportStudents} s ON s.id = a.student_id {$reportJoin}
         JOIN sections sec ON sec.id = s.section_id
         WHERE s.is_active = 1 AND s.section_id IN ($placeholders)
         AND a.date IN ($datePlaceholders)
@@ -35,7 +35,8 @@ if ($sectionIds && $schoolDates) {
 $sf4Rows = [];
 $sf4Grades = [];
 $sf4Totals = ['enrolled_male'=>0, 'enrolled_female'=>0, 'enrolled_total'=>0,
-    'present_male'=>0, 'present_female'=>0, 'present_total'=>0];
+    'present_male'=>0, 'present_female'=>0, 'present_total'=>0,
+    'possible_male'=>0, 'possible_female'=>0, 'possible_total'=>0];
 // Follow the reference roster order; additional database sections remain in their grade.
 $sf4Sections = $sectionData;
 $sf4Order = []; $sf4OrderGrade = null;
@@ -64,6 +65,11 @@ foreach ($sf4Sections as $section) {
     $row['present_male'] = $sf4Attendance[$section['id']]['male'] ?? 0;
     $row['present_female'] = $sf4Attendance[$section['id']]['female'] ?? 0;
     $row['present_total'] = $row['present_male'] + $row['present_female'];
+    foreach (['male'=>'Male','female'=>'Female','total'=>null] as $group=>$genderFilter) {
+        $row['possible_'.$group]=$reportContext['managed']
+            ? enrollmentReportPossible($reportContext,(int)$section['id'],null,null,$genderFilter)
+            : $schoolDays*$row['enrolled_'.$group];
+    }
     $row['label'] = sf4PrintGrade($section['grade_level']);
     $sf4Rows[] = $row;
     $grade = $section['grade_level'];
@@ -143,7 +149,7 @@ $sf4ColumnWidths = [32.478,71.214,75.982,19.070,17.580,17.282,12.813,13.409,12.5
                 <?php else: ?><td><?= sanitize($row['label']) ?></td><td><?= sanitize(strtoupper($row['section_name'])) ?></td><td><?= sanitize(strtoupper($row['adviser_name'] ?? '')) ?></td><?php endif; ?>
                 <?php foreach (['male','female','total'] as $gender): ?><td><?= (int)$row['enrolled_' . $gender] ?></td><?php endforeach; ?>
                 <?php foreach (['male','female','total'] as $gender): ?><td><?= $schoolDays > 0 ? sf4PrintNumber($row['present_' . $gender] / $schoolDays) : '' ?></td><?php endforeach; ?>
-                <?php foreach (['male','female','total'] as $gender): ?><td><?= $schoolDays > 0 && $row['enrolled_' . $gender] > 0 ? round($row['present_' . $gender] / ($schoolDays * $row['enrolled_' . $gender]) * 100) . '%' : '' ?></td><?php endforeach; ?>
+                <?php foreach (['male','female','total'] as $gender): ?><td><?= $row['possible_' . $gender] > 0 ? round($row['present_' . $gender] / $row['possible_' . $gender] * 100) . '%' : '' ?></td><?php endforeach; ?>
                 <?php /* Absences and lateness are not learner movement events. */ for ($i=0; $i<27; $i++): ?><td></td><?php endfor; ?>
             </tr>
             <?php endif; ?>

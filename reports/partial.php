@@ -9,6 +9,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'Partial Attendance';
 $db              = getDB();
@@ -16,7 +17,9 @@ $dateFrom        = $_GET['date_from']  ?? date('Y-m-d');
 $dateTo          = $_GET['date_to']    ?? date('Y-m-d');
 $sectionId       = (int)($_GET['section'] ?? 0);
 $gradeLevel      = $_GET['grade']         ?? '';
-$allowedSections = getAllowedSections();
+$reportContext = prepareEnrollmentReport($db, $dateFrom, $dateTo, $sectionId ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 $grades          = getGradeLevels();
 
 $where  = ["a.date BETWEEN ? AND ?", "a.attendance_type = 'partial'", "s.is_active = 1"];
@@ -41,8 +44,8 @@ $records = $db->prepare("
            a.attendance_type, a.remarks,
            s.first_name, s.last_name, s.lrn, s.photo,
            sec.grade_level, sec.section_name, sec.schedule_type
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE {$whereSQL}
     ORDER BY a.date DESC, {$orderSQL}, s.last_name
@@ -56,6 +59,7 @@ $pmOnly = array_filter($records, fn($r) => !$r[getAttendanceEvents($r)[0]] && !e
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <div class="page-header">
@@ -78,6 +82,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">From</label>
                 <input type="date" name="date_from" class="form-control form-control-sm"

@@ -1,7 +1,10 @@
 <?php
 // Synthetic data only, in a disposable MySQL DB and temporary photo/key storage.
-require_once __DIR__ . '/../config/database.php';
 $root = dirname(__DIR__); $name = 'pii_test_' . bin2hex(random_bytes(6));
+$previousTestDatabase=getenv('MYSQLDATABASE');
+// Parent helpers call getDB too: bind its immutable DB_NAME before configuration loads.
+putenv('MYSQLDATABASE='.$name);
+require_once __DIR__ . '/../config/database.php';
 $fixture = __DIR__ . '/.' . $name; $created = false; $checks = 0;
 $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $options = [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC];
@@ -13,6 +16,7 @@ try {
     $admin->exec("CREATE DATABASE `$name`"); $created = true;
     $db = new PDO($dsn . ';dbname=' . $name, DB_USER, DB_PASS, $options);
     $db->exec(file_get_contents($root . '/migrations/security_audit.sql'));
+    $db->exec("CREATE TABLE system_settings (setting_key VARCHAR(100) PRIMARY KEY,setting_value TEXT); INSERT INTO system_settings VALUES('enrollment_model_version','0')");
     $db->exec('CREATE TABLE users (id INT PRIMARY KEY,role VARCHAR(30),is_active INT,session_token VARCHAR(64),session_ip VARCHAR(50),session_last_activity DATETIME);
         CREATE TABLE sections (id INT PRIMARY KEY,adviser_id INT,is_active INT);
         INSERT INTO sections VALUES (10,7,1),(20,8,1),(30,7,0);
@@ -23,7 +27,7 @@ try {
     $db->exec(file_get_contents($root . '/migrations/pii_storage.sql'));
     $db->exec(file_get_contents($root . '/migrations/security_abuse_controls.sql'));
     foreach (['','/config','/includes','/reports','/photos','/sessions'] as $dir) mkdir($fixture . $dir);
-    foreach (['config/database.php','config/deployment_security.php','config/schedule_rules.php','includes/functions.php','includes/security_audit.php','includes/pii_security.php','includes/session_security.php','includes/settings_security.php','includes/csrf.php','includes/abuse_security.php','includes/student_access.php','includes/student_photos.php','includes/sf2_remarks.php','student_photo.php','reports/save_sf2_remark.php'] as $file) copy($root . '/' . $file,$fixture . '/' . $file);
+    foreach (['config/database.php','config/hosting_environment.php','config/deployment_security.php','config/schedule_rules.php','includes/functions.php','includes/sms_status.php','includes/notification_templates.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/enrollment_reports.php','includes/enrollment_operations.php','includes/school_years.php','includes/security_audit.php','includes/pii_security.php','includes/session_security.php','includes/settings_security.php','includes/csrf.php','includes/abuse_security.php','includes/student_access.php','includes/student_photos.php','includes/sf2_remarks.php','student_photo.php','reports/save_sf2_remark.php'] as $file) copy($root . '/' . $file,$fixture . '/' . $file);
     $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aEaoAAAAASUVORK5CYII=');
     file_put_contents($fixture . '/photos/fixture.png',$png);
     file_put_contents($fixture . '/photos/not-image.png','<?php this must never be served');
@@ -122,7 +126,12 @@ PHP);
     $doc=new DOMDocument();piiCheck($doc->loadXML(studentAvatarSVG('<script>','&evil'),LIBXML_NONET) && $doc->getElementsByTagName('script')->length===0,'Avatar injection');
     $_SERVER['DOCUMENT_ROOT']=$root;
     try {studentPhotoDirectory();throw new LogicException('Public storage allowed');} catch (RuntimeException $expected) {$checks++;}
-    foreach (['attendance_system.sql','config/database_schema_update.sql'] as $file) piiCheck(!preg_match('/^INSERT\s+(?:IGNORE\s+)?INTO\s/im',file_get_contents($root.'/'.$file)),'Populated schema import remains');
+    foreach (['attendance_system.sql','config/database_schema_update.sql'] as $file) {
+        // Task 1 requires this non-PII structural singleton, never student/year seed data.
+        $schema=preg_replace('/^INSERT IGNORE INTO school_year_control \(id,version\) VALUES \(1,1\);\h*\R/m','',file_get_contents($root.'/'.$file),-1,$singletons);
+        piiCheck($singletons===1,'Expected exactly one structural control singleton');
+        piiCheck(!preg_match('/^\h*(?:INSERT|REPLACE)\b/im',$schema),'Populated schema import remains');
+    }
     echo "PII storage checks passed ($checks checks; disposable DB, synthetic photos and keys).\n";
 } finally {
     if (session_status()===PHP_SESSION_ACTIVE) session_write_close();
@@ -132,4 +141,5 @@ PHP);
         foreach ($files as $file) $file->isDir()?rmdir($file->getPathname()):unlink($file->getPathname()); rmdir($fixture);
     }
     if ($created) $admin->exec("DROP DATABASE `$name`");
+    putenv($previousTestDatabase===false ? 'MYSQLDATABASE' : 'MYSQLDATABASE='.$previousTestDatabase);
 }

@@ -6,11 +6,13 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/student_access.php';
 requireStudentManagement();
+require_once '../includes/enrollment_reports.php';
 guardCsrfPage(true);
 
 $pageTitle = 'Master List';
 $db        = getDB();
-[$sectionScope, $sectionScopeParams] = studentSectionScope('sec');
+$reportContext = prepareEnrollmentDirectory($db,true);
+[$sectionScope, $sectionScopeParams] = studentSectionScope('sec', $reportContext['managed'] ? (int)$reportContext['year']['id'] : null, $reportContext['managed']);
 
 // ---------------------------------------------------------------
 // Handle inline adviser update (AJAX POST)
@@ -31,8 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
         exit;
     }
     try {
-        $stmt = $db->prepare("UPDATE sections SET adviser_id = ? WHERE id = ?");
-        $stmt->execute([$adviserId, $sectionId]);
+        if (enrollmentModelEnabled($db)) {
+            require_once '../includes/enrollment_commands.php';
+            saveEnrollmentSectionAdvisers($db,currentUser(),[$sectionId=>$adviserId]);
+        } else {
+            $stmt = $db->prepare("UPDATE sections SET adviser_id = ? WHERE id = ?");
+            $stmt->execute([$adviserId, $sectionId]);
+        }
 
         // Fetch the new adviser name for the response
         $adviserName = null;
@@ -54,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 $sy    = trim($_GET['sy']    ?? '');
 $grade = trim($_GET['grade'] ?? '');
 
+if ($reportContext['managed']) $sy=$reportContext['year']['label'];
 if ($sy === '') {
     $latestStmt = $db->prepare("
         SELECT school_year FROM sections sec
@@ -94,12 +102,20 @@ $stmt = $db->prepare("
 ");
 $stmt->execute($params);
 $sections = $stmt->fetchAll();
+if ($reportContext['managed']) {
+    foreach ($sections as &$section) {
+        $section['student_count']=count(array_filter($reportContext['data']['roster'],fn($row)=>in_array((int)$section['id'],array_column($row['assignments'],'section_id'),true)));
+    }
+    unset($section);
+}
 
 // ---------------------------------------------------------------
 // Fetch students grouped by section
 // ---------------------------------------------------------------
 $studentsBySection = [];
-if ($sections) {
+if ($reportContext['managed']) {
+    foreach ($sections as $section) $studentsBySection[$section['id']]=enrollmentDirectoryRows($reportContext,'',(int)$section['id']);
+} elseif ($sections) {
     $ids = array_column($sections, 'id');
     $ph  = implode(',', array_fill(0, count($ids), '?'));
     [$studentScope, $studentScopeParams] = studentRecordScope('s');
@@ -134,10 +150,11 @@ $yearStmt = $db->prepare("
     ORDER BY school_year DESC
 ");
 $yearStmt->execute($sectionScopeParams);
-$schoolYears = $yearStmt->fetchAll(PDO::FETCH_COLUMN);
+$schoolYears = $reportContext['managed'] ? enrollmentReportYearLabels($db,currentUser()) : $yearStmt->fetchAll(PDO::FETCH_COLUMN);
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <?php showFlash(); ?>

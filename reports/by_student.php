@@ -8,6 +8,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'By Student';
 $db              = getDB();
@@ -16,7 +17,11 @@ $sectionId       = (int)($_GET['section'] ?? 0);
 $gradeLevel      = $_GET['grade']         ?? '';
 $month           = (int)($_GET['month']   ?? date('n'));
 $year            = (int)($_GET['year']    ?? date('Y'));
-$allowedSections = getAllowedSections();
+$reportFrom = sprintf('%04d-%02d-01', $year, $month);
+$reportTo = date('Y-m-t', strtotime($reportFrom));
+$reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, ($sectionId ?? 0) ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 $grades          = getGradeLevels();
 
 // School days
@@ -25,7 +30,7 @@ $schoolDays  = 0;
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0,0,0,$month,$d,$year));
-    if (!in_array($dow,[6,7]) && !isHolidayOrNoClass($ds)) $schoolDays++;
+    if (!in_array($dow,[6,7]) && enrollmentReportDay($reportContext, $ds) && !isHolidayOrNoClass($ds)) $schoolDays++;
 }
 
 // Build WHERE
@@ -55,17 +60,18 @@ if ($sectionId > 0) {
 $whereSQL = implode(' AND ', $where);
 $orderSQL = gradeLevelOrderSQL('sec.grade_level');
 
+$reportEnrollmentSelect = $reportContext['managed'] ? 's.enrollment_id,' : '';
 $students = $db->prepare("
-    SELECT s.id, s.first_name, s.last_name, s.lrn, s.photo,
+    SELECT s.id, {$reportEnrollmentSelect} s.first_name, s.last_name, s.lrn, s.photo,
            sec.grade_level, sec.section_name, sec.schedule_type,
            SUM(a.attendance_type = 'full_day') AS full_day,
            SUM(a.attendance_type = 'partial')  AS partial,
            SUM(a.attendance_type = 'absent')   AS absent,
            SUM(a.am_status = 'late')           AS am_late,
            SUM(a.pm_status = 'late')           AS pm_late
-    FROM students s
+    FROM {$reportStudents} s
     LEFT JOIN sections sec ON s.section_id = sec.id
-    LEFT JOIN attendance a ON a.student_id = s.id
+    LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
         AND MONTH(a.date) = ? AND YEAR(a.date) = ?
     WHERE {$whereSQL}
     GROUP BY s.id
@@ -76,6 +82,7 @@ $students = $students->fetchAll();
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <div class="page-header">
@@ -101,6 +108,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">
@@ -188,15 +196,16 @@ include '../includes/sidebar.php';
                     <?php foreach ($students as $i => $s): ?>
                     <?php
                     $attended = ($s['full_day'] ?? 0) + (($s['partial'] ?? 0) * 0.5);
-                    $rate     = $schoolDays > 0
-                        ? round(($attended / $schoolDays) * 100, 1)
+                    $memberDays = $reportContext['managed'] ? enrollmentReportPossible($reportContext,null,null,(int)$s['id']) : $schoolDays;
+                    $rate     = $memberDays > 0
+                        ? round(($attended / $memberDays) * 100, 1)
                         : 0;
                     ?>
                     <tr>
                         <td><?= $i + 1 ?></td>
                         <td>
                             <div class="d-flex align-items-center gap-2">
-                                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?>"
+                                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?><?= isset($s['enrollment_id']) ? '&amp;enrollment_id='.(int)$s['enrollment_id'] : '' ?>"
                                      class="student-photo-sm">
                                 <div>
                                     <div class="fw-600">
@@ -211,7 +220,7 @@ include '../includes/sidebar.php';
                         <td class="small">
                             <?= sanitize($s['grade_level'].' / '.$s['section_name']) ?>
                         </td>
-                        <td class="text-center"><?= $schoolDays ?></td>
+                        <td class="text-center"><?= $memberDays ?></td>
                         <td class="text-center">
                             <span class="badge bg-success bg-opacity-75"><?= $s['full_day'] ?? 0 ?></span>
                         </td>

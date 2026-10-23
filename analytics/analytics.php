@@ -9,10 +9,14 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle = 'Analytics';
 $db        = getDB();
 $year      = (int)($_GET['year'] ?? date('Y'));
+
+$reportContext = prepareEnrollmentReport($db,sprintf('%04d-01-01',$year),sprintf('%04d-12-31',$year),null,true);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
 
 // Endpoint URL — relative from /analytics/ so it works in any deployment.
 $endpointUrl = '../attendance/get_today_log.php';
@@ -22,7 +26,7 @@ $sectionFilter = '';
 $sectionParams = [];
 if (!isAdmin()) {
     $user            = currentUser();
-    $allowedSections = getAllowedSections();
+    $allowedSections = ($reportContext['sections'] ?? getAllowedSections());
     $ids             = array_column($allowedSections, 'id') ?: [0];
     $placeholders    = implode(',', array_fill(0, count($ids), '?'));
     $sectionFilter   = "AND s.section_id IN ({$placeholders})";
@@ -39,8 +43,8 @@ $stmt = $db->prepare("
         SUM(a.attendance_type = 'absent')                AS absent,
         SUM(a.am_status = 'late')                        AS am_late,
         SUM(a.pm_status = 'late')                        AS pm_late
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     WHERE YEAR(a.date) = ? AND s.is_active = 1 {$sectionFilter}
 ");
 $stmt->execute(array_merge([$year], $sectionParams));
@@ -59,8 +63,8 @@ $stmt = $db->prepare("
     SELECT s.first_name, s.last_name,
            sec.section_name, sec.grade_level,
            COUNT(*) AS absent_count
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE a.attendance_type = 'absent'
     AND YEAR(a.date) = ?
@@ -80,8 +84,8 @@ foreach (getGradeLevels() as $grade) {
             COUNT(a.id)                                      AS total,
             SUM(a.attendance_type IN ('full_day','partial')) AS attended
         FROM sections sec
-        LEFT JOIN students s ON s.section_id  = sec.id AND s.is_active = 1
-        LEFT JOIN attendance a ON a.student_id = s.id AND YEAR(a.date) = ?
+        LEFT JOIN {$reportStudents} s ON s.section_id  = sec.id AND s.is_active = 1
+        LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin} AND YEAR(a.date) = ?
         WHERE sec.grade_level = ? {$sectionFilter}
     ");
     $stmt->execute(array_merge([$year, $grade], $sectionParams));
@@ -96,15 +100,15 @@ foreach (getGradeLevels() as $grade) {
 }
 
 // ── Section attendance rates ──────────────────────────────────
-$allowedSecs  = getAllowedSections();
+$allowedSecs  = ($reportContext['sections'] ?? getAllowedSections());
 $sectionRates = [];
 foreach ($allowedSecs as $sec) {
     $stmt = $db->prepare("
         SELECT
             COUNT(a.id)                                      AS total,
             SUM(a.attendance_type IN ('full_day','partial')) AS attended
-        FROM students s
-        LEFT JOIN attendance a ON a.student_id = s.id AND YEAR(a.date) = ?
+        FROM {$reportStudents} s
+        LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin} AND YEAR(a.date) = ?
         WHERE s.section_id = ? AND s.is_active = 1
     ");
     $stmt->execute([$year, $sec['id']]);
@@ -141,8 +145,8 @@ $stmt = $db->prepare("
         SUM(a.attendance_type = 'absent')                AS absent,
         SUM(a.am_status = 'late')                        AS am_late,
         SUM(a.pm_status = 'late')                        AS pm_late
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     WHERE YEAR(a.date) = ?
       AND MONTH(a.date) = ?
       AND s.is_active = 1 {$sectionFilter}
@@ -167,8 +171,8 @@ $stmt = $db->prepare("
     SELECT s.first_name, s.last_name,
            sec.section_name, sec.grade_level,
            COUNT(*) AS absent_count
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE a.attendance_type = 'absent'
       AND YEAR(a.date) = ?
@@ -186,8 +190,8 @@ $stmt = $db->prepare("
     SELECT DAY(a.date) AS day,
            SUM(a.attendance_type IN ('full_day','partial')) AS present,
            SUM(a.attendance_type = 'absent')                AS absent
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     WHERE YEAR(a.date) = ?
       AND MONTH(a.date) = ?
       AND s.is_active = 1 {$sectionFilter}
@@ -219,8 +223,8 @@ foreach (getGradeLevels() as $grade) {
             COUNT(a.id)                                      AS total,
             SUM(a.attendance_type IN ('full_day','partial')) AS attended
         FROM sections sec
-        LEFT JOIN students s  ON s.section_id  = sec.id AND s.is_active = 1
-        LEFT JOIN attendance a ON a.student_id = s.id
+        LEFT JOIN {$reportStudents} s  ON s.section_id  = sec.id AND s.is_active = 1
+        LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
                               AND YEAR(a.date)  = ?
                               AND MONTH(a.date) = ?
         WHERE sec.grade_level = ? {$sectionFilter}
@@ -240,6 +244,7 @@ $monthlyGradeValues = array_map(fn($g) => $g['rate'], array_values($monthlyGrade
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <style>
@@ -369,6 +374,7 @@ include '../includes/sidebar.php';
         </p>
     </div>
     <form method="GET" class="d-flex gap-2">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
         <input type="hidden" name="month" value="<?= $month ?>">
         <select name="year" class="form-select form-select-sm" style="width:auto">
             <?php for ($y = 2024; $y <= date('Y') + 1; $y++): ?>
@@ -597,6 +603,7 @@ include '../includes/sidebar.php';
                     </span>
                 </span>
                 <form method="GET" class="d-flex gap-2 align-items-center flex-wrap">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
                     <input type="hidden" name="year" value="<?= $year ?>">
                     <select name="month" class="form-select form-select-sm" style="width:auto">
                         <?php foreach ($monthNames as $num => $name): ?>

@@ -9,6 +9,7 @@ $routes = ['attendance/attendance.php', 'reports/daily.php', 'reports/by_student
 foreach (['', '/config', '/includes', '/attendance', '/reports', '/analytics', '/calendar'] as $dir) mkdir($fixture . $dir);
 foreach (array_merge($routes, ['includes/functions.php', 'includes/end_of_day_alerts.php',
     'includes/attendance_finalizer.php', 'includes/settings_security.php', 'includes/csrf.php',
+    'includes/sms_status.php','includes/notification_templates.php','includes/enrollment_reports.php','includes/enrollment_operations.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php',
     'includes/abuse_security.php', 'includes/sidebar.php', 'includes/footer.php', 'config/schedule_rules.php']) as $file) {
     copy($root . '/' . $file, $fixture . '/' . $file);
 }
@@ -16,7 +17,18 @@ file_put_contents($fixture . '/config/database.php', <<<'PHP'
 <?php
 define('BASE_URL', '/');
 date_default_timezone_set('Asia/Manila');
-function getDB(...$args) { $GLOBALS['reachedDB'] = true; exit; }
+function getDB(...$args) {
+    if (!empty($GLOBALS['staffNavigation'])) {
+        static $navigationDB;
+        if (!$navigationDB) {
+            $navigationDB=new PDO('sqlite::memory:');
+            $navigationDB->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);
+            $navigationDB->exec("CREATE TABLE system_settings(setting_key TEXT,setting_value TEXT); INSERT INTO system_settings VALUES('enrollment_model_version','0')");
+        }
+        return $navigationDB;
+    }
+    $GLOBALS['reachedDB'] = true; exit;
+}
 PHP);
 file_put_contents($fixture . '/includes/session_security.php', <<<'PHP'
 <?php
@@ -54,6 +66,7 @@ try {
             $checks++;
         }
     }
+    $GLOBALS['staffNavigation']=true;
     // Render the actual navigation and footer for every supported role.
     foreach (['admin', 'teacher', 'scanner_operator'] as $role) {
         $_SESSION = ['role' => $role, 'user_id' => 7];
@@ -84,6 +97,8 @@ class ScopeStatement {
 }
 class ScopeDB { function prepare($sql) { return new ScopeStatement; } }
 function getDB() { return new ScopeDB; }
+function prepareEnrollmentReport($db,$from,$to) { return ['managed'=>false,'students'=>'students','attendance'=>'attendance','join'=>'','year'=>null]; }
+function enrollmentReportDay($context,$date) { return true; }
 PHP
         . preg_replace('/require_once .*?;/', '', substr($source, 5)));
     $process = proc_open([PHP_BINARY, $fixture . '/sf4_scope.php'], [1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes, $fixture);

@@ -16,6 +16,7 @@ require_once 'includes/functions.php';
 // requireLogin() also sends no-cache headers, so the browser never
 // serves a stale dashboard from its own cache.
 requireStaff();
+require_once 'includes/enrollment_reports.php';
 
 $pageTitle = 'Dashboard';
 $db        = getDB();
@@ -39,7 +40,20 @@ $upcomingEvents = $db->query("
 ")->fetchAll();
 
 // ── Today's snapshot ───────────────────────────────────────
-$stats = getDashboardStats();
+if (enrollmentModelEnabled($db)) {
+    require_once 'includes/enrollment_operations.php';
+    $todayRoster=enrollmentOperationalRows($db,$today,null,$user);
+    $todayContext=prepareEnrollmentReport($db,$today,$today,null,true);
+    $todayIds=array_column($todayRoster,'id');
+    $stats=['total_students'=>count($todayRoster),'full_day_today'=>0,'partial_today'=>0,'absent_today'=>0,'late_today'=>0,'is_holiday'=>$isHoliday,'calendar_entry'=>$calendarEntry];
+    foreach ($todayContext['data']['attendance'] as $record) {
+        if (!in_array($record['student_id'],$todayIds)) continue;
+        $key=$record['attendance_type'].'_today';
+        if (isset($stats[$key])) $stats[$key]++;
+        if ($record['am_status']==='late' || $record['pm_status']==='late') $stats['late_today']++;
+    }
+    $stats['present_today']=$stats['full_day_today']+$stats['partial_today'];
+} else $stats = getDashboardStats();
 
 // ── Scope filter (for the 7-day mini trend) ────────────────
 $scopeFilter = '';
@@ -53,14 +67,17 @@ if (!isAdmin()) {
 $trend = [];
 $startDate = date('Y-m-d', strtotime('-6 days'));
 
+$reportContext = prepareEnrollmentReport($db,$startDate,$today,null,true);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+
 $stmt = $db->prepare("
     SELECT
         a.date,
         SUM(a.attendance_type = 'full_day') AS full_day,
         SUM(a.attendance_type = 'partial')  AS partial,
         SUM(a.attendance_type = 'absent')   AS absent
-    FROM attendance a
-    JOIN students s      ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE a.date BETWEEN ? AND ? {$scopeFilter}
     GROUP BY a.date
@@ -88,6 +105,7 @@ for ($i = 6; $i >= 0; $i--) {
 
 include 'includes/header.php';
 include 'includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <style>

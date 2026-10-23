@@ -130,3 +130,48 @@ function saveManagedEnrollmentSection(PDO $db, array $actor, array $input): int
         $db->commit(); return $id;
     } catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
 }
+
+/** Atomic adviser-only batch. Structural locks prevent scans and historical authorization
+ * from racing reassignment. Every section/adviser is validated before the first update.
+ */
+function saveEnrollmentSectionAdvisers(PDO $db, array $actor, array $assignments): void
+{
+    if ($db->inTransaction()) throw new LogicException('Adviser assignment owns its transaction.');
+    if (($actor['role'] ?? '')!=='admin' || (int)($actor['id'] ?? 0)<1) throw new DomainException('Administrator access required.');
+    $changes=[];
+    foreach ($assignments as $sectionId=>$adviserId) {
+        $id=filter_var($sectionId,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+        $adviser=$adviserId===null || $adviserId==='' ? null : filter_var($adviserId,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
+        if (!$id || $adviser===false) throw new InvalidArgumentException('Invalid adviser assignment.');
+        $changes[$id]=$adviser;
+    }
+    ksort($changes,SORT_NUMERIC);
+    $db->beginTransaction();
+    try {
+        if (!$db->query('SELECT id FROM school_year_control WHERE id=1 FOR UPDATE')->fetchColumn() || !enrollmentModelEnabled($db)) throw new DomainException('Annual enrollment is not enabled.');
+        $years=[]; foreach ($db->query('SELECT id,state FROM school_years ORDER BY id FOR UPDATE')->fetchAll() as $row) $years[(int)$row['id']]=$row['state'];
+        $sections=[];
+        $select=$db->prepare('SELECT id,school_year_id,adviser_id FROM sections WHERE id=? FOR UPDATE');
+        foreach ($changes as $id=>$adviser) {
+            $select->execute([$id]); $section=$select->fetch();
+            if (!$section || !isset($years[(int)$section['school_year_id']]) || $years[(int)$section['school_year_id']]==='closed') throw new DomainException('Closed-year sections are read-only.');
+            $sections[$id]=$section;
+        }
+        $users=array_unique(array_merge([(int)$actor['id']],array_values(array_filter($changes,fn($id)=>$id!==null)))); sort($users,SORT_NUMERIC);
+        $select=$db->prepare('SELECT role,is_active FROM users WHERE id=? LOCK IN SHARE MODE');
+        foreach ($users as $id) {
+            $select->execute([$id]); $user=$select->fetch();
+            if (!$user || !(int)$user['is_active'] || !in_array($user['role'],['admin','teacher'],true)
+                || $id===(int)$actor['id'] && $user['role']!=='admin') throw new DomainException('Choose an active authorized adviser.');
+        }
+        securityAuditContext((int)$actor['id']);
+        $update=$db->prepare('UPDATE sections SET adviser_id=? WHERE id=?');
+        foreach ($changes as $id=>$adviser) {
+            $before=$sections[$id]['adviser_id']===null ? null : (int)$sections[$id]['adviser_id'];
+            if ($before===$adviser) continue;
+            $update->execute([$adviser,$id]);
+            securityAuditChange($db,'section.adviser','route',$id,['adviser_id'=>$before],['adviser_id'=>$adviser,'school_year_id'=>(int)$sections[$id]['school_year_id']]);
+        }
+        $db->commit();
+    } catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
+}

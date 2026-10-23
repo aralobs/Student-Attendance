@@ -7,6 +7,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireAdmin();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle = 'Absence Summary';
 $db        = getDB();
@@ -17,7 +18,11 @@ $gradeLevel = $_GET['grade']         ?? '';
 $sectionId  = (int)($_GET['section'] ?? 0);
 
 $grades   = getGradeLevels();
-$sections = getAllowedSections();
+$reportFrom = sprintf('%04d-%02d-01', $year, $month);
+$reportTo = date('Y-m-t', strtotime($reportFrom));
+$reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, ($sectionId ?? 0) ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$sections = $reportContext['sections'] ?? getAllowedSections();
 
 // Build filter
 $sectionFilter  = '';
@@ -36,7 +41,7 @@ for ($d = 1; $d <= $daysInMonth; $d++) {
     $dayOfWeek = date('N', mktime(0,0,0,$month,$d,$year));
     if (in_array($dayOfWeek, [6,7])) continue; // skip weekends
 
-    $isHol = isset($calEntries[$dateStr]) &&
+    $isHol = !enrollmentReportDay($reportContext, $dateStr) || isset($calEntries[$dateStr]) &&
              in_array($calEntries[$dateStr]['type'], ['holiday','no_class']);
 
     if ($isHol) {
@@ -44,15 +49,15 @@ for ($d = 1; $d <= $daysInMonth; $d++) {
             'date'    => $dateStr,
             'count'   => 0,
             'holiday' => true,
-            'title'   => $calEntries[$dateStr]['title'],
+            'title'   => $calEntries[$dateStr]['title'] ?? 'Outside school year',
         ];
         continue;
     }
 
     $stmt = $db->prepare("
         SELECT COUNT(*) AS cnt
-        FROM attendance a
-        JOIN students s ON a.student_id = s.id
+        FROM {$reportAttendance} a
+        JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
         LEFT JOIN sections sec ON s.section_id = sec.id
         WHERE a.date = ? AND a.attendance_type = 'absent'
         AND s.is_active = 1 {$sectionFilter}
@@ -83,8 +88,8 @@ $topAbsent = $db->prepare("
     SELECT s.first_name, s.last_name, s.lrn,
            sec.grade_level, sec.section_name,
            COUNT(*) AS absent_count
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE MONTH(a.date) = ? AND YEAR(a.date) = ?
     AND a.attendance_type = 'absent'
@@ -102,6 +107,7 @@ $schoolDays = count(array_filter($dailyAbsences, fn($e) => !$e['holiday']));
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <div class="page-header">
@@ -127,6 +133,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">

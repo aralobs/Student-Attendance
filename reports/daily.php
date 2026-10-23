@@ -9,6 +9,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle  = 'Daily Attendance Report';
 $db         = getDB();
@@ -17,7 +18,9 @@ $gradeLevel = $_GET['grade']   ?? '';
 $sectionId  = (int)($_GET['section'] ?? 0);
 
 $grades          = getGradeLevels();
-$allowedSections = getAllowedSections();
+$reportContext = prepareEnrollmentReport($db, $date, $date, $sectionId ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 $calEntry        = getCalendarEntry($date);
 
 // ── Build WHERE ───────────────────────────────────────────────
@@ -52,8 +55,8 @@ $stmt = $db->prepare("
     SELECT a.*,
            s.first_name, s.last_name, s.lrn,
            sec.section_name, sec.grade_level, sec.schedule_type
-    FROM attendance a
-    JOIN students s ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE {$whereSQL}
     ORDER BY {$orderSQL}, sec.section_name, s.last_name, s.first_name
@@ -94,6 +97,7 @@ if ($sectionId > 0) {
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <div class="page-header no-print">
@@ -107,7 +111,7 @@ include '../includes/sidebar.php';
         <button onclick="window.print()" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-printer me-1"></i>Print
         </button>
-        <a href="export_daily_excel.php?date=<?= urlencode($date) ?>&grade=<?= urlencode($gradeLevel) ?>&section=<?= $sectionId ?>"
+        <a href="export_excel.php?date=<?= urlencode($date) ?>&grade=<?= urlencode($gradeLevel) ?>&section=<?= $sectionId ?><?= $reportContext['managed'] ? '&amp;school_year_id='.(int)$reportContext['year']['id'] : '' ?>"
            class="btn btn-success btn-sm">
             <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel
         </a>
@@ -121,6 +125,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Date</label>
                 <input type="date" name="date"
@@ -166,7 +171,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3">
     <div class="card-body text-center py-3">
         <h5 class="fw-800 mb-0"><?= sanitize(getSetting('school_name') ?? '') ?></h5>
-        <div class="text-muted small">S.Y. <?= getSetting('school_year') ?></div>
+        <div class="text-muted small">S.Y. <?= ($reportContext['year']['label'] ?? getSetting('school_year')) ?></div>
         <h6 class="fw-700 mt-2 mb-0">Daily Attendance Report</h6>
         <div class="fw-600"><?= date('l, F j, Y', strtotime($date)) ?></div>
         <div class="text-muted small"><?= sanitize($sectionLabel) ?></div>

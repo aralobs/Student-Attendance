@@ -4,6 +4,7 @@ foreach(['','/includes','/reports'] as $dir)mkdir($fixture.$dir);
 try {
     copy($root.'/includes/student_access.php',$fixture.'/includes/student_access.php');
     copy($root.'/reports/export_pdf.php',$fixture.'/reports/export_pdf.php');
+    file_put_contents($fixture.'/includes/enrollment_access.php','<?php function enrollmentModelEnabled(PDO $db): bool { return false; }');
     file_put_contents($fixture.'/includes/functions.php', <<<'PHP'
 <?php
 define('BASE_URL','/');http_response_code(200);$case=$argv[1];$reads=0;
@@ -42,6 +43,6 @@ PHP);
     }
     echo "Legacy PDF access checks passed ($checks cases; isolated section data).\n";
 } finally {
-    foreach(['includes/student_access.php','includes/functions.php','reports/export_pdf.php','request.php'] as $file)unlink($fixture.'/'.$file);
+    foreach(['includes/student_access.php','includes/enrollment_access.php','includes/functions.php','reports/export_pdf.php','request.php'] as $file)unlink($fixture.'/'.$file);
     foreach(['/reports','/includes',''] as $dir)rmdir($fixture.$dir);
 }

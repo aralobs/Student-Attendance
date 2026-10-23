@@ -6,6 +6,7 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/student_access.php';
 requireStudentManagement();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle = 'Students';
 $db        = getDB();
@@ -21,6 +22,15 @@ $offset    = ($page - 1) * $perPage;
 $gradeSQL  = "COALESCE(NULLIF(s.grade_level, ''), sec.grade_level)";
 
 // Build query
+$reportContext = prepareEnrollmentDirectory($db, false);
+if ($reportContext['managed']) {
+    if ($reportContext['historical']) $sy=$reportContext['year']['label'];
+    $allRows = enrollmentDirectoryRows($reportContext,$search,$sectionId ?: null,$grade);
+    if (!$reportContext['historical']) $allRows=array_values(array_filter($allRows,fn($row)=>(int)$row['is_active']===1));
+    $total=count($allRows); $students=array_slice($allRows,$offset,$perPage);
+    $sections=$reportContext['sections'];
+    $schoolYears=enrollmentReportYearLabels($db,currentUser());
+} else {
 [$studentScope, $scopeParams] = studentRecordScope('s');
 $where  = ['s.is_active = 1', "({$studentScope})"];
 $params = $scopeParams;
@@ -79,11 +89,14 @@ $yearStmt = $db->prepare("
 $yearStmt->execute($scopeParams);
 $schoolYears = $yearStmt->fetchAll(PDO::FETCH_COLUMN);
 
+}
+
 // Grade levels for filter
 $gradeLevels = ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <?php showFlash(); ?>
@@ -251,7 +264,7 @@ include '../includes/sidebar.php';
                         </td>
                         <td class="text-muted"><?= $offset + $i + 1 ?></td>
                         <td>
-                            <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?>"
+                            <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?><?= isset($s['enrollment_id']) ? '&amp;enrollment_id='.(int)$s['enrollment_id'] : '' ?>"
                                  class="student-photo-sm">
                         </td>
                         <td><code><?= sanitize($s['lrn']) ?></code></td>
@@ -283,7 +296,7 @@ include '../includes/sidebar.php';
                         </td>
                         <td>
                             <div class="d-flex gap-1">
-                                <a href="view.php?id=<?= $s['id'] ?>"
+                                <a href="view.php?id=<?= $s['id'] ?><?= isset($s['enrollment_id']) ? '&amp;enrollment_id='.(int)$s['enrollment_id'] : '' ?>"
                                    class="btn btn-sm btn-outline-info" title="View">
                                     <i class="bi bi-eye"></i>
                                 </a>

@@ -7,9 +7,17 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/student_access.php';
 requireStudentManagement();
+require_once '../includes/enrollment_reports.php';
 
 $id = (int)($_GET['id'] ?? 0);
 $db = getDB();
+$reportContext=prepareEnrollmentDirectory($db,true);
+if ($reportContext['managed']) {
+    $student=null;
+    foreach (enrollmentDirectoryRows($reportContext) as $candidate) {
+        if ((int)$candidate['id']===$id && (!isset($_GET['enrollment_id']) || (int)$candidate['enrollment_id']===(int)$_GET['enrollment_id'])) $student=$candidate;
+    }
+} else {
 [$studentScope, $scopeParams] = studentRecordScope('s');
 
 $stmt = $db->prepare("
@@ -23,6 +31,8 @@ $stmt = $db->prepare("
 $stmt->execute(array_merge([$id], $scopeParams));
 $student = $stmt->fetch();
 
+}
+
 if (!$student) {
     $GLOBALS['security_audit_outcome'] = 'denied';
     setFlash('danger', 'Student not found.');
@@ -30,6 +40,15 @@ if (!$student) {
     exit;
 }
 
+if ($reportContext['managed']) {
+    $records=array_values(array_filter($reportContext['data']['attendance'],fn($r)=>$r['student_id']===$id && $r['enrollment_id']===(int)$student['enrollment_id']));
+    $summary=['total_days'=>count($records),'full_day'=>0,'partial'=>0,'absent'=>0,'late_count'=>0];
+    foreach ($records as $record) {
+        if (isset($summary[$record['attendance_type']])) $summary[$record['attendance_type']]++;
+        if ($record['am_status']==='late' || $record['pm_status']==='late') $summary['late_count']++;
+    }
+    usort($records,fn($a,$b)=>strcmp($b['date'],$a['date'])); $recent=array_slice($records,0,10);
+} else {
 // Attendance summary using new columns
 $summary = $db->prepare("
     SELECT
@@ -54,6 +73,8 @@ $recent = $db->prepare("
 $recent->execute(array_merge([$id], $scopeParams));
 $recent = $recent->fetchAll();
 
+}
+
 // Attendance rate (full_day = 1, partial = 0.5)
 $attended = ($summary['full_day'] ?? 0) + (($summary['partial'] ?? 0) * 0.5);
 $rate     = $summary['total_days'] > 0
@@ -63,6 +84,7 @@ $rate     = $summary['total_days'] > 0
 $pageTitle = 'Student — ' . $student['first_name'];
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <?php showFlash(); ?>
@@ -93,7 +115,7 @@ include '../includes/sidebar.php';
     <div class="col-lg-4">
         <div class="card text-center">
             <div class="card-body p-4">
-                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?>"
+                <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?><?= isset($student['enrollment_id']) ? '&amp;enrollment_id='.(int)$student['enrollment_id'] : '' ?>"
                      class="rounded-circle mb-3"
                      style="width:110px;height:110px;object-fit:cover;border:4px solid #1a56db">
 
