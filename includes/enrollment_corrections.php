@@ -51,11 +51,36 @@ function lockEnrollmentCorrectionRows(PDO $db,array $actor,int $enrollmentId): a
     $q=$db->prepare('SELECT id,student_id,school_year_id,state,starts_on,ends_on,version FROM student_enrollments WHERE student_id=? ORDER BY id FOR UPDATE'); $q->execute([$studentId]); $enrollments=$q->fetchAll(PDO::FETCH_ASSOC);
     $ids=array_column($enrollments,'id'); $marks=implode(',',array_fill(0,count($ids),'?'));
     $q=$db->prepare("SELECT id,enrollment_id,section_id,grade_level,starts_on,ends_on,version FROM enrollment_sections WHERE enrollment_id IN ($marks) ORDER BY id FOR UPDATE"); $q->execute($ids); $assignments=$q->fetchAll(PDO::FETCH_ASSOC);
-    $q=$db->prepare('SELECT id,student_id,enrollment_id,assignment_id,date,am_in,am_out,am_status,pm_in,pm_out,pm_status,attendance_type,remarks,recorded_by FROM attendance WHERE student_id=? ORDER BY student_id,date,id FOR UPDATE'); $q->execute([$studentId]); $attendance=$q->fetchAll(PDO::FETCH_ASSOC);
+    // Nullable composite keys permit assignment-only references, including rows
+    // belonging to another student. Include every reference before declaring unused.
+    $attendanceWhere="student_id=? OR enrollment_id IN ($marks)"; $attendanceParams=array_merge([$studentId],$ids);
+    if ($assignments) {
+        $assignmentIds=array_column($assignments,'id'); $assignmentMarks=implode(',',array_fill(0,count($assignmentIds),'?'));
+        $attendanceWhere.=" OR assignment_id IN ($assignmentMarks)"; $attendanceParams=array_merge($attendanceParams,$assignmentIds);
+    }
+    $q=$db->prepare("SELECT id,student_id,enrollment_id,assignment_id,date,am_in,am_out,am_status,pm_in,pm_out,pm_status,attendance_type,remarks,recorded_by FROM attendance WHERE $attendanceWhere ORDER BY student_id,date,id FOR UPDATE"); $q->execute($attendanceParams); $attendance=$q->fetchAll(PDO::FETCH_ASSOC);
     $q=$db->prepare("SELECT id,batch_id,source_enrollment_id,destination_enrollment_id,target_year_id,outcome,state,version FROM moving_up_decisions WHERE source_enrollment_id IN ($marks) OR destination_enrollment_id IN ($marks) ORDER BY id FOR UPDATE"); $q->execute(array_merge($ids,$ids)); $decisions=$q->fetchAll(PDO::FETCH_ASSOC);
     $q=$db->prepare('SELECT student_id,section_id,report_month,report_year,remark_ciphertext,version FROM sf2_remarks WHERE student_id=? ORDER BY section_id,report_year,report_month FOR UPDATE'); $q->execute([$studentId]); $remarks=$q->fetchAll(PDO::FETCH_ASSOC);
     requireMovingUpAdmin($db,$actor,true);
     if (count(array_filter($years,fn($year)=>$year['state']==='active'))!==1) throw new DomainException('One active managed year is required.');
+    $annualById=array_column($enrollments,null,'id'); $assignmentById=array_column($assignments,null,'id'); $yearById=array_column($years,null,'id');
+    foreach ($attendance as $scan) {
+        if ((int)$scan['student_id']!==$studentId) throw new DomainException('Attendance references another student\'s enrollment or assignment. Resolve ownership before correction.');
+        $annual=$scan['enrollment_id']===null ? null : ($annualById[$scan['enrollment_id']] ?? null);
+        $assignment=$scan['assignment_id']===null ? null : ($assignmentById[$scan['assignment_id']] ?? null);
+        if (($scan['enrollment_id']!==null && !$annual) || ($scan['assignment_id']!==null && !$assignment)) throw new DomainException('Attendance references inconsistent enrollment ownership. Resolve ownership before correction.');
+        if ($assignment) {
+            $assignmentAnnual=$annualById[$assignment['enrollment_id']] ?? null;
+            if (!$assignmentAnnual || ($annual && (int)$annual['id']!==(int)$assignmentAnnual['id']) || $scan['date']<$assignment['starts_on'] || $scan['date']>$assignment['ends_on']) throw new DomainException('Attendance does not match its referenced assignment or dates. Resolve ownership before correction.');
+            $annual=$assignmentAnnual;
+        }
+        if ($annual) {
+            $annualYear=$yearById[$annual['school_year_id']] ?? null;
+            if (!$annualYear || (int)$annual['student_id']!==$studentId || $scan['date']<max($annual['starts_on'],$annualYear['starts_on']) || $scan['date']>min($annual['ends_on'],$annualYear['ends_on'])) throw new DomainException('Attendance does not match its referenced enrollment or year dates. Resolve ownership before correction.');
+        }
+        // Coherent missing ownership remains eligible only for an explicit reviewed
+        // exact-ID repair. This validation never infers or writes missing IDs.
+    }
     securityAuditContext((int)$actor['id']);
     return compact('years','sections','student','enrollments','assignments','attendance','decisions','remarks');
 }
@@ -79,7 +104,8 @@ function enrollmentCorrectionSnapshot(array $locked,int $enrollmentId,array $com
             || $a['starts_on']<$e['starts_on'] || $a['ends_on']>$e['ends_on'] || $a['starts_on']>$a['ends_on'] || ($previous!==null && $a['starts_on']<=$previous)) throw new DomainException('Existing assignments need an unambiguous bounded correction.');
         $previous=$a['ends_on'];
     }
-    $annualAttendance=array_values(array_filter($locked['attendance'],fn($a)=>(int)$a['enrollment_id']===$enrollmentId || ($a['date']>=$e['starts_on'] && $a['date']<=$e['ends_on'])));
+    $assignmentIds=array_map('intval',array_column($assignments,'id'));
+    $annualAttendance=array_values(array_filter($locked['attendance'],fn($a)=>(int)$a['enrollment_id']===$enrollmentId || in_array((int)$a['assignment_id'],$assignmentIds,true) || ($a['date']>=$e['starts_on'] && $a['date']<=$e['ends_on'])));
     if ($direct && ($year['state']!=='planned' || !in_array($e['state'],['prepared','cancelled'],true) || $annualAttendance || !in_array($command['kind'],['cancel','reassign'],true))) throw new DomainException('Direct revision requires a prepared destination without attendance. Use reviewed correction.');
     $segments=[]; $affected=[]; $assignment=null; $remark=null; $decisionChanges=[];
     if ($command['kind']==='cancel') {

@@ -333,5 +333,77 @@ PHP);
         unlink($worker);
     }
 });
+function correctionOwnershipState(PDO $db): array {
+    $state=[];
+    foreach (['student_enrollments','enrollment_sections','attendance','moving_up_decisions','enrollment_corrections'] as $table) $state[$table]=$db->query("SELECT * FROM $table ORDER BY id")->fetchAll();
+    $state['sf2_remarks']=$db->query('SELECT * FROM sf2_remarks ORDER BY student_id,section_id,report_year,report_month')->fetchAll();
+    return $state;
+}
+function addMalformedCorrectionReference(PDO $db,array $target,string $shape): void {
+    $student=$shape==='same_student_outside_dates' ? 106 : 101;
+    $date=$shape==='same_student_outside_dates' ? '2026-10-22' : '2027-06-01';
+    $db->prepare("INSERT INTO attendance(student_id,date,enrollment_id,assignment_id,am_in,am_status,attendance_type) VALUES(?,?,NULL,?,'07:03:00','present','partial')")->execute([$student,$date,$target['assignment']]);
+}
+foreach (['same_student_outside_dates','foreign_student'] as $shape) {
+    withEnrollmentFixture(function(array $f) use($shape): void {
+        $db=$f['db']; $target=cancelledGradeSixDestination($f); $id=$target['id'];
+        $reassign=['kind'=>'reassign','reason'=>'Reviewed replacement','assignment_id'=>$target['assignment'],'section_id'=>22,'starts_on'=>'2027-06-01','ends_on'=>'2028-03-31'];
+        revisePreparedEnrollment($db,$f['admin'],$id,$reassign,2);
+        $cancel=['kind'=>'cancel','reason'=>'Wrong destination']; $historical=array_replace($reassign,['kind'=>'historical_assignment']);
+        $remark=['kind'=>'sf2_remark','reason'=>'Historical note','section_id'=>16,'report_month'=>10,'report_year'=>2026,'remark'=>'Synthetic note','expected_remark_version'=>0];
+        $previews=[];
+        foreach ([$cancel,$reassign,$historical] as $change) $previews[]=previewEnrollmentCorrection($db,$f['admin'],$id,$change);
+        $previews[]=previewEnrollmentCorrection($db,$f['admin'],1006,$remark);
+        addMalformedCorrectionReference($db,$target,$shape); $before=correctionOwnershipState($db);
+        $operations=[
+            'direct cancellation'=>fn()=>revisePreparedEnrollment($db,$f['admin'],$id,$cancel,3),
+            'direct reassignment'=>fn()=>revisePreparedEnrollment($db,$f['admin'],$id,$reassign,3),
+            'reviewed cancellation preview'=>fn()=>previewEnrollmentCorrection($db,$f['admin'],$id,$cancel),
+            'reviewed reassignment preview'=>fn()=>previewEnrollmentCorrection($db,$f['admin'],$id,$reassign),
+            'historical assignment preview'=>fn()=>previewEnrollmentCorrection($db,$f['admin'],$id,$historical),
+            'SF2 preview'=>fn()=>previewEnrollmentCorrection($db,$f['admin'],1006,$remark)
+        ];
+        foreach ($previews as $index=>$preview) $operations['confirmation '.$index]=fn()=>applyEnrollmentCorrection($db,$f['admin'],$preview['correction_id'],$preview['fingerprint']);
+        foreach ($operations as $name=>$operation) {
+            expectEnrollmentError(DomainException::class,$operation);
+            checkEnrollment(correctionOwnershipState($db)===$before,'Malformed assignment reference leaves annual, assignments, scans and correction state unchanged: '.$shape.' '.$name);
+        }
+    });
+    withEnrollmentFixture(function(array $f) use($shape): void {
+        $db=$f['db']; $target=cancelledGradeSixDestination($f);
+        $restore=['kind'=>'reassign','reason'=>'Restore retained destination','assignment_id'=>$target['assignment'],'section_id'=>22,'starts_on'=>'2027-06-01','ends_on'=>'2028-03-31'];
+        $preview=previewEnrollmentCorrection($db,$f['admin'],$target['id'],$restore);
+        addMalformedCorrectionReference($db,$target,$shape); $before=correctionOwnershipState($db);
+        foreach ([fn()=>revisePreparedEnrollment($db,$f['admin'],$target['id'],$restore,2),fn()=>previewEnrollmentCorrection($db,$f['admin'],$target['id'],$restore),fn()=>applyEnrollmentCorrection($db,$f['admin'],$preview['correction_id'],$preview['fingerprint'])] as $operation) {
+            expectEnrollmentError(DomainException::class,$operation);
+            checkEnrollment(correctionOwnershipState($db)===$before,'Referenced cancelled destination cannot be reinstated or rewritten: '.$shape);
+        }
+    });
+    withEnrollmentFixture(function(array $f) use($shape): void {
+        $db=$f['db']; $target=cancelledGradeSixDestination($f);
+        $preview=previewMovingUp($db,$f['admin'],$target['command']); $saved=prepareMovingUp($db,$f['admin'],$target['command'],'graduate-reference-fixture',$preview['fingerprint']);
+        addMalformedCorrectionReference($db,$target,$shape); $before=correctionOwnershipState($db);
+        expectEnrollmentError(DomainException::class,fn()=>revisePreparedGraduationDecision($db,$f['admin'],$saved['decision_ids'][0],'Wrong graduation',1));
+        checkEnrollment(correctionOwnershipState($db)===$before,'Common correction locks reject malformed references before decision-only mutation: '.$shape);
+    });
+}
+withEnrollmentFixture(function(array $f): void {
+    $db=$f['db']; $target=cancelledGradeSixDestination($f); $id=$target['id']; $assignment=$target['assignment'];
+    $change=['kind'=>'reassign','reason'=>'Restore retained destination','assignment_id'=>$assignment,'section_id'=>22,'starts_on'=>'2027-06-01','ends_on'=>'2028-03-31'];
+    revisePreparedEnrollment($db,$f['admin'],$id,$change,2);
+    $db->exec("INSERT INTO attendance(id,student_id,date,enrollment_id,assignment_id,am_in,am_status,attendance_type) VALUES(7001,106,'2027-06-01',NULL,$assignment,'07:04:00','present','partial'),(7002,106,'2027-06-02',NULL,NULL,'07:05:00','present','partial')");
+    $before=$db->query('SELECT * FROM attendance WHERE id IN(7001,7002) ORDER BY id')->fetchAll();
+    expectEnrollmentError(DomainException::class,fn()=>revisePreparedEnrollment($db,$f['admin'],$id,['kind'=>'cancel','reason'=>'Referenced destination'],3));
+    expectEnrollmentError(DomainException::class,fn()=>revisePreparedEnrollment($db,$f['admin'],$id,$change,3));
+    $change['kind']='historical_assignment'; $preview=previewEnrollmentCorrection($db,$f['admin'],$id,$change);
+    checkEnrollment($preview['affected_attendance_ids']===[7001,7002],'Coherent missing ownership requires review naming every exact scan ID');
+    applyEnrollmentCorrection($db,$f['admin'],$preview['correction_id'],$preview['fingerprint']);
+    $after=$db->query('SELECT * FROM attendance WHERE id IN(7001,7002) ORDER BY id')->fetchAll();
+    checkEnrollment(array_column($after,'enrollment_id')===[$id,$id] && array_column($after,'assignment_id')===[$assignment,$assignment],'Reviewed correction alone fills coherent null ownership');
+    foreach ($before as &$row) { unset($row['enrollment_id'],$row['assignment_id']); } unset($row);
+    foreach ($after as &$row) { unset($row['enrollment_id'],$row['assignment_id']); } unset($row);
+    checkEnrollment($after===$before,'Coherent ownership repair preserves every original scan value and timestamp');
+    checkEnrollment((int)$db->query("SELECT COUNT(*) FROM security_events WHERE action='enrollment.correct_ownership'")->fetchColumn()===2,'Each reviewed null ownership repair has encrypted before/after audit');
+});
 checkEnrollment($GLOBALS['correction_notifications']===0,'All correction operations send zero notifications');
 echo 'Enrollment corrections final: '.$GLOBALS['enrollment_checks']." checks passed\n";
