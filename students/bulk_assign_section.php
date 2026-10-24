@@ -10,7 +10,7 @@ require_once '../includes/school_years.php';
 $db         = getDB();
 if (enrollmentModelEnabled($db)) {
     http_response_code(409);
-    exit('Annual placements cannot be overwritten. Use Moving Up for a future year; same-year changes require the reviewed enrollment correction flow.');
+    exit('Annual placements cannot be overwritten. Use Moving Up for a future year; same-year changes require the <a href="enrollment_corrections.php">reviewed enrollment correction flow</a>.');
 }
 $sectionId  = (int)($_POST['section_id'] ?? 0);
 $studentIds = $_POST['student_ids'] ?? [];

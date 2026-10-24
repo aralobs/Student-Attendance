@@ -32,6 +32,7 @@ include '../includes/header.php'; include '../includes/sidebar.php';
 <?php showFlash(); ?>
 <div class="page-header"><div><h1 class="page-title">Moving Up</h1><p class="page-subtitle">Prepare a future school-year batch. Current placement and attendance stay unchanged until year activation.</p></div></div>
 <?php if($error): ?><div class="alert alert-danger"><?= sanitize($error) ?></div><?php endif; ?>
+<p><a href="enrollment_corrections.php">Correct or cancel a prepared enrollment or graduation decision</a></p>
 <form method="GET" class="card card-body mb-3">
 <label class="form-label" for="source-year">Source school year</label><select class="form-select mb-2" name="source_year_id" id="source-year">
 <?php foreach($years as $year): if(!in_array($year['state'],['active','closed'],true)) continue; ?><option value="<?= (int)$year['id'] ?>" <?= (int)$year['id']===$sourceYearId?'selected':'' ?>><?= sanitize($year['label']) ?></option><?php endforeach; ?></select>

@@ -46,14 +46,27 @@ function lockMovingUpRows(PDO $db, array $actor, array $command): array
     $marks=implode(',',array_fill(0,count($command['student_ids']),'?'));
     $q=$db->prepare("SELECT id,is_active FROM students WHERE id IN ($marks) ORDER BY id FOR UPDATE"); $q->execute($command['student_ids']); $students=$q->fetchAll(PDO::FETCH_ASSOC);
     $q=$db->prepare("SELECT id,student_id,school_year_id,state,starts_on,ends_on,version FROM student_enrollments WHERE student_id IN ($marks) ORDER BY id FOR UPDATE"); $q->execute($command['student_ids']); $enrollments=$q->fetchAll(PDO::FETCH_ASSOC);
-    $assignments=[]; $decisions=[];
+    $assignments=[]; $attendance=[]; $decisions=[];
     if ($enrollments) {
         $ids=array_column($enrollments,'id'); $em=implode(',',array_fill(0,count($ids),'?'));
         $q=$db->prepare("SELECT id,enrollment_id,section_id,grade_level,starts_on,ends_on,version FROM enrollment_sections WHERE enrollment_id IN ($em) ORDER BY id FOR UPDATE"); $q->execute($ids); $assignments=$q->fetchAll(PDO::FETCH_ASSOC);
+        // A cancelled destination can be replaced by graduation only while unused.
+        // Lock scan validity before decision metadata, including malformed references.
+        $cancelledTargets=array_filter($enrollments,fn($e)=>$command['outcome']==='graduated' && (int)$e['school_year_id']===$command['target_year_id'] && $e['state']==='cancelled');
+        if ($cancelledTargets) {
+            $targetIds=array_map('intval',array_column($cancelledTargets,'id')); $tm=implode(',',array_fill(0,count($targetIds),'?'));
+            $targetAssignments=array_values(array_filter($assignments,fn($a)=>in_array((int)$a['enrollment_id'],$targetIds,true)));
+            $where="student_id IN ($marks) OR enrollment_id IN ($tm)"; $params=array_merge($command['student_ids'],$targetIds);
+            if ($targetAssignments) {
+                $assignmentIds=array_column($targetAssignments,'id'); $am=implode(',',array_fill(0,count($assignmentIds),'?'));
+                $where.=" OR assignment_id IN ($am)"; $params=array_merge($params,$assignmentIds);
+            }
+            $q=$db->prepare("SELECT id,student_id,date,enrollment_id,assignment_id FROM attendance WHERE $where ORDER BY student_id,date,id FOR UPDATE"); $q->execute($params); $attendance=$q->fetchAll(PDO::FETCH_ASSOC);
+        }
         $q=$db->prepare("SELECT * FROM moving_up_decisions WHERE source_enrollment_id IN ($em) ORDER BY id FOR UPDATE"); $q->execute($ids); $decisions=$q->fetchAll(PDO::FETCH_ASSOC);
     }
     requireMovingUpAdmin($db,$actor,true);
-    return compact('years','sections','students','enrollments','assignments','decisions');
+    return compact('years','sections','students','enrollments','assignments','attendance','decisions');
 }
 
 /** Final placement is the unique assignment covering min(enrollment end, source-year end). */
@@ -72,13 +85,21 @@ function movingUpSnapshot(array $locked, array $command): array
         $wanted=$command['outcome']==='retained' ? $grade : $grade+1;
         if ($grade===false || !isset($grades[$wanted]) || !$destination || !(int)$destination['is_active'] || (int)$destination['school_year_id']!==$command['target_year_id'] || $destination['grade_level']!==$grades[$wanted]) throw new DomainException('Choose a same-year destination with the correct outcome grade.');
     }
-    $students=array_column($locked['students'],null,'id'); $rows=[];
+    $students=array_column($locked['students'],null,'id'); $enrollmentsById=array_column($locked['enrollments'],null,'id'); $rows=[];
     foreach ($command['student_ids'] as $studentId) {
         if (!isset($students[$studentId]) || !(int)$students[$studentId]['is_active']) throw new DomainException('Selected student is unavailable.');
-        $enrollment=null;
+        $enrollment=null; $cancelledTarget=null; $cancelledAssignments=[];
         foreach ($locked['enrollments'] as $e) {
             if ((int)$e['student_id']!==$studentId) continue;
-            if ((int)$e['school_year_id']===$command['target_year_id']) throw new DomainException('A target-year enrollment already exists. Use the correction flow.');
+            if ((int)$e['school_year_id']===$command['target_year_id']) {
+                if ($command['outcome']!=='graduated' || $e['state']!=='cancelled') throw new DomainException('A target-year enrollment already exists. Use the correction flow.');
+                $cancelledTarget=$e;
+                $cancelledAssignments=array_values(array_filter($locked['assignments'],fn($a)=>(int)$a['enrollment_id']===(int)$e['id']));
+                $assignmentIds=array_map('intval',array_column($cancelledAssignments,'id'));
+                foreach ($locked['attendance'] as $scan) {
+                    if ((int)$scan['enrollment_id']===(int)$e['id'] || in_array((int)$scan['assignment_id'],$assignmentIds,true) || ((int)$scan['student_id']===$studentId && $scan['date']>=$target['starts_on'] && $scan['date']<=$target['ends_on'])) throw new DomainException('The cancelled destination has attendance. Review enrollment corrections.');
+                }
+            }
             if ((int)$e['school_year_id']===$command['source_year_id']) $enrollment=$e;
         }
         if (!$enrollment || !in_array($enrollment['state'],['active','completed'],true)) throw new DomainException('Student has no eligible source enrollment.');
@@ -94,12 +115,15 @@ function movingUpSnapshot(array $locked, array $command): array
             if ($assignment['starts_on']<=$end && $assignment['ends_on']>=$end) $final[]=$assignment;
         }
         if (count($final)!==1 || (int)$final[0]['section_id']!==$command['source_section_id']) throw new DomainException('Student is outside the selected final-placement roster.');
-        foreach ($locked['decisions'] as $decision) if ((int)$decision['source_enrollment_id']===(int)$enrollment['id'] && (int)$decision['target_year_id']===$command['target_year_id'] && $decision['state']!=='cancelled') throw new DomainException('An outcome is already prepared for this student and target year.');
-        $rows[]=['student_id'=>$studentId,'enrollment_id'=>(int)$enrollment['id'],'assignment_id'=>(int)$final[0]['id'],'section_id'=>$command['source_section_id'],'grade_level'=>$final[0]['grade_level'],'outcome'=>$command['outcome'],'destination_section_id'=>$command['destination_section_id'],'final_on'=>$end,'enrollment'=>$enrollment,'assignments'=>$history];
+        foreach ($locked['decisions'] as $decision) {
+            $decisionSource=$enrollmentsById[$decision['source_enrollment_id']] ?? null;
+            if ((int)($decisionSource['student_id'] ?? 0)===$studentId && (int)$decision['target_year_id']===$command['target_year_id'] && $decision['state']!=='cancelled') throw new DomainException('An outcome already exists for this student and target year.');
+        }
+        $rows[]=['student_id'=>$studentId,'enrollment_id'=>(int)$enrollment['id'],'assignment_id'=>(int)$final[0]['id'],'section_id'=>$command['source_section_id'],'grade_level'=>$final[0]['grade_level'],'outcome'=>$command['outcome'],'destination_section_id'=>$command['destination_section_id'],'final_on'=>$end,'enrollment'=>$enrollment,'assignments'=>$history,'cancelled_target'=>$cancelledTarget,'cancelled_assignments'=>$cancelledAssignments];
     }
     $fingerprint=hash('sha256',json_encode([$command,$source,$target,$section,$destination,$rows],JSON_THROW_ON_ERROR));
     // No profile/contact/QR fields are exposed by this service.
-    $publicRows=array_map(fn($row)=>array_diff_key($row,array_flip(['enrollment','assignments'])),$rows);
+    $publicRows=array_map(fn($row)=>array_diff_key($row,array_flip(['enrollment','assignments','cancelled_target','cancelled_assignments'])),$rows);
     return ['rows'=>$publicRows,'fingerprint'=>$fingerprint,'target'=>$target];
 }
 

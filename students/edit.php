@@ -301,7 +301,7 @@ include '../includes/sidebar.php';
                                 <?php endforeach; ?>
                                 <?php if ($currentGrade !== '') echo '</optgroup>'; ?>
                             </select>
-                            <?php if ($managedEnrollment): ?><small class="text-muted">Placement changes use the enrollment workflow.</small><?php elseif (!isAdmin()): ?><small class="text-muted">Contact an administrator to transfer this student.</small><?php endif; ?>
+                            <?php if ($managedEnrollment): ?><small class="text-muted">Placement changes require an administrator. <?php if (isAdmin()): ?><a href="enrollment_corrections.php?student_id=<?= (int)$student['id'] ?>">Review enrollment correction</a><?php endif; ?></small><?php elseif (!isAdmin()): ?><small class="text-muted">Contact an administrator to transfer this student.</small><?php endif; ?>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Address</label>

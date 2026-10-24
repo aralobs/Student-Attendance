@@ -124,20 +124,36 @@ PHP);
                 JOIN information_schema.INNODB_TRX waiting ON waiting.trx_id=w.requesting_trx_id
                 JOIN information_schema.INNODB_TRX holding ON holding.trx_id=w.blocking_trx_id
                 WHERE waiting.trx_mysql_thread_id=? AND holding.trx_mysql_thread_id=?');
-            $deadline=microtime(true)+10; $blocked=false;
+            $probeStarted=microtime(true); $deadline=$probeStarted+10; $blocked=false; $probeReads=0; $firstReadyAt=null; $maxReadSeconds=0.0;
             do {
-                if (is_file($ready)) { $wait->execute([(int)file_get_contents($ready),$holderId]); $blocked=(int)$wait->fetchColumn()>0; }
+                if (is_file($ready)) {
+                    $firstReadyAt ??= microtime(true)-$probeStarted;
+                    $readStarted=microtime(true); $probeReads++;
+                    $wait->execute([(int)file_get_contents($ready),$holderId]); $blocked=(int)$wait->fetchColumn()>0;
+                    $maxReadSeconds=max($maxReadSeconds,microtime(true)-$readStarted);
+                }
                 if ($blocked) break;
-                usleep(10000);
+                // MariaDB trx0i_s.cc requires >100ms without a cache read to
+                // refresh INNODB lock snapshots; faster polling can pin stale data.
+                usleep(200000);
             } while (microtime(true)<$deadline);
             if (!$blocked) {
                 $workerId=is_file($ready) ? (int)file_get_contents($ready) : 0;
-                $state=$observer->prepare('SELECT STATE FROM information_schema.PROCESSLIST WHERE ID=?');
-                $state->execute([$workerId]); $workerState=$state->fetchColumn();
+                // Capture diagnostics before releasing the holder. Connection IDs
+                // and queries belong only to this disposable synthetic fixture.
+                $holderInTransaction=$db->inTransaction();
+                $state=$observer->prepare('SELECT STATE,INFO FROM information_schema.PROCESSLIST WHERE ID=?');
+                $state->execute([$workerId]); $workerProcess=$state->fetch(PDO::FETCH_ASSOC);
+                $workerState=$workerProcess['STATE'] ?? false;
+                $transactions=$observer->prepare('SELECT trx_id,trx_state,trx_started,trx_wait_started,trx_mysql_thread_id,trx_query FROM information_schema.INNODB_TRX WHERE trx_mysql_thread_id IN (?,?)');
+                $transactions->execute([$holderId,$workerId]); $transactionRows=$transactions->fetchAll(PDO::FETCH_ASSOC);
+                $transactionIds=array_column($transactionRows,'trx_id');
+                $waitRows=array_values(array_filter($observer->query('SELECT requesting_trx_id,blocking_trx_id FROM information_schema.INNODB_LOCK_WAITS')->fetchAll(PDO::FETCH_ASSOC),fn($row)=>in_array($row['requesting_trx_id'],$transactionIds,true) || in_array($row['blocking_trx_id'],$transactionIds,true)));
+                $diagnostic=['change'=>$change,'elapsed_seconds'=>round(microtime(true)-$probeStarted,3),'observer_reads'=>$probeReads,'first_ready_seconds'=>$firstReadyAt,'max_read_seconds'=>$maxReadSeconds,'holder_in_transaction'=>$holderInTransaction,'holder_id'=>$holderId,'worker_id'=>$workerId,'worker_process'=>$workerProcess,'transactions'=>$transactionRows,'waits'=>$waitRows];
                 $db->rollBack();
                 $output=stream_get_contents($pipes[1]); $errors=stream_get_contents($pipes[2]);
                 fclose($pipes[1]); fclose($pipes[2]); $pipes=[]; $exit=proc_close($worker); $worker=null;
-                throw new RuntimeException('Remark lock probe did not observe wait; ready='.(int)($workerId>0).'; state='.($workerState===false ? 'disconnected' : $workerState).'; exit='.$exit.'; saved='.(int)str_starts_with($output,'SAVED').'; denied='.(int)str_starts_with($output,'DENIED').'; errors='.$errors);
+                throw new RuntimeException('Remark lock probe did not observe wait; ready='.(int)($workerId>0).'; state='.($workerState===false ? 'disconnected' : $workerState).'; exit='.$exit.'; saved='.(int)str_starts_with($output,'SAVED').'; denied='.(int)str_starts_with($output,'DENIED').'; errors='.$errors.'; diagnostic='.json_encode($diagnostic,JSON_THROW_ON_ERROR));
             }
             checkEnrollment(true,'Remark worker reaches an observed InnoDB wait on the held year');
             $sectionAvailable=false;

@@ -372,6 +372,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 <li class="nav-section-label mt-2">ADMIN</li>
                 <?php if (enrollmentModelEnabled(getDB())): ?>
                 <li class="nav-item"><a href="<?= BASE_URL ?>students/moving_up.php" class="nav-link <?= $currentFile === 'moving_up.php' ? 'active' : '' ?>"><i class="bi bi-arrow-up-right-circle me-2"></i>Moving Up</a></li>
+                <li class="nav-item"><a href="<?= BASE_URL ?>students/enrollment_corrections.php" class="nav-link <?= $currentFile === 'enrollment_corrections.php' ? 'active' : '' ?>"><i class="bi bi-pencil-square me-2"></i>Enrollment Corrections</a></li>
                 <?php endif; ?>
 
                 <li class="nav-item">
