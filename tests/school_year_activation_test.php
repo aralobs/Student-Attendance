@@ -26,6 +26,13 @@ withEnrollmentFixture(function($f) {
     $attendance=$db->query('SELECT * FROM attendance ORDER BY id')->fetchAll();
     $assignments=$db->query('SELECT * FROM enrollment_sections ORDER BY id')->fetchAll();
     $p=schoolYearActivationPreview($db,$f['admin'],2);
+    $db->exec('UPDATE users SET is_active=2,session_token=NULL WHERE id=1');
+    $before=[];
+    foreach (['school_years','sections','students','student_enrollments','enrollment_sections','attendance','moving_up_batches','moving_up_decisions','system_settings','security_events','security_change_history'] as $table) $before[$table]=$db->query("SELECT * FROM $table")->fetchAll();
+    expectEnrollmentError(DomainException::class,fn()=>schoolYearActivationPreview($db,$f['admin'],2));
+    expectEnrollmentError(DomainException::class,fn()=>activateSchoolYear($db,$f['admin'],2,$p['fingerprint']));
+    foreach ($before as $table=>$rows) checkEnrollment($rows===$db->query("SELECT * FROM $table")->fetchAll(),'Archived activation actor preserves '.$table);
+    $db->exec('UPDATE users SET is_active=1 WHERE id=1');
     checkEnrollment($p['ready'] && $p['counts']['prepared']===1 && $p['counts']['graduated']===1 && strlen($p['fingerprint'])===64,'Preview counts prepared destinations and graduation metadata');
     $db->exec('UPDATE enrollment_sections SET version=version+1 WHERE enrollment_id IN (SELECT id FROM student_enrollments WHERE school_year_id=2)');
     expectEnrollmentError(DomainException::class,fn()=>activateSchoolYear($db,$f['admin'],2,$p['fingerprint']));

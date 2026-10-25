@@ -154,7 +154,7 @@ function requireSchoolYearActivationAdmin(PDO $db, array $actor, bool $lock=fals
     if (($actor['role'] ?? '')!=='admin' || (int)($actor['id'] ?? 0)<=0) throw new DomainException('School-year activation requires an administrator.');
     $q=$db->prepare('SELECT role,is_active,session_token FROM users WHERE id=?'.($lock?' LOCK IN SHARE MODE':''));
     $q->execute([(int)$actor['id']]); $user=$q->fetch(PDO::FETCH_ASSOC);
-    if (!$user || $user['role']!=='admin' || !(int)$user['is_active']) throw new DomainException('Administrator access has changed.');
+    if (!$user || $user['role']!=='admin' || (int)$user['is_active']!==1) throw new DomainException('Administrator access has changed.');
     if (isset($_SESSION['user_id']) && (int)$_SESSION['user_id']===(int)$actor['id'] && (!is_string($_SESSION['session_token'] ?? null) || !is_string($user['session_token']) || !hash_equals($user['session_token'],$_SESSION['session_token']))) throw new DomainException('Your session has changed. Sign in again.');
 }
 

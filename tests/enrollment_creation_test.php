@@ -44,6 +44,25 @@ withEnrollmentFixture(function ($f) {
     expectEnrollmentError(DomainException::class,fn()=>createAnnualEnrollment($db,$f['admin'],$newId,1,10,'2026-10-22','2027-03-31'));
 });
 
+withEnrollmentFixture(function ($f) {
+    $db=$f['db'];
+    $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES ('enrollment_model_version','1') ON DUPLICATE KEY UPDATE setting_value='1'");
+    $db->exec('UPDATE users SET is_active=2,session_token=NULL WHERE id=8');
+    $before=$db->query('SELECT * FROM sections ORDER BY id')->fetchAll();
+    $events=$db->query('SELECT * FROM security_events')->fetchAll();
+    $history=$db->query('SELECT * FROM security_change_history')->fetchAll();
+    foreach ([[10=>8],[10=>1,11=>8]] as $assignments) {
+        expectEnrollmentError(DomainException::class,fn()=>saveEnrollmentSectionAdvisers($db,$f['admin'],$assignments));
+        checkEnrollment($before===$db->query('SELECT * FROM sections ORDER BY id')->fetchAll(),'Archived adviser rejects the entire batch including an earlier valid assignment');
+        checkEnrollment($events===$db->query('SELECT * FROM security_events')->fetchAll() && $history===$db->query('SELECT * FROM security_change_history')->fetchAll(),'Rejected adviser batch writes no audit records');
+    }
+    $db->exec('UPDATE users SET is_active=2,session_token=NULL WHERE id=1');
+    expectEnrollmentError(DomainException::class,fn()=>saveEnrollmentSectionAdvisers($db,$f['admin'],[10=>7]));
+    $db->exec('UPDATE users SET is_active=1 WHERE id IN (1,8)');
+    saveEnrollmentSectionAdvisers($db,$f['admin'],[10=>1,11=>7]);
+    checkEnrollment((int)$db->query('SELECT adviser_id FROM sections WHERE id=10')->fetchColumn()===1 && (int)$db->query('SELECT adviser_id FROM sections WHERE id=11')->fetchColumn()===7,'Active administrator and teacher remain valid advisers');
+});
+
 /** Real adapters and command services, copied into a disposable application fixture. */
 function enrollmentEndpointChecks(array $f): void
 {

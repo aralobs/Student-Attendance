@@ -14,7 +14,10 @@ $sourceYearId=(int)($input['source_year_id'] ?? 0);
 if (!$sourceYearId) foreach($years as $year) if($year['state']==='active') $sourceYearId=(int)$year['id'];
 $sourceYear=null; foreach($years as $year) if((int)$year['id']===$sourceYearId) $sourceYear=$year;
 $targetYearId=(int)($input['target_year_id'] ?? 0);
-if (!$targetYearId && $sourceYear) foreach($years as $year) if($year['state']==='planned' && $year['starts_on']>$sourceYear['ends_on']) { $targetYearId=(int)$year['id']; break; }
+if (!$targetYearId && $sourceYear) {
+    $nextLabel=nextSchoolYearLabel($sourceYear['label']);
+    foreach($years as $year) if($year['state']==='planned' && $year['label']===$nextLabel) { $targetYearId=(int)$year['id']; break; }
+}
 $targetYear=null; foreach($years as $year) if((int)$year['id']===$targetYearId) $targetYear=$year;
 $sourceSectionId=(int)($input['source_section_id'] ?? 0);
 $sections=$db->query('SELECT id,section_name,grade_level,school_year_id,is_active FROM sections ORDER BY grade_level,section_name,id')->fetchAll();

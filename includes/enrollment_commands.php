@@ -161,7 +161,7 @@ function saveEnrollmentSectionAdvisers(PDO $db, array $actor, array $assignments
         $select=$db->prepare('SELECT role,is_active FROM users WHERE id=? LOCK IN SHARE MODE');
         foreach ($users as $id) {
             $select->execute([$id]); $user=$select->fetch();
-            if (!$user || !(int)$user['is_active'] || !in_array($user['role'],['admin','teacher'],true)
+            if (!$user || (int)$user['is_active']!==1 || !in_array($user['role'],['admin','teacher'],true)
                 || $id===(int)$actor['id'] && $user['role']!=='admin') throw new DomainException('Choose an active authorized adviser.');
         }
         securityAuditContext((int)$actor['id']);

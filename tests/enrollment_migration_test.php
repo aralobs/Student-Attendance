@@ -3,6 +3,47 @@ declare(strict_types=1);
 require_once __DIR__ . '/support/enrollment_fixture.php';
 if (is_file(__DIR__ . '/../includes/enrollment_migration.php')) require_once __DIR__ . '/../includes/enrollment_migration.php';
 
+foreach (['closed','active'] as $yearState) {
+    foreach ([[null,2001],[1001,null],[null,null],[1001,2001]] as [$annualId,$assignmentId]) {
+        withEnrollmentFixture(function (array $f) use ($yearState,$annualId,$assignmentId): void {
+            $db=$f['db']; $annualState=$yearState==='closed'?'completed':'active';
+            $db->prepare('UPDATE school_years SET state=? WHERE id=1')->execute([$yearState]);
+            $db->prepare('UPDATE student_enrollments SET state=? WHERE school_year_id=1')->execute([$annualState]);
+            $db->prepare('UPDATE attendance SET enrollment_id=?,assignment_id=? WHERE id=501')->execute([$annualId,$assignmentId]);
+            $map=['inventory_fingerprint'=>inventoryEnrollmentHistory($db)['fingerprint'],
+                'school_years'=>[['id'=>1,'label'=>'2026-2027','starts_on'=>'2026-06-01','ends_on'=>'2027-03-31']],
+                'sections'=>[],
+                'enrollments'=>[['key'=>'current','student_id'=>101,'school_year_id'=>1,'state'=>$annualState,'starts_on'=>'2026-06-01','ends_on'=>'2027-03-31',
+                    'assignments'=>[['key'=>'current-a','section_id'=>10,'grade_level'=>'Grade 3','starts_on'=>'2026-06-01','ends_on'=>'2027-03-31']]]],
+                'attendance'=>[['attendance_id'=>501,'assignment_key'=>'current-a']]];
+            $snapshot=static function() use ($db): array {
+                $state=[];
+                foreach (['school_years','sections','students','student_enrollments','enrollment_sections','attendance','enrollment_migration_issues','security_events','security_change_history','sms_logs'] as $table) {
+                    $state[$table]=$db->query("SELECT * FROM $table")->fetchAll();
+                }
+                return $state;
+            };
+            $before=$snapshot();
+            if ($yearState==='closed' && ($annualId===null || $assignmentId===null)) {
+                expectEnrollmentError(DomainException::class,fn()=>applyEnrollmentMappings($db,$f['admin'],$map));
+                checkEnrollment($before===$snapshot(),'Closed-year partial ownership rejection preserves scans, profiles, issues and audit atomically');
+            } else {
+                $expected=['enrollments'=>['current'=>1001],'assignments'=>['current-a'=>2001]];
+                checkEnrollment(applyEnrollmentMappings($db,$f['admin'],$map)===$expected,'Open partial repair and fully owned replay resolve existing ownership');
+                $scan=$db->query('SELECT * FROM attendance WHERE id=501')->fetch();
+                $expectedScan=$before['attendance'][0]; $expectedScan['enrollment_id']=1001; $expectedScan['assignment_id']=2001;
+                checkEnrollment($scan===$expectedScan,'Mapping changes only missing ownership, preserving every raw scan field and timestamp');
+                $after=$snapshot();
+                checkEnrollment(applyEnrollmentMappings($db,$f['admin'],$map)===$expected && $after===$snapshot(),'Fully owned identical replay preserves all records, issues and audit');
+                if ($annualId!==null && $assignmentId!==null) {
+                    checkEnrollment($before['security_events']===$after['security_events'] && $before['security_change_history']===$after['security_change_history'],'Already owned replay creates no mutation audit');
+                }
+            }
+            checkEnrollment((int)$db->query('SELECT COUNT(*) FROM sms_logs')->fetchColumn()===0,'Ownership mapping cases send no notifications');
+        });
+    }
+}
+
 withEnrollmentFixture(function (array $f): void {
     $db = $f['db'];
     checkEnrollment(function_exists('inventoryEnrollmentHistory'), 'Migration inventory service is available');
@@ -134,6 +175,13 @@ withEnrollmentFixture(function (array $f): void {
         $map=['inventory_fingerprint'=>$inventory['fingerprint'],'school_years'=>[],'sections'=>[],'enrollments'=>[],'attendance'=>[]];
         file_put_contents($mapPath,json_encode($map,JSON_THROW_ON_ERROR));
         [$exit]=$run(['--apply-map='.$mapPath,'--actor-id=7']); checkEnrollment($exit!==0,'CLI rejects teacher attribution');
+        $f['db']->exec('UPDATE users SET is_active=2,session_token=NULL WHERE id=1');
+        $beforeIssues=$f['db']->query('SELECT * FROM enrollment_migration_issues')->fetchAll();
+        $beforeAudit=$f['db']->query('SELECT * FROM security_events')->fetchAll();
+        [$exit]=$run(['--apply-map='.$mapPath,'--actor-id=1']); checkEnrollment($exit!==0,'CLI rejects archived administrator attribution without a web session');
+        expectEnrollmentError(DomainException::class,fn()=>applyEnrollmentMappings($f['db'],$f['admin'],$map));
+        checkEnrollment($beforeIssues===$f['db']->query('SELECT * FROM enrollment_migration_issues')->fetchAll() && $beforeAudit===$f['db']->query('SELECT * FROM security_events')->fetchAll(),'Archived migration actor changes neither issues nor audit');
+        $f['db']->exec('UPDATE users SET is_active=1 WHERE id=1');
         [$exit,$out,$err]=$run(['--apply-map='.$mapPath,'--actor-id=1']); checkEnrollment($exit===0 && $err==='','CLI verifies active administrator and applies mapping');
         [$exit,$out,$err]=$run(['--readiness=1','--output='.$private.'-readiness']); checkEnrollment($exit===0 && $err==='','CLI exports ID-only readiness to private file');
     } finally {

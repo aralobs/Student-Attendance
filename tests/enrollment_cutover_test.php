@@ -65,6 +65,12 @@ withEnrollmentFixture(function(array $f): void {
     try { expectEnrollmentError(LogicException::class,fn()=>enrollmentInitializationPreview($db,$f['admin'],1)); }
     finally { $db->rollBack(); }
     $preview=enrollmentInitializationPreview($db,$f['admin'],1);
+    $db->exec('UPDATE users SET is_active=2,session_token=NULL WHERE id=1');
+    $before=cutoverState($db);
+    expectEnrollmentError(DomainException::class,fn()=>enrollmentInitializationPreview($db,$f['admin'],1));
+    expectEnrollmentError(DomainException::class,fn()=>initializeEnrollmentModel($db,$f['admin'],1,$preview['fingerprint']));
+    [$exit]=cutoverCli($f,['--initialize=1','--fingerprint='.$preview['fingerprint'],'--actor-id=1']);
+    checkEnrollment($exit!==0 && $before===cutoverState($db),'Archived administrator cannot initialize through CLI or service and leaves all state unchanged');
     $db->exec('UPDATE users SET is_active=0 WHERE id=1');
     expectEnrollmentError(DomainException::class,fn()=>initializeEnrollmentModel($db,$f['admin'],1,$preview['fingerprint']));
     $db->exec('UPDATE users SET is_active=1 WHERE id=1');

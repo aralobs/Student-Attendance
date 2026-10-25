@@ -106,6 +106,21 @@ PHP);
         $r=$run('students/save_moving_up.php',$f['admin'],$post); checkEnrollment($r['status']===409,'Mode 0 rejects direct preparation POST');
         $r=$run('students/moving_up.php',$f['admin'],[],[],'GET'); checkEnrollment($r['status']===409,'Mode 0 hides annual moving-up UI');
         enableMovingFixture($db);
+        $db->exec("INSERT INTO school_years(id,label,starts_on,ends_on,state) VALUES(3,'2028-2029','2028-06-05','2029-03-29','planned')");
+        $getSource=['source_year_id'=>1,'source_section_id'=>10];
+        $r=$run('students/moving_up.php',$f['admin'],[],$getSource,'GET');
+        checkEnrollment(preg_match('/<option value="2" selected>2027-2028/',$r['body'])===1 && !str_contains($r['body'],'Create school year'),'Default selects the managed immediately following label');
+        // Leave a later planned year while the immediately following label is absent.
+        $db->exec("UPDATE school_years SET label='2029-2030' WHERE id=2");
+        $r=$run('students/moving_up.php',$f['admin'],[],$getSource,'GET');
+        preg_match('/<select[^>]*id="target-year"[^>]*>(.*?)<\/select>/s',$r['body'],$targetSelect);
+        checkEnrollment(isset($targetSelect[1]) && preg_match('/<option value="[1-9][0-9]*"\s+selected/',$targetSelect[1])===0 && str_contains($r['body'],'Create school year') && !str_contains($r['body'],'Preview batch'),'Missing immediate label leaves target unset and offers creation even with later planned years');
+        $r=$run('students/moving_up.php',$f['admin'],[],$getSource+['target_year_id'=>3],'GET');
+        checkEnrollment(preg_match('/<option value="3" selected>2028-2029/',$r['body'])===1 && str_contains($r['body'],'Preview batch') && !str_contains($r['body'],'Create school year'),'Explicit later planned target remains selected when the immediate label is absent');
+        $db->exec("UPDATE school_years SET label='2027-2028' WHERE id=2");
+        $r=$run('students/moving_up.php',$f['admin'],[],$getSource+['target_year_id'=>3],'GET');
+        checkEnrollment(preg_match('/<option value="3" selected>2028-2029/',$r['body'])===1 && str_contains($r['body'],'2028-06-05 through 2029-03-29'),'Explicit selection overrides matching-label default and displays stored verified dates');
+        $db->exec('DELETE FROM school_years WHERE id=3');
         foreach(['students/moving_up.php','students/save_moving_up.php','students/bulk_assign_section.php'] as $endpoint) {
             $r=$run($endpoint,$f['teacher'],$post); checkEnrollment($r['status']===403,'Teacher direct POST is unauthorized: '.$endpoint);
         }
@@ -135,4 +150,16 @@ PHP);
     } finally { foreach($files as $file) unlink($path.'/'.$file); foreach(['/students','/includes','/config',''] as $dir) rmdir($path.$dir); }
 }
 withEnrollmentFixture('movingUpEndpointChecks');
+withEnrollmentFixture(function($f) {
+    $db=$f['db']; enableMovingFixture($db); $cmd=movingCommand();
+    $preview=previewMovingUp($db,$f['admin'],$cmd);
+    $db->exec('UPDATE users SET is_active=2,session_token=NULL WHERE id=1');
+    $before=[];
+    foreach (['school_years','sections','students','student_enrollments','enrollment_sections','attendance','moving_up_batches','moving_up_decisions','security_events','security_change_history'] as $table) $before[$table]=$db->query("SELECT * FROM $table")->fetchAll();
+    expectEnrollmentError(DomainException::class,fn()=>previewMovingUp($db,$f['admin'],$cmd));
+    expectEnrollmentError(DomainException::class,fn()=>prepareMovingUp($db,$f['admin'],$cmd,'archived-admin',$preview['fingerprint']));
+    expectEnrollmentError(DomainException::class,fn()=>listMovingUpSourceRoster($db,$f['admin'],1,10));
+    foreach ($before as $table=>$rows) checkEnrollment($rows===$db->query("SELECT * FROM $table")->fetchAll(),'Archived moving-up actor preserves '.$table);
+    checkEnrollment($GLOBALS['moving_notifications']===0,'Archived moving-up actor sends no notifications');
+});
 echo 'Moving-up behavioral checks passed ('.$GLOBALS['enrollment_checks'].").\n";

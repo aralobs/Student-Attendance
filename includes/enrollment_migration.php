@@ -170,7 +170,7 @@ function applyEnrollmentMappings(PDO $db, array $actor, array $mapping): array
     try {
         if (!$db->query('SELECT id FROM school_year_control WHERE id=1 FOR UPDATE')->fetchColumn()) throw new DomainException('Enrollment schema is not initialized.');
         $user=$db->prepare('SELECT role,is_active FROM users WHERE id=? LOCK IN SHARE MODE'); $user->execute([$actorId]); $user=$user->fetch();
-        if (!$user || $user['role']!=='admin' || !(int)$user['is_active']) throw new DomainException('Migration attribution requires an active administrator.');
+        if (!$user || $user['role']!=='admin' || (int)$user['is_active']!==1) throw new DomainException('Migration attribution requires an active administrator.');
         $locked=[];
         foreach (['school_years','sections','students','student_enrollments','enrollment_sections','attendance'] as $table) {
             $locked[$table]=array_column($db->query("SELECT * FROM $table ORDER BY id FOR UPDATE")->fetchAll(PDO::FETCH_ASSOC),null,'id');
@@ -235,7 +235,7 @@ function applyEnrollmentMappings(PDO $db, array $actor, array $mapping): array
             if (!$attendance || (int)$attendance['student_id']!==$a['student_id'] || $attendance['date']<$a['input']['starts_on'] || $attendance['date']>$a['input']['ends_on']) throw new DomainException('Attendance is outside its explicit owner.');
             if (($attendance['assignment_id']!==null && (int)$attendance['assignment_id']!==(int)($a['existing']['id']??0))
                 || ($attendance['enrollment_id']!==null && (int)$attendance['enrollment_id']!==(int)($planned[$a['enrollment_key']]['existing']['id']??0))) throw new DomainException('Attendance is already owned; use the correction flow.');
-            if ($a['year_state']==='closed' && $attendance['assignment_id']===null) throw new DomainException('Closed years require the correction flow.');
+            if ($a['year_state']==='closed' && ($attendance['assignment_id']===null || $attendance['enrollment_id']===null)) throw new DomainException('Closed years require the correction flow.');
         }
         // All validation has completed. Resolve local keys only inside this locked transaction.
         securityAuditContext($actorId);
