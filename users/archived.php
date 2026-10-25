@@ -67,18 +67,26 @@ include '../includes/sidebar.php';
                         </td>
                         <td>
                             <div class="d-flex gap-1">
-                                <a href="restore.php?id=<?= $u['id'] ?>"
+                                <form method="POST" action="restore.php" class="d-inline" data-confirm="Restore this user? They will reappear in the active list." data-confirm-title="Restore user" data-confirm-label="Restore" data-confirm-tone="success">
+<?= csrfField() ?>
+<input type="hidden" name="id" value="<?= $u['id'] ?>">
+<button type="submit"
                                    class="btn btn-sm btn-outline-success"
-                                   data-confirm="Restore this user? They will reappear in the active list."
-                                   data-confirm-title="Restore user" data-confirm-label="Restore" data-confirm-tone="success">
+
+                                  >
                                     <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
-                                </a>
-                                <a href="delete.php?id=<?= $u['id'] ?>"
+                                </button>
+</form>
+                                <form method="POST" action="delete.php" class="d-inline" data-confirm="PERMANENTLY delete this user? This cannot be undone." data-confirm-title="Delete permanently user" data-confirm-label="Delete permanently" data-confirm-tone="danger">
+<?= csrfField() ?>
+<input type="hidden" name="id" value="<?= $u['id'] ?>">
+<button type="submit"
                                    class="btn btn-sm btn-outline-danger"
-                                   data-confirm="PERMANENTLY delete this user? This cannot be undone."
-                                   data-confirm-title="Delete permanently user" data-confirm-label="Delete permanently" data-confirm-tone="danger">
+
+                                  >
                                     <i class="bi bi-trash"></i>
-                                </a>
+                                </button>
+</form>
                             </div>
                         </td>
                     </tr>

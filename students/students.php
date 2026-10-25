@@ -4,7 +4,9 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+requireStudentManagement();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle = 'Students';
 $db        = getDB();
@@ -20,8 +22,18 @@ $offset    = ($page - 1) * $perPage;
 $gradeSQL  = "COALESCE(NULLIF(s.grade_level, ''), sec.grade_level)";
 
 // Build query
-$where  = ['s.is_active = 1'];
-$params = [];
+$reportContext = prepareEnrollmentDirectory($db, false);
+if ($reportContext['managed']) {
+    if ($reportContext['historical']) $sy=$reportContext['year']['label'];
+    $allRows = enrollmentDirectoryRows($reportContext,$search,$sectionId ?: null,$grade);
+    if (!$reportContext['historical']) $allRows=array_values(array_filter($allRows,fn($row)=>(int)$row['is_active']===1));
+    $total=count($allRows); $students=array_slice($allRows,$offset,$perPage);
+    $sections=$reportContext['sections'];
+    $schoolYears=enrollmentReportYearLabels($db,currentUser());
+} else {
+[$studentScope, $scopeParams] = studentRecordScope('s');
+$where  = ['s.is_active = 1', "({$studentScope})"];
+$params = $scopeParams;
 
 if ($search !== '') {
     $where[]  = "(s.first_name LIKE ? OR s.last_name LIKE ? OR s.lrn LIKE ?)";
@@ -66,20 +78,25 @@ $stmt->execute($params);
 $students = $stmt->fetchAll();
 
 // Sections dropdown
-$sections = $db->query("SELECT * FROM sections WHERE is_active = 1 ORDER BY section_name")->fetchAll();
+$sections = getAllowedSections();
 
 // School years dropdown (distinct)
-$schoolYears = $db->query("
-    SELECT DISTINCT school_year FROM students 
-    WHERE school_year IS NOT NULL AND school_year != '' 
+$yearStmt = $db->prepare("
+    SELECT DISTINCT school_year FROM students s
+    WHERE school_year IS NOT NULL AND school_year != '' AND ({$studentScope})
     ORDER BY school_year DESC
-")->fetchAll(PDO::FETCH_COLUMN);
+");
+$yearStmt->execute($scopeParams);
+$schoolYears = $yearStmt->fetchAll(PDO::FETCH_COLUMN);
+
+}
 
 // Grade levels for filter
 $gradeLevels = ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'];
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <?php showFlash(); ?>
@@ -97,10 +114,12 @@ include '../includes/sidebar.php';
             <i class="bi bi-list-columns-reverse me-1"></i>Master List
         </a>
         <?php if (isAdmin()): ?>
+        <?php if (enrollmentModelEnabled($db)): ?><a href="moving_up.php" class="btn btn-outline-success">Moving Up</a><?php endif; ?>
         <a href="section_advisers.php" class="btn btn-outline-secondary">
             <i class="bi bi-person-badge me-1"></i>Assign Advisers
         </a>
         <?php endif; ?>
+        <?php if (enrollmentModelEnabled($db)): ?><a href="enroll.php" class="btn btn-outline-primary">Returning Student Enrollment</a><?php endif; ?>
         <a href="add.php" class="btn btn-primary">
             <i class="bi bi-person-plus-fill me-1"></i>Add Student
         </a>
@@ -172,6 +191,12 @@ include '../includes/sidebar.php';
 <div class="card mb-3 d-none" id="bulkBar">
     <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
         <span class="me-2"><strong id="bulkCount">0</strong> selected</span>
+        <?php if (enrollmentModelEnabled($db)): ?>
+        <?php if (isAdmin()): ?>
+        <a href="moving_up.php" class="btn btn-sm btn-success">Choose source roster in Moving Up</a>
+        <?php endif; ?>
+        <span class="small text-muted">Same-year placement changes require enrollment correction.</span>
+        <?php else: ?>
         <select class="form-select form-select-sm w-auto" id="bulkSection">
             <option value="">— Assign to section —</option>
             <?php foreach ($sections as $sec): ?>
@@ -183,6 +208,7 @@ include '../includes/sidebar.php';
         <button class="btn btn-sm btn-success" onclick="bulkAssignSection()">
             <i class="bi bi-check2 me-1"></i>Apply
         </button>
+        <?php endif; ?>
         <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
             Clear
         </button>
@@ -200,6 +226,8 @@ include '../includes/sidebar.php';
     </div>
     <div class="card-body p-0">
         <form id="bulkForm" method="POST" action="bulk_assign_section.php">
+<?= csrfField() ?>
+        </form>
         <div class="table-responsive">
             <table class="table table-hover mb-0">
                 <thead>
@@ -232,13 +260,12 @@ include '../includes/sidebar.php';
                     <tr>
                         <td>
                             <input type="checkbox" class="form-check-input row-check"
-                                   name="student_ids[]" value="<?= $s['id'] ?>">
+                                   name="student_ids[]" form="bulkForm" value="<?= $s['id'] ?>">
                         </td>
                         <td class="text-muted"><?= $offset + $i + 1 ?></td>
                         <td>
-                            <img src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($s['photo']) ?>"
-                                 class="student-photo-sm"
-                                 onerror="this.src='https://ui-avatars.com/api/?name=<?= urlencode($s['first_name'].' '.$s['last_name']) ?>&size=40&background=1a56db&color=fff'">
+                            <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$s['id'] ?><?= isset($s['enrollment_id']) ? '&amp;enrollment_id='.(int)$s['enrollment_id'] : '' ?>"
+                                 class="student-photo-sm">
                         </td>
                         <td><code><?= sanitize($s['lrn']) ?></code></td>
                         <td class="fw-600">
@@ -269,7 +296,7 @@ include '../includes/sidebar.php';
                         </td>
                         <td>
                             <div class="d-flex gap-1">
-                                <a href="view.php?id=<?= $s['id'] ?>"
+                                <a href="view.php?id=<?= $s['id'] ?><?= isset($s['enrollment_id']) ? '&amp;enrollment_id='.(int)$s['enrollment_id'] : '' ?>"
                                    class="btn btn-sm btn-outline-info" title="View">
                                     <i class="bi bi-eye"></i>
                                 </a>
@@ -288,12 +315,16 @@ include '../includes/sidebar.php';
                                 </a>
                                 <?php endif; ?>
                                 <?php if (isAdmin()): ?>
-                                <a href="archive.php?id=<?= (int)$s['id'] ?>" class="btn btn-sm btn-outline-warning"
+                                <form method="POST" action="archive.php" class="d-inline">
+<?= csrfField() ?>
+<input type="hidden" name="id" value="<?= (int)$s['id'] ?>">
+<button type="submit" class="btn btn-sm btn-outline-warning"
                                         data-confirm="Archive &quot;<?= sanitize($s['first_name'].' '.$s['last_name']) ?>&quot;? They will be moved to the archived list and can be restored later."
                                         data-confirm-title="Archive student" data-confirm-label="Archive" data-confirm-tone="warning"
                                         title="Archive">
                                     <i class="bi bi-archive"></i>
-                                </a>
+                                </button>
+</form>
                                 <?php endif; ?>
                             </div>
                         </td>
@@ -303,7 +334,6 @@ include '../includes/sidebar.php';
                 </tbody>
             </table>
         </div>
-        </form>
     </div>
     <?php if ($total > $perPage): ?>
     <div class="card-footer d-flex justify-content-between align-items-center py-2">

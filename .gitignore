@@ -1,5 +1,6 @@
 # Composer dependencies (reinstall with: composer install)
 /vendor/
+/node_modules/
 
 # Uploaded files (don't commit student photos/QR codes)
 /uploads/students/*
@@ -13,6 +14,10 @@
 
 # Environment / sensitive config
 /config/settings_key.php
+/config/pii_key.php
+/storage/private/
+/.qa/
+/deployment/
 # config/database.php is safe to commit — it reads from environment variables
 # config/database.php
 

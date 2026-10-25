@@ -14,6 +14,9 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
+requireStaff();
+require_once '../includes/enrollment_reports.php';
+$user = currentUser();
 
 // ── Allow both admin and teacher ──────────────────────────
 if (!isAdmin() && !isTeacher()) {
@@ -28,9 +31,14 @@ $db            = getDB();
 $month = max(1, min(12, (int)($_GET['month'] ?? date('n'))));
 $year  = max(2020, min(2100, (int)($_GET['year'] ?? date('Y'))));
 
+$reportFrom = sprintf('%04d-%02d-01',$year,$month);
+$reportTo = date('Y-m-t',strtotime($reportFrom));
+$reportContext = prepareEnrollmentReport($db,$reportFrom,$reportTo);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+
 $schoolName    = getSetting('school_name')    ?? 'San Pablo City Central School';
 $schoolAddress = getSetting('school_address') ?? '';
-$schoolYear    = getSetting('school_year')    ?? '';
+$schoolYear    = $reportContext['year']['label'] ?? getSetting('school_year')    ?? '';
 $schoolHead    = getSetting('school_head')    ?? '';
 $monthLabel    = date('F Y', mktime(0, 0, 0, $month, 1, $year));
 $daysInMonth   = cal_days_in_month(CAL_GREGORIAN, $month, $year);
@@ -41,7 +49,7 @@ $schoolDates = [];
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0, 0, 0, $month, $d, $year));
-    if ($dow !== 6 && $dow !== 7 && !isHolidayOrNoClass($ds)) {
+    if ($dow !== 6 && $dow !== 7 && enrollmentReportDay($reportContext, $ds) && !isHolidayOrNoClass($ds)) {
         $schoolDays++;
         $schoolDates[] = $ds;
     }
@@ -49,11 +57,13 @@ for ($d = 1; $d <= $daysInMonth; $d++) {
 
 // --- Cumulative window: SY starts June ---
 $syStartYear    = ($month >= 6) ? $year : ($year - 1);
-$cumulativeFrom = sprintf('%04d-06-01', $syStartYear);
+$cumulativeFrom = $reportContext['year']['starts_on'] ?? sprintf('%04d-06-01', $syStartYear);
 $cumulativeTo   = sprintf('%04d-%02d-01', $year, $month);
 
 // --- Fetch sections (scoped by role) ---
-if (isAdmin()) {
+if ($reportContext['managed']) {
+    $allSections = $reportContext['sections'];
+} elseif (isAdmin()) {
     // Admin — see all active sections
     $allSections = $db->query("
         SELECT s.id, s.section_name, s.grade_level, s.schedule_type,
@@ -73,7 +83,7 @@ if (isAdmin()) {
         WHERE s.is_active = 1 AND s.adviser_id = ?
         ORDER BY " . gradeLevelOrderSQL('s.grade_level') . ", s.section_name
     ");
-    $secStmt->execute([$currentUser['id']]);
+    $secStmt->execute([$user['id']]);
     $allSections = $secStmt->fetchAll();
 }
 
@@ -86,7 +96,7 @@ if (!empty($sectionIds)) {
     // --- 1. Enrollment + gender counts ---
     $enrollStmt = $db->prepare("SELECT section_id, COUNT(*) AS total,
         SUM(gender = 'Male') AS male, SUM(gender = 'Female') AS female
-        FROM students WHERE is_active = 1 AND section_id IN ($placeholders) GROUP BY section_id");
+        FROM {$reportStudents} s WHERE is_active = 1 AND section_id IN ($placeholders) GROUP BY section_id");
     $enrollStmt->execute($sectionIds);
     $enrollBySection = [];
     foreach ($enrollStmt->fetchAll() as $r) {
@@ -114,8 +124,8 @@ if (!empty($sectionIds)) {
             SUM(CASE
                 WHEN a.attendance_type = 'absent' THEN 1
                 ELSE 0 END) AS p
-        FROM students s
-        INNER JOIN attendance a ON a.student_id = s.id
+        FROM {$reportStudents} s
+        INNER JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
         WHERE s.is_active = 1
           AND s.section_id IN ($placeholders)
           AND a.date >= ? AND a.date < ?
@@ -135,6 +145,12 @@ if (!empty($sectionIds)) {
     }
 
     // --- 3. Cumulative attendance ---
+    $cumStudents = $reportStudents; $cumAttendance = $reportAttendance;
+    if ($reportContext['managed']) {
+        $cumData = loadEnrollmentReport($db,currentUser(),(int)$reportContext['year']['id'],null,$cumulativeFrom,max($cumulativeFrom,date('Y-m-d',strtotime($cumulativeTo.' -1 day'))));
+        $cumSources = enrollmentReportSources($db,$cumData);
+        $cumStudents = $cumSources['students']; $cumAttendance = $cumSources['attendance'];
+    }
     $cumStmt = $db->prepare("
         SELECT
             s.section_id,
@@ -150,8 +166,8 @@ if (!empty($sectionIds)) {
             SUM(CASE
                 WHEN a.attendance_type = 'absent' THEN 1
                 ELSE 0 END) AS p
-        FROM students s
-        INNER JOIN attendance a ON a.student_id = s.id
+        FROM {$cumStudents} s
+        INNER JOIN {$cumAttendance} a ON a.student_id = s.id {$reportJoin}
         WHERE s.is_active = 1
           AND s.section_id IN ($placeholders)
           AND a.date >= ? AND a.date < ?
@@ -182,7 +198,7 @@ if (!empty($sectionIds)) {
         $totalEnrolled = (int)$enr['total'];
         $presentDays   = $mCur['nlp'] + $fCur['nlp'];
         $dailyAvg      = $schoolDays > 0 ? $presentDays / $schoolDays : 0;
-        $possible      = $totalEnrolled * $schoolDays;
+        $possible      = $reportContext['managed'] ? enrollmentReportPossible($reportContext,(int)$sid) : $totalEnrolled * $schoolDays;
         $pct           = $possible > 0 ? round(($presentDays / $possible) * 100, 1) : 0;
 
         $sectionData[] = array_merge($sec, [
@@ -225,12 +241,14 @@ $grand = [
 foreach ($sectionData as $s) {
     foreach ($grand as $k => $_) $grand[$k] += $s[$k] ?? 0;
 }
-$grandPct = ($grand['enrolled_total'] * $schoolDays) > 0
-    ? round(($grand['m_t_nlp'] / ($grand['enrolled_total'] * $schoolDays)) * 100, 1)
+$grandPossible = $reportContext['managed'] ? enrollmentReportPossible($reportContext) : $grand['enrolled_total'] * $schoolDays;
+$grandPct = $grandPossible > 0
+    ? round(($grand['m_t_nlp'] / $grandPossible) * 100, 1)
     : 0;
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <!-- ============ PAGE HEADER ============ -->
@@ -256,6 +274,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print sf4-filter-card">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end" id="sf4FilterForm">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-3">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">

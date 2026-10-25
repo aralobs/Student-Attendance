@@ -31,7 +31,7 @@ if (empty($_SESSION['user_id']) || empty($_SESSION['session_token'])) {
 }
 
 // ── Validate the session ───────────────────────────────────
-$reason = checkSession();
+$reason = checkSession(false);
 if ($reason !== null) {
     $url = BASE_URL . 'index.php?reason=' . urlencode($reason);
     http_response_code(401);

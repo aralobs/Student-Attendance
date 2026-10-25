@@ -115,12 +115,12 @@ function generateQRCodeBase64(string $data, int $size = 200): string {
 
 /**
  * Serve a QR code directly as HTTP image response.
- * Call this from a dedicated endpoint like qr_image.php?token=XXX
+ * Call only after authorizing the student, e.g. qr_image.php?id=123.
  *
  * @param string $data
  * @param int    $size
  */
-function serveQRCode(string $data, int $size = 300): void {
+function serveQRCode(string $data, int $size = 300, bool $download = false): void {
     try {
         if (extension_loaded('imagick')) {
             $renderer = new ImageRenderer(
@@ -129,7 +129,8 @@ function serveQRCode(string $data, int $size = 300): void {
             );
             $writer = new Writer($renderer);
             header('Content-Type: image/png');
-            header('Cache-Control: public, max-age=86400');
+            header('Cache-Control: no-store, private');
+            if ($download) header('Content-Disposition: attachment; filename="student-qr.png"');
             echo $writer->writeString($data);
             exit;
         }
@@ -137,7 +138,8 @@ function serveQRCode(string $data, int $size = 300): void {
         // SVG fallback
         $svg = generateQRCodeSVG($data, $size);
         header('Content-Type: image/svg+xml');
-        header('Cache-Control: public, max-age=86400');
+        header('Cache-Control: no-store, private');
+        if ($download) header('Content-Disposition: attachment; filename="student-qr.svg"');
         echo $svg;
         exit;
 

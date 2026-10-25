@@ -5,8 +5,9 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireAdmin();
+requireCsrfPost();
 
-$id = (int)($_GET['id'] ?? 0);
+$id = (int)($_POST['id'] ?? 0);
 
 if ($id <= 0) {
     setFlash('danger', 'Invalid student ID.');
@@ -15,6 +16,15 @@ if ($id <= 0) {
 }
 
 $db   = getDB();
+require_once '../includes/enrollment_operations.php';
+if (enrollmentModelEnabled($db)) {
+    try {
+        $found=setEnrollmentEntityActive($db,currentUser(),'student',$id,false);
+        setFlash($found?'success':'danger',$found?'Record visibility updated.':'Record not found.');
+    } catch (DomainException $error) { setFlash('danger',$error->getMessage()); }
+    catch (Throwable $error) { setFlash('danger','Unable to update the record. Please try again.'); }
+    header('Location: students.php'); exit;
+}
 $stmt = $db->prepare("SELECT * FROM students WHERE id = ? AND is_active = 1");
 $stmt->execute([$id]);
 $student = $stmt->fetch();

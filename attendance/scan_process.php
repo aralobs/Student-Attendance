@@ -1,7 +1,7 @@
 <?php
 /**
  * Scan Process — AJAX endpoint
- * 4-event attendance: AM IN → AM OUT → PM IN → PM OUT
+ * Two scans: morning Time-In and grade-appropriate Time-Out
  * Time-aware event selection (fixes PM-scan-recorded-as-AM bug).
  * Includes 5-minute anti-double-scan lock.
  */
@@ -14,24 +14,35 @@ require_once '../includes/functions.php';
 require_once '../includes/mail_helper.php';
 require_once '../includes/attendance_scan.php';
 requireLogin();
+requireCsrfPost(true);
+requireScannerPermission(true);
 
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    echo json_encode(['success' => false, 'message' => 'Invalid request method.']);
+
+$db = getDB();
+$scannerUser = currentUser();
+enforceAbuseLimits($db, scannerAbuseBuckets($scannerUser), true);
+$GLOBALS['security_audit_outcome'] = 'failure';
+$rawToken = $_POST['token'] ?? null;
+if (!is_string($rawToken) || strlen($rawToken) > 100 || str_contains($rawToken, "\0")) {
+    enforceAbuseLimits($db, scannerProbeBuckets((int)$scannerUser['id'], 1), true);
+    http_response_code(400);
+    echo json_encode(['success' => false, 'message' => 'Invalid QR token.']);
     exit;
 }
-
-$token = trim($_POST['token'] ?? '');
+$token = trim($rawToken);
 if (empty($token)) {
+    enforceAbuseLimits($db, scannerProbeBuckets((int)$scannerUser['id'], 1), true);
+    http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Empty QR token.']);
     exit;
 }
 
-$db    = getDB();
 $today = date('Y-m-d');
 $now   = date('H:i:s');
 
 // ── Holiday check ─────────────────────────────────────────────
 if (isHolidayOrNoClass($today)) {
+    $GLOBALS['security_audit_outcome'] = 'success';
     $entry = getCalendarEntry($today);
     echo json_encode([
         'success' => false,
@@ -41,6 +52,13 @@ if (isHolidayOrNoClass($today)) {
 }
 
 // ── Find student + section schedule ───────────────────────────
+if (enrollmentModelEnabled($db)) {
+    // This boundary supplies today's date; a QR never chooses a historical date.
+    $lookup=$db->prepare('SELECT id FROM students WHERE qr_token=? AND is_active=1');
+    $lookup->execute([$token]); $studentId=$lookup->fetchColumn();
+    $student=$studentId ? enrollmentOperationalStudent($db,(int)$studentId,$today,
+        $scannerUser['role']==='scanner_operator'?null:$scannerUser) : null;
+} else {
 $stmt = $db->prepare("
     SELECT s.*,
            sec.section_name, sec.schedule_type,
@@ -50,12 +68,15 @@ $stmt = $db->prepare("
            sec.pm_out_start, sec.pm_out_end
     FROM students s
     LEFT JOIN sections sec ON s.section_id = sec.id
-    WHERE s.qr_token = ? AND s.is_active = 1
+    WHERE s.qr_token = ? AND s.is_active = 1 AND sec.is_active = 1
+      AND (? = 0 OR sec.adviser_id = ?)
 ");
-$stmt->execute([$token]);
+$stmt->execute([$token, $scannerUser['role'] === 'teacher' ? 1 : 0, (int)$scannerUser['id']]);
 $student = $stmt->fetch();
+}
 
 if (!$student) {
+    enforceAbuseLimits($db, scannerProbeBuckets((int)$scannerUser['id'], 1), true);
     echo json_encode(['success' => false, 'message' => 'Unknown QR code. Student not found.']);
     exit;
 }
@@ -64,32 +85,11 @@ if (empty($student['schedule_type'])) {
     exit;
 }
 
-$scheduleType = $student['schedule_type'];
-$isPastNoon   = $now >= '12:00:00';
-
-// ── Reject scans outside the section's active window ─────────
-if ($scheduleType === 'am_only' && $isPastNoon) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'This is an AM-only section. Attendance is closed for the day.'
-    ]);
-    exit;
-}
-if ($scheduleType === 'pm_only' && !$isPastNoon) {
-    echo json_encode([
-        'success' => false,
-        'message' => 'This is a PM-only section. Attendance opens at noon.'
-    ]);
-    exit;
-}
-
-// ── Existing attendance row ──────────────────────────────────
-// Selection, cooldown and saving share the same student/date row lock.
-$section = [
-    'schedule_type'     => $student['schedule_type'],
-    'am_late_threshold' => $student['am_late_threshold'],
-    'pm_late_threshold' => $student['pm_late_threshold'],
-];
+$GLOBALS['security_audit_outcome'] = 'success';
+$section = $student;
+$scheduleType = getAttendanceScheduleType($section);
+$student['schedule_type'] = $scheduleType;
+// Selection, window validation, cooldown and saving share the row lock.
 try {
     $scan = saveAttendanceScan($db, (int)$student['id'], $today, $section, (int)currentUser()['id']);
 } catch (Throwable $e) {
@@ -106,15 +106,16 @@ if (!$scan['success']) {
     exit;
 }
 
+$GLOBALS['security_audit_outcome'] = 'success';
 $nextEvent = $scan['event'];
 $now = $scan['time'];
 $updated = $scan['record'];
 $attendType = $updated['attendance_type'];
 $events = [
-    'am_in'  => ['AM In', 'am_arrival', 'AM', true],
-    'am_out' => ['AM Out', 'am_departure', 'AM', false],
-    'pm_in'  => ['PM In', 'pm_arrival', 'PM', true],
-    'pm_out' => ['PM Out', 'pm_departure', 'PM', false],
+    'am_in'  => ['Time-In', 'am_arrival', 'AM', true],
+    'am_out' => ['Time-Out (AM)', 'am_departure', 'AM', false],
+    'pm_in'  => ['Time-In (PM)', 'pm_arrival', 'PM', true],
+    'pm_out' => ['Time-Out (PM)', 'pm_departure', 'PM', false],
 ];
 [$eventLabel, $smsType, $session, $isArrival] = $events[$nextEvent];
 $smsSent = false;
@@ -140,13 +141,14 @@ if (!empty($student['parent_email'])) {
 
 // Remaining events
 $remaining = [];
-if ($scheduleType !== 'pm_only' && empty($updated['am_in']))  $remaining[] = 'AM In';
-if ($scheduleType !== 'pm_only' && empty($updated['am_out'])) $remaining[] = 'AM Out';
-if ($scheduleType !== 'am_only' && empty($updated['pm_in']))  $remaining[] = 'PM In';
-if ($scheduleType !== 'am_only' && empty($updated['pm_out'])) $remaining[] = 'PM Out';
+foreach (getAttendanceEvents($section) as $event) {
+    if (empty($updated[$event])) $remaining[] = $events[$event][0];
+}
 
-echo json_encode([
+$response = [
     'success'         => true,
+    'student_id'      => (int)$student['id'],
+    'date'            => $today,
     'event'           => $nextEvent,
     'event_label'     => $eventLabel,
     'attendance_type' => $attendType,
@@ -162,4 +164,8 @@ echo json_encode([
     'am_out'          => $updated['am_out'] ? date('h:i A', strtotime($updated['am_out'])) : null,
     'pm_in'           => $updated['pm_in']  ? date('h:i A', strtotime($updated['pm_in']))  : null,
     'pm_out'          => $updated['pm_out'] ? date('h:i A', strtotime($updated['pm_out'])) : null,
-]);
+];
+// A PHP session belongs to this logged-in kiosk, not to the global attendance log.
+// Replace its result only after a successful committed scan.
+$_SESSION['scanner_last_result'] = $response;
+echo json_encode($response);

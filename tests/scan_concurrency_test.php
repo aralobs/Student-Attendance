@@ -6,13 +6,16 @@
  * never reads or modifies the application's attendance data.
  */
 require_once dirname(__DIR__) . '/includes/attendance_scan.php';
+require_once dirname(__DIR__) . '/includes/attendance_finalizer.php';
 
 function checkScan(bool $condition, string $message): void
 {
     if (!$condition) throw new RuntimeException($message);
 }
 
-$name = 'scan_test_' . bin2hex(random_bytes(8));
+putenv('PII_ENCRYPTION_KEY=' . base64_encode(random_bytes(32)));
+$name = 'enrollment_test_' . bin2hex(random_bytes(8));
+if (!preg_match('/\Aenrollment_test_[0-9a-f]{16}\z/',$name)) throw new RuntimeException('Invalid disposable database name');
 $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false];
 $admin = new PDO($dsn, DB_USER, DB_PASS, $options);
@@ -23,21 +26,26 @@ try {
     $admin->exec("CREATE DATABASE `$name`");
     $created = true;
     $db = new PDO($dsn . ';dbname=' . $name, DB_USER, DB_PASS, $options);
+    $db->exec("CREATE TABLE system_settings(setting_key VARCHAR(100) PRIMARY KEY,setting_value TEXT); INSERT INTO system_settings VALUES('enrollment_model_version','0')");
     $db->exec("CREATE TABLE attendance (
         id INT AUTO_INCREMENT PRIMARY KEY, student_id INT NOT NULL, date DATE NOT NULL,
         am_in TIME NULL, am_out TIME NULL, pm_in TIME NULL, pm_out TIME NULL,
         am_status VARCHAR(10) NULL, pm_status VARCHAR(10) NULL,
-        attendance_type VARCHAR(10) NOT NULL DEFAULT 'absent', recorded_by INT NULL,
+        attendance_type VARCHAR(10) NOT NULL DEFAULT 'absent', recorded_by INT NULL, remarks TEXT NULL,
         UNIQUE KEY unique_attendance (student_id, date)) ENGINE=InnoDB");
+    $db->exec(file_get_contents(dirname(__DIR__) . '/migrations/security_audit.sql'));
     $db->exec('CREATE TABLE deliveries (channel VARCHAR(10), event VARCHAR(20)) ENGINE=InnoDB');
-    foreach (['', '/attendance', '/config', '/includes'] as $dir) mkdir($fixture . $dir);
+    foreach (['', '/attendance', '/config', '/includes', '/sessions'] as $dir) mkdir($fixture . $dir);
     $config = '<?php ' . "date_default_timezone_set('Asia/Manila');\n";
     $config .= 'function getDB(){static $db; return $db ??= new PDO(' . var_export($dsn . ';dbname=' . $name, true) . ',' . var_export(DB_USER, true) . ',' . var_export(DB_PASS, true) . ',' . var_export($options, true) . ');}';
     file_put_contents($fixture . '/config/database.php', $config);
     $functions = <<<'PHP'
 <?php
 function requireLogin() {}
-function currentUser() { return ['id' => 1]; }
+function currentUser() { return ['id' => 1, 'role' => 'scanner_operator']; }
+function startSession() {}
+require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/abuse_security.php';
 function isHolidayOrNoClass($date) { return false; }
 function buildSMSMessage($template, $student) { return $template; }
 function sendSMS($number, $message, $studentId, $event) {
@@ -48,12 +56,18 @@ function sendSMS($number, $message, $studentId, $event) {
 }
 PHP;
     // Exercise the application's real event selection/status/type functions.
-    foreach (['getNextAttendanceEvent', 'getSessionStatus', 'computeAttendanceType'] as $function) {
+    foreach (['getScheduleForGrade', 'getAttendanceScheduleType', 'getAttendanceEvents', 'getNextAttendanceEvent', 'getSessionStatus', 'computeAttendanceType'] as $function) {
         $reflection = new ReflectionFunction($function);
         $lines = file($reflection->getFileName());
         $functions .= "\n" . implode('', array_slice($lines, $reflection->getStartLine() - 1, $reflection->getEndLine() - $reflection->getStartLine() + 1));
     }
     file_put_contents($fixture . '/includes/functions.php', $functions);
+    copy(dirname(__DIR__) . '/includes/security_audit.php', $fixture . '/includes/security_audit.php');
+    copy(dirname(__DIR__) . '/includes/pii_security.php', $fixture . '/includes/pii_security.php');
+    copy(dirname(__DIR__) . '/includes/csrf.php', $fixture . '/includes/csrf.php');
+    copy(dirname(__DIR__) . '/includes/abuse_security.php', $fixture . '/includes/abuse_security.php');
+    foreach (['enrollment_operations','enrollment_access','enrollment_repository','school_years'] as $dependency) copy(dirname(__DIR__).'/includes/'.$dependency.'.php',$fixture.'/includes/'.$dependency.'.php');
+    $db->exec(file_get_contents(dirname(__DIR__) . '/migrations/security_abuse_controls.sql'));
     file_put_contents($fixture . '/includes/mail_helper.php', <<<'PHP'
 <?php
 function sendArrivalEmail($student, $session) { return deliverEmail(strtolower($session) . '_arrival'); }
@@ -64,7 +78,7 @@ function deliverEmail($event) {
     return true;
 }
 PHP);
-    copy(dirname(__DIR__) . '/includes/attendance_scan.php', $fixture . '/includes/attendance_scan.php');
+    file_put_contents($fixture . '/includes/attendance_scan.php', str_replace("new DateTimeImmutable('now')", "new DateTimeImmutable(date('Y-m-d') . (\$GLOBALS['mode'] === 'departure' ? ' 15:30:00' : ' 08:00:01'))", file_get_contents(dirname(__DIR__) . '/includes/attendance_scan.php')));
     copy(dirname(__DIR__) . '/attendance/scan_process.php', $fixture . '/attendance/scan_process.php');
     // Supply synthetic student and section records for the endpoint lookup.
     $db->exec("CREATE TABLE sections (id INT PRIMARY KEY, section_name VARCHAR(20), schedule_type VARCHAR(10),
@@ -73,11 +87,25 @@ PHP);
     $db->exec("INSERT INTO sections VALUES (1, 'Test', 'full_day', NULL, NULL, '08:00:00', NULL, NULL, NULL, NULL, '13:00:00', NULL, NULL)");
     $db->exec("CREATE TABLE students (id INT PRIMARY KEY, section_id INT, qr_token VARCHAR(20), is_active INT,
         first_name VARCHAR(20), last_name VARCHAR(20), parent_contact VARCHAR(20), parent_email VARCHAR(40), grade_level VARCHAR(10)) ENGINE=InnoDB");
-    $db->exec("INSERT INTO students VALUES (1, 1, 'test-token', 1, 'Test', 'Student', 'test-phone', 'test@example.invalid', '1')");
+    $db->exec("INSERT INTO students VALUES (1, 1, 'test-token', 1, 'Test', 'Student', 'test-phone', 'test@example.invalid', 'Grade 3')");
+    $db->exec("ALTER TABLE sections ADD grade_level VARCHAR(10) DEFAULT 'Grade 3'");
+    $db->exec('ALTER TABLE sections ADD is_active INT DEFAULT 1, ADD adviser_id INT DEFAULT 1');
     file_put_contents($fixture . '/worker.php', <<<'PHP'
 <?php
 $mode = $argv[1];
+session_save_path(__DIR__ . '/sessions');
+session_id('kiosk-' . sha1($argv[2]));
+session_start();
+$_SESSION['scanner_last_result'] ??= ['student_id' => 900 + (int)substr($argv[2], -1), 'success' => true];
+$previousScan = $_SESSION['scanner_last_result'];
+register_shutdown_function(function () use ($previousScan) {
+    file_put_contents($GLOBALS['argv'][2] . '.session-result', json_encode([
+        'before' => $previousScan, 'after' => $_SESSION['scanner_last_result'] ?? null]));
+});
 $_SERVER['REQUEST_METHOD'] = 'POST';
+$_SESSION['app_csrf'] = str_repeat('a',64);
+$_SESSION['session_token'] = sha1($argv[2]);
+$_POST['csrf_token'] = str_repeat('a',64);
 $_POST['token'] = 'test-token';
 file_put_contents($argv[2], 'ready');
 while (!is_file($argv[3])) usleep(10000);
@@ -86,8 +114,9 @@ require 'scan_process.php';
 PHP);
 
     $today = date('Y-m-d');
-    $session = date('H:i:s') >= '12:00:00' ? 'pm' : 'am';
-    $run = function (string $mode, bool $race = false) use ($fixture, $db, $today, &$processes): array {
+    $session = 'am';
+    $previousSessions = [];
+    $run = function (string $mode, bool $race = false) use ($fixture, $db, $today, &$processes, &$previousSessions): array {
         $count = $race ? 2 : 1;
         $gate = $fixture . '/go';
         if (is_file($gate)) unlink($gate);
@@ -119,7 +148,7 @@ PHP);
             $db->rollBack();
         }
         $results = [];
-        foreach ($processes as [$process, $pipes]) {
+        foreach ($processes as $i => [$process, $pipes]) {
             $output = stream_get_contents($pipes[1]);
             $errors = stream_get_contents($pipes[2]);
             fclose($pipes[1]); fclose($pipes[2]);
@@ -128,6 +157,17 @@ PHP);
             $result = json_decode($output, true);
             checkScan(is_array($result), 'Invalid endpoint JSON: ' . $output . $errors);
             if ($errors !== '') $result['_errors'] = $errors;
+            $sessionSnapshot = json_decode(file_get_contents($fixture . '/ready' . $i . '.session-result'), true);
+            if (isset($previousSessions[$i])) checkScan($sessionSnapshot['before'] === $previousSessions[$i], 'Kiosk session result lost between requests');
+            if ($result['success']) {
+                foreach (['student_id', 'event', 'date', 'attendance_type'] as $field) {
+                    checkScan($sessionSnapshot['after'][$field] === $result[$field], "Successful scan not persisted: $field");
+                }
+            } else {
+                checkScan($sessionSnapshot['after'] === $sessionSnapshot['before'], 'Rejected scan replaced kiosk result');
+            }
+            $previousSessions[$i] = $sessionSnapshot['after'];
+            $result['_session_after'] = $sessionSnapshot['after'];
             $results[] = $result;
         }
         $processes = [];
@@ -139,18 +179,19 @@ PHP);
         $db->exec('DELETE FROM deliveries');
         if ($case === 'existing') {
             $db->prepare("INSERT INTO attendance (student_id, date, {$session}_in) VALUES (1, ?, ?)")
-                ->execute([$today, date('H:i:s', time() - 600)]);
+                ->execute([$today, '08:00:01']);
         }
-        $results = $run('normal', true);
+        $mode = $case === 'existing' ? 'departure' : 'normal';
+        $results = $run($mode, true);
         checkScan(count(array_filter($results, fn($r) => $r['success'])) === 1, "$case: expected one accepted scan");
         $winner = array_values(array_filter($results, fn($r) => $r['success']))[0];
-        checkScan($winner['event'] === $session . ($case === 'missing' ? '_in' : '_out'), "$case: wrong event");
+        checkScan($winner['event'] === ($case === 'missing' ? 'am_in' : 'pm_out'), "$case: wrong event");
         checkScan($winner['sms_sent'] && $winner['email_sent'], "$case: notifications failed");
         $loser = array_values(array_filter($results, fn($r) => !$r['success']))[0];
         checkScan($loser['message'] === "You're already scanned", "$case: cooldown not observed: " . json_encode($loser));
         checkScan((int)$db->query('SELECT COUNT(*) FROM attendance')->fetchColumn() === 1, "$case: duplicate rows");
         checkScan((int)$db->query('SELECT COUNT(*) FROM deliveries')->fetchColumn() === 2, "$case: duplicate notifications");
-        checkScan(!$run('normal')[0]['success'], "$case: repeat accepted");
+        checkScan(!$run($mode)[0]['success'], "$case: repeat accepted");
         checkScan((int)$db->query('SELECT COUNT(*) FROM deliveries')->fetchColumn() === 2, "$case: repeat notified");
     }
     $db->exec('DELETE FROM attendance');
@@ -172,10 +213,10 @@ PHP);
     checkScan(!$run('normal')[0]['success'], 'Completed attendance accepted');
     checkScan((int)$db->query('SELECT COUNT(*) FROM deliveries')->fetchColumn() === 0, 'Completed attendance notified');
 
-    // Fixed-time checks cover all four event columns and the cooldown boundary.
+    // Fixed-time checks cover both required event columns and the cooldown boundary.
     $db->exec('DELETE FROM attendance');
     $section = ['schedule_type' => 'full_day', 'am_late_threshold' => '08:00:00', 'pm_late_threshold' => '13:00:00'];
-    foreach (['am_in' => '08:00:01', 'am_out' => '08:05:01', 'pm_in' => '13:00:00', 'pm_out' => '13:05:00'] as $event => $time) {
+    foreach (['am_in' => '08:00:01', 'pm_out' => '15:30:00'] as $event => $time) {
         $result = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today $time"));
         checkScan($result['success'] && $result['event'] === $event, "$event not saved correctly");
         checkScan(!$db->inTransaction(), "$event left transaction open");
@@ -184,9 +225,71 @@ PHP);
     }
     checkScan($result['record']['attendance_type'] === 'full_day', 'Attendance type not recomputed');
     checkScan($result['record']['am_status'] === 'late' && $result['record']['pm_status'] === 'present', 'Arrival status changed');
-    $complete = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 13:10:00"));
+    $complete = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 16:00:00"));
     checkScan(!empty($complete['complete']) && !$db->inTransaction(), 'Completed day left transaction open');
-    echo "Scan concurrency checks passed (row races, repeats, rollback, notification failure, all events, cooldown boundaries).\n";
+    // Exercise real database writes for each grade, with only the daily pair populated.
+    foreach (getGradeLevels() as $grade) {
+        $db->exec('DELETE FROM attendance');
+        $rule = getScheduleForGrade($grade);
+        $section = array_merge($rule['am'], $rule['pm'] ?? [], ['grade_level' => $grade, 'schedule_type' => $rule['default_type']]);
+        $arrival = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 08:01:01"));
+        checkScan($arrival['success'] && $arrival['event'] === 'am_in', "$grade arrival save");
+        checkScan($arrival['record']['attendance_type'] === 'partial', "$grade one AM scan must be partial");
+        $early = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 08:06:01"));
+        checkScan(!$early['success'] && !$db->inTransaction(), "$grade premature departure rejected");
+        $out = getAttendanceEvents($section)[1];
+        $outTime = $section[substr($out, 0, 2) . '_out_start'];
+        $departure = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today $outTime"));
+        checkScan($departure['success'] && $departure['event'] === $out, "$grade departure save");
+        checkScan($departure['record']['attendance_type'] === 'full_day', "$grade two scans complete");
+        checkScan($departure['record']['pm_in'] === null, "$grade must never write PM arrival");
+        checkScan($departure['record'][$out === 'am_out' ? 'pm_out' : 'am_out'] === null, "$grade unused departure stays empty");
+        if ($out === 'pm_out') checkScan($departure['record']['pm_status'] === 'present', "$grade PM presence without PM arrival");
+        $third = saveAttendanceScan($db, 1, $today, $section, 1, (new DateTimeImmutable("$today $outTime"))->modify('+300 seconds'));
+        checkScan(!empty($third['complete']) && !$db->inTransaction(), "$grade third scan rejected");
+        $db->exec('DELETE FROM attendance');
+        $missedArrival = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 15:30:00"));
+        checkScan(!$missedArrival['success'] && !$db->inTransaction(), "$grade afternoon arrival rejected");
+        checkScan((int)$db->query('SELECT COUNT(*) FROM attendance')->fetchColumn() === 0, "$grade invalid scan leaves no row");
+    }
+    foreach (getGradeLevels() as $grade) {
+        $db->exec('DELETE FROM attendance');
+        $section = array_merge(getScheduleForGrade('Grade 3')['pm'], ['grade_level' => $grade, 'schedule_type' => 'pm_only']);
+        $morning = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 08:00:00"));
+        checkScan(!$morning['success'], "$grade PM section rejects AM scan");
+        $arrival = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 13:01:01"));
+        checkScan($arrival['success'] && $arrival['event'] === 'pm_in', "$grade PM arrival save");
+        checkScan($arrival['record']['attendance_type'] === 'partial', "$grade one PM scan must be partial");
+        $repeat = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 13:01:02"));
+        checkScan(!$repeat['success'], "$grade PM duplicate arrival");
+        $departure = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 15:30:00"));
+        checkScan($departure['success'] && $departure['event'] === 'pm_out', "$grade PM departure save");
+        $record = $departure['record'];
+        checkScan($record['attendance_type'] === 'full_day' && $record['pm_status'] === 'late', "$grade PM completion and lateness");
+        checkScan($record['am_in'] === null && $record['am_out'] === null && $record['am_status'] === null, "$grade no AM scans or status required");
+        $third = saveAttendanceScan($db, 1, $today, $section, 1, new DateTimeImmutable("$today 15:35:00"));
+        checkScan(!empty($third['complete']) && !$db->inTransaction(), "$grade PM third scan rejected");
+    }
+    // Stored labels must reflect the required pair, even when old data is stale.
+    foreach (['am_only', 'full_day', 'pm_only'] as $schedule) {
+        $db->exec('DELETE FROM attendance');
+        $db->prepare('UPDATE sections SET schedule_type = ? WHERE id = 1')->execute([$schedule]);
+        $in = $schedule === 'pm_only' ? 'pm_in' : 'am_in';
+        $out = $schedule === 'am_only' ? 'am_out' : 'pm_out';
+        $db->prepare("INSERT INTO attendance (student_id, date, $in, attendance_type, am_status, pm_status)
+            VALUES (1, ?, '08:00:00', 'full_day', 'late', 'late')")->execute([$today]);
+        checkScan(reconcileAttendanceCompletion($today, 1, $db) === 1, "$schedule stale full-day label repaired");
+        $row = $db->query('SELECT * FROM attendance')->fetch();
+        checkScan($row['attendance_type'] === 'partial', "$schedule one scan displays partial");
+        checkScan($row['am_status'] === 'late' && $row['pm_status'] === 'late', "$schedule completion repair preserves session statuses");
+        $db->exec("UPDATE attendance SET $out = '15:30:00'");
+        checkScan(reconcileAttendanceCompletion($today, 1, $db) === 1, "$schedule stale partial label repaired");
+        checkScan($db->query('SELECT attendance_type FROM attendance')->fetchColumn() === 'full_day', "$schedule two scans display full day");
+        checkScan(reconcileAttendanceCompletion($today, 1, $db) === 0, "$schedule completion refresh is idempotent");
+        $db->exec("UPDATE attendance SET attendance_type = 'holiday', $out = NULL");
+        checkScan(reconcileAttendanceCompletion($today, 1, $db) === 0, "$schedule holiday unchanged");
+    }
+    echo "Scan concurrency checks passed (row races, repeats, rollback, notification failure, two daily events, cooldown boundaries, isolated kiosk session persistence).\n";
 } finally {
     if (isset($db) && $db->inTransaction()) $db->rollBack();
     foreach ($processes as [$process, $pipes]) {

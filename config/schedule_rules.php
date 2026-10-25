@@ -27,33 +27,33 @@ function getScheduleForGrade(string $grade): ?array
         'pm_out_end'        => '16:00:00',
     ];
 
-    // Kinder: half-day, admin picks AM or PM
+    // Kinder: morning only
     if (in_array($key, ['kinder', 'kindergarten', 'k'], true)) {
         return [
-            'allowed_types' => ['am_only', 'pm_only'],
+            'allowed_types' => ['am_only', 'pm_only', 'full_day'],
             'default_type'  => 'am_only',
             'am'            => $AM,
-            'pm'            => $PM,
+            'pm'            => null,
         ];
     }
 
     if (preg_match('/^grade(\d+)$/', $key, $m)) {
         $n = (int)$m[1];
 
-        // Grade 1–3: AM only
-        if ($n >= 1 && $n <= 3) {
+        // Grades 1 and 2: morning only
+        if ($n >= 1 && $n <= 2) {
             return [
-                'allowed_types' => ['am_only'],
+                'allowed_types' => ['am_only', 'pm_only', 'full_day'],
                 'default_type'  => 'am_only',
                 'am'            => $AM,
                 'pm'            => null,
             ];
         }
 
-        // Grade 4–6: Full day
-        if ($n >= 4 && $n <= 6) {
+        // Grades 3 through 6: full day
+        if ($n >= 3 && $n <= 6) {
             return [
-                'allowed_types' => ['full_day'],
+                'allowed_types' => ['am_only', 'pm_only', 'full_day'],
                 'default_type'  => 'full_day',
                 'am'            => $AM,
                 'pm'            => $PM,

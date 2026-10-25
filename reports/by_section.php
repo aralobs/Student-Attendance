@@ -7,14 +7,19 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+requireStaff();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'By Section';
 $db              = getDB();
 $month           = (int)($_GET['month']   ?? date('n'));
 $year            = (int)($_GET['year']    ?? date('Y'));
 $gradeFilter     = $_GET['grade']         ?? '';
-$allowedSections = getAllowedSections();
+$reportFrom = sprintf('%04d-%02d-01', $year, $month);
+$reportTo = date('Y-m-t', strtotime($reportFrom));
+$reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, ($sectionId ?? 0) ?: null);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 $grades          = getGradeLevels();
 
 // School days this month
@@ -23,7 +28,7 @@ $schoolDays  = 0;
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0,0,0,$month,$d,$year));
-    if (!in_array($dow,[6,7]) && !isHolidayOrNoClass($ds)) $schoolDays++;
+    if (!in_array($dow,[6,7]) && enrollmentReportDay($reportContext, $ds) && !isHolidayOrNoClass($ds)) $schoolDays++;
 }
 
 // Stats per section
@@ -39,8 +44,8 @@ foreach ($allowedSections as $sec) {
             SUM(a.attendance_type = 'absent')   AS absent,
             SUM(a.am_status = 'late')           AS am_late,
             SUM(a.pm_status = 'late')           AS pm_late
-        FROM students s
-        LEFT JOIN attendance a ON a.student_id = s.id
+        FROM {$reportStudents} s
+        LEFT JOIN {$reportAttendance} a ON a.student_id = s.id {$reportJoin}
             AND MONTH(a.date) = ? AND YEAR(a.date) = ?
         WHERE s.section_id = ? AND s.is_active = 1
     ");
@@ -48,7 +53,7 @@ foreach ($allowedSections as $sec) {
     $row = $stmt->fetch();
 
     $attended = ($row['full_day'] ?? 0) + (($row['partial'] ?? 0) * 0.5);
-    $possible = ($row['total_students'] ?? 0) * $schoolDays;
+    $possible = $reportContext['managed'] ? enrollmentReportPossible($reportContext,(int)$sec['id']) : ($row['total_students'] ?? 0) * $schoolDays;
     $rate     = $possible > 0 ? round(($attended / $possible) * 100, 1) : 0;
 
     $sectionStats[] = array_merge($sec, $row, ['rate' => $rate]);
@@ -56,6 +61,7 @@ foreach ($allowedSections as $sec) {
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <div class="page-header">
@@ -80,6 +86,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">

@@ -93,21 +93,29 @@ include '../includes/sidebar.php';
                                        title="Edit">
                                         <i class="bi bi-pencil"></i>
                                     </a>
-                                    <a href="toggle.php?id=<?= (int)$u['id'] ?>"
+                                    <form method="POST" action="toggle.php" class="d-inline" data-confirm="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> this user?" data-confirm-title="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> user" data-confirm-label="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?>" data-confirm-tone="<?= $u['is_active'] ? 'danger' : 'success' ?>">
+<?= csrfField() ?>
+<input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+<button type="submit"
                                        class="btn btn-sm btn-outline-<?= $u['is_active'] ? 'danger' : 'success' ?>"
                                        title="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?>"
-                                       data-confirm="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> this user?"
-                                       data-confirm-title="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?> user" data-confirm-label="<?= $u['is_active'] ? 'Deactivate' : 'Activate' ?>" data-confirm-tone="<?= $u['is_active'] ? 'danger' : 'success' ?>">
+
+                                      >
                                         <i class="bi bi-<?= $u['is_active'] ? 'person-x' : 'person-check' ?>"></i>
-                                    </a>
+                                    </button>
+</form>
                                     <?php if ((int)$u['id'] !== (int)currentUser()['id']): ?>
-                                    <a href="archive.php?id=<?= (int)$u['id'] ?>"
+                                    <form method="POST" action="archive.php" class="d-inline" data-confirm="Archive this user? They will be hidden from the list but kept in the database." data-confirm-title="Archive user" data-confirm-label="Archive" data-confirm-tone="warning">
+<?= csrfField() ?>
+<input type="hidden" name="id" value="<?= (int)$u['id'] ?>">
+<button type="submit"
                                        class="btn btn-sm btn-outline-secondary"
                                        title="Archive"
-                                       data-confirm="Archive this user? They will be hidden from the list but kept in the database."
-                                   data-confirm-title="Archive user" data-confirm-label="Archive" data-confirm-tone="warning">
+
+                                  >
                                         <i class="bi bi-archive"></i>
-                                    </a>
+                                    </button>
+</form>
                                     <?php endif; ?>
                                 </div>
                             </td>

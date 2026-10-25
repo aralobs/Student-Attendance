@@ -1,56 +1,47 @@
 <?php
-
-/**
- * Database Configuration
- * Automated Student Attendance Monitoring System
- * San Pablo City Central School - Kindergarten Department
- */
-// Set Philippine timezone globally
 date_default_timezone_set('Asia/Manila');
 error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
-
-// Read from environment variables (Railway) with local fallbacks (XAMPP)
-define('DB_HOST', getenv('MYSQLHOST')     ?: (getenv('DB_HOST') ?: 'localhost'));
-define('DB_PORT', getenv('MYSQLPORT')     ?: (getenv('DB_PORT') ?: '3306'));
-define('DB_USER', getenv('MYSQLUSER')     ?: (getenv('DB_USER') ?: 'root'));
-define('DB_PASS', getenv('MYSQLPASSWORD') ?: (getenv('DB_PASS') ?: ''));
-define('DB_NAME', getenv('MYSQLDATABASE') ?: (getenv('DB_NAME') ?: 'attendance_system'));
-define('DB_CHARSET', 'utf8mb4');
-
-// Base URL — set BASE_URL env var in Railway dashboard, fallback to localhost for dev
-define('BASE_URL', getenv('BASE_URL') ?: 'http://localhost/attendance_system/');
+require_once __DIR__ . '/deployment_security.php';
+require_once __DIR__ . '/hosting_environment.php';
+try { loadHostingEnvironment(dirname(__DIR__, 2) . '/attendance-private/hosting.php'); }
+catch (Throwable $error) { deploymentUnavailable('private_hosting_configuration_failed'); }
+$production = deploymentIsProduction();
+$dbConfig = [
+    'host'=>deploymentEnvironmentValue('MYSQLHOST','DB_HOST') ?? ($production ? '' : 'localhost'),
+    'port'=>deploymentEnvironmentValue('MYSQLPORT','DB_PORT') ?? '3306',
+    'user'=>deploymentEnvironmentValue('MYSQLUSER','DB_USER') ?? ($production ? '' : 'root'),
+    'password'=>deploymentEnvironmentValue('MYSQLPASSWORD','DB_PASS') ?? '',
+    'database'=>deploymentEnvironmentValue('MYSQLDATABASE','DB_NAME') ?? ($production ? '' : 'attendance_system'),
+    'base_url'=>getenv('BASE_URL') ?: ($production ? '' : 'http://localhost/attendance_system/'),
+    'tls_ca'=>getenv('DB_TLS_CA') ?: '',
+];
+try { validateDatabaseConfiguration($dbConfig, $production); }
+catch (Throwable $error) { deploymentUnavailable($error->getMessage()); }
+define('DB_HOST', $dbConfig['host']); define('DB_PORT', $dbConfig['port']);
+define('DB_USER', $dbConfig['user']); define('DB_PASS', $dbConfig['password']);
+define('DB_NAME', $dbConfig['database']); define('DB_CHARSET', 'utf8mb4');
+define('DB_TLS_CA', $dbConfig['tls_ca']); define('BASE_URL', $dbConfig['base_url']);
 define('BASE_PATH', dirname(__DIR__) . '/');
-
-/**
- * Create and return a PDO connection (singleton pattern)
- */
-function getDB()
-{
+unset($dbConfig, $production);
+requireProductionHTTPS();
+function getDB(bool $throwOnFailure = false): PDO {
     static $pdo = null;
     if ($pdo === null) {
-        $dsn = "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-        $options = [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ];
         try {
-            $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
-        } catch (PDOException $e) {
-            die(json_encode([
-                'error'   => true,
-                'message' => 'Database connection failed. Check config/database.php',
-                'debug'   => [
-                    'host'     => DB_HOST,
-                    'port'     => DB_PORT,
-                    'user'     => DB_USER,
-                    'database' => DB_NAME,
-                    'pass_set' => (DB_PASS !== ''),
-                    'pdo_error' => $e->getMessage(),
-                ],
-            ]));
+            $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET;
+            $connection = new PDO($dsn, DB_USER, DB_PASS, databasePDOOptions(DB_TLS_CA));
+            // Match PHP's school timezone for NOW()/TIMESTAMP audit and activity values.
+            $connection->exec("SET time_zone = '+08:00'");
+            if (DB_TLS_CA !== '') {
+                $tls = $connection->query("SHOW SESSION STATUS LIKE 'Ssl_cipher'")->fetch();
+                if (!$tls || empty($tls['Value'])) throw new RuntimeException('Database transport is not encrypted');
+            }
+            $pdo = $connection;
+        } catch (Throwable $error) {
+            if ($throwOnFailure) throw $error;
+            deploymentUnavailable('database_connection_failed');
         }
     }
     return $pdo;

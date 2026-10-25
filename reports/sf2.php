@@ -10,15 +10,19 @@ ini_set('display_errors', 0);
 
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
-require_once '../includes/attendance_finalizer.php';
+require_once '../includes/sf2_remarks.php';
+requireStudentManagement();
+require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'SF2 — Daily Attendance Record';
 $db              = getDB();
 $month           = (int)($_GET['month']   ?? date('n'));
 $year            = (int)($_GET['year']    ?? date('Y'));
 $sectionId       = (int)($_GET['section'] ?? 0);
-$allowedSections = getAllowedSections();
+$reportFrom = sprintf('%04d-%02d-01', $year, $month);
+$reportTo = date('Y-m-t', strtotime($reportFrom));
+$reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, $sectionId ?: null);
+$allowedSections = $reportContext['sections'] ?? getAllowedSections();
 $grades          = getGradeLevels();
 if ($month < 1 || $month > 12 || $year < 1900 || $year > 2100) {
     http_response_code(400);
@@ -30,27 +34,42 @@ if ($sectionId === 0 && !empty($allowedSections)) {
     $sectionId = $allowedSections[0]['id'];
 }
 
+if ($reportContext['managed'] && !$sectionId) { http_response_code(403); exit('Section access denied'); }
+if ($reportContext['managed'] && (int)($_GET['section'] ?? 0) === 0) $reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, (int)$sectionId);
 $section     = getSection($sectionId);
-if (!canAccessSection($sectionId)) {
+if (!$reportContext['managed'] && !canAccessSection($sectionId)) {
     http_response_code(403);
     exit('Section access denied');
 }
-$reportStart = sprintf('%04d-%02d-01', $year, $month);
-finalizeAttendanceRange($reportStart, date('Y-m-t', strtotime($reportStart)), $sectionId);
 $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 $monthLabel  = date('F Y', mktime(0, 0, 0, $month, 1, $year));
 $monthUpper  = strtoupper(date('F', mktime(0, 0, 0, $month, 1, $year)));
 $schoolName  = getSetting('school_name')  ?? 'San Pablo City Central School';
-$schoolYear  = $section['school_year'] ?? getSetting('school_year') ?? '';
+$schoolYear  = $reportContext['year']['label'] ?? $section['school_year'] ?? getSetting('school_year') ?? '';
 $schoolId    = getSetting('school_id') ?? '';
 $schoolHead  = getSetting('school_head') ?? '';
 $generatedBy = getSetting('sf2_generated_by') ?? '';
 $calEntries  = getCalendarMonth($month, $year);
 
+if ($reportContext['managed']) {
+    $students = $reportContext['data']['roster'];
+    usort($students,fn($a,$b)=>[$a['last_name'],$a['first_name']] <=> [$b['last_name'],$b['first_name']]);
+} else {
 $students = $db->prepare("SELECT * FROM students WHERE section_id = ? AND is_active = 1 ORDER BY last_name, first_name");
 $students->execute([$sectionId]);
 $students = $students->fetchAll();
+}
+try {
+    $sf2Remarks = loadSF2Remarks($db, $sectionId, $month, $year);
+} catch (Throwable $error) {
+    http_response_code(503);
+    error_log('SF2 remarks unavailable.');
+    exit('Report remarks are temporarily unavailable. Please try again later.');
+}
 $attMatrix = [];
+if ($reportContext['managed']) {
+    foreach ($reportContext['data']['attendance'] as $row) $attMatrix[$row['student_id']][(int)substr($row['date'],8,2)] = $row;
+} else {
 $stmt = $db->prepare("SELECT student_id, DAY(date) AS day, am_in, am_out, pm_in, pm_out,
     am_status, pm_status, attendance_type FROM attendance
     WHERE MONTH(date) = ? AND YEAR(date) = ? AND student_id IN
@@ -58,12 +77,14 @@ $stmt = $db->prepare("SELECT student_id, DAY(date) AS day, am_in, am_out, pm_in,
 $stmt->execute([$month, $year, $sectionId]);
 foreach ($stmt->fetchAll() as $row) $attMatrix[$row['student_id']][$row['day']] = $row;
 
+}
+
 // Count school days
 $schoolDays = 0;
 for ($d = 1; $d <= $daysInMonth; $d++) {
     $ds  = sprintf('%04d-%02d-%02d', $year, $month, $d);
     $dow = (int)date('N', mktime(0, 0, 0, $month, $d, $year));
-    if ($dow !== 6 && $dow !== 7 && !isHolidayOrNoClass($ds)) $schoolDays++;
+    if ($dow !== 6 && $dow !== 7 && enrollmentReportDay($reportContext, $ds) && !isHolidayOrNoClass($ds)) $schoolDays++;
 }
 
 $isAmOnly = ($section['schedule_type'] ?? 'full_day') === 'am_only';
@@ -119,7 +140,7 @@ for ($day = 1; $day <= $daysInMonth; $day++) {
     $weekday = (int)date('N', mktime(0, 0, 0, $month, $day, $year));
     $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
     if ($weekday > 5) continue;
-    $sf2PrintDays[] = ['day' => $day, 'weekday' => ['M', 'T', 'W', 'TH', 'F'][$weekday - 1], 'off' => isHolidayOrNoClass($date)];
+    $sf2PrintDays[] = ['day' => $day, 'weekday' => ['M', 'T', 'W', 'TH', 'F'][$weekday - 1], 'off' => !enrollmentReportDay($reportContext, $date) || isHolidayOrNoClass($date)];
 }
 while (count($sf2PrintDays) < 25) $sf2PrintDays[] = ['day' => null, 'weekday' => '', 'off' => true];
 $sf2PrintGroups = ['M' => [], 'F' => [], 'U' => []];
@@ -131,11 +152,12 @@ foreach ($students as $student) {
     $streak = 0; $five = false;
     foreach ($sf2PrintDays as $column) {
         $record = $column['day'] === null ? null : ($attMatrix[$student['id']][$column['day']] ?? null);
-        $cell = sf2PrintCell($record, $column['off'], $section['schedule_type'] ?? 'full_day');
+        $memberOff = $column['off'] || ($reportContext['managed'] && $column['day'] !== null && !enrollmentReportMemberDay($student, sprintf('%04d-%02d-%02d',$year,$month,$column['day'])));
+        $cell = sf2PrintCell($record, $memberOff, $section['schedule_type'] ?? 'full_day');
         $item['cells'][] = $cell;
         $item['present'] += $cell['present']; $item['absent'] += $cell['absent'];
         $item['recorded'] += (int)$cell['recorded'];
-        if (!$column['off']) {
+        if (!$memberOff) {
             $streak = $cell['fullAbsent'] ? $streak + 1 : 0;
             if ($streak >= 5) $five = true;
         }
@@ -153,6 +175,14 @@ if (!$sf2PrintPages) $sf2PrintPages = [[]];
 $sf2PrintSummary['TOTAL'] = ['count' => count($sf2PrintAll), 'present' => array_sum(array_column($sf2PrintSummary, 'present')), 'absent' => array_sum(array_column($sf2PrintSummary, 'absent')), 'five' => array_sum(array_column($sf2PrintSummary, 'five'))];
 foreach (['M', 'F', 'U'] as $gender) $sf2PrintSummary[$gender]['recorded'] = array_sum(array_column($sf2PrintGroups[$gender], 'recorded'));
 $sf2PrintSummary['TOTAL']['recorded'] = array_sum(array_column($sf2PrintAll, 'recorded'));
+if ($reportContext['managed']) {
+    foreach (['M'=>'Male','F'=>'Female','TOTAL'=>null] as $group=>$genderFilter) {
+        $possible=enrollmentReportPossible($reportContext,(int)$sectionId,null,null,$genderFilter);
+        if ($possible>0 && $sf2PrintSummary[$group]['recorded']>0) {
+            $sf2SummaryOverrides['attendancePct'][$group]=$sf2PrintSummary[$group]['present']/$possible*100;
+        }
+    }
+}
 // Historical enrolment and transfer/dropout counts are not available in the supplied queries.
 // Optional integration: set $sf2SummaryOverrides[row key][M|F|TOTAL] from your historical data.
 $sf2PrintSummaryRows = [
@@ -190,6 +220,7 @@ function sf2PrintTotalRow($items, $label, $columns) {
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <!-- ============ PAGE HEADER ============ -->
@@ -205,7 +236,7 @@ include '../includes/sidebar.php';
         <button onclick="window.print()" class="btn btn-success btn-sm">
             <i class="bi bi-printer me-1"></i>Print / Save PDF
         </button>
-        <a href="sf2_excel.php?month=<?= $month ?>&year=<?= $year ?>&section=<?= $sectionId ?>"
+        <a href="sf2_excel.php?month=<?= $month ?>&year=<?= $year ?>&section=<?= $sectionId ?><?= $reportContext['managed'] ? '&amp;school_year_id='.(int)$reportContext['year']['id'] : '' ?>"
             class="btn btn-outline-success btn-sm">
             <i class="bi bi-file-earmark-spreadsheet me-1"></i>Excel
         </a>
@@ -219,6 +250,7 @@ include '../includes/sidebar.php';
 <div class="card mb-3 no-print sf2-filter-card">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-end" id="sf2FilterForm">
+            <?php if ($reportContext['managed']): ?><input type="hidden" name="school_year_id" value="<?= (int)$reportContext['year']['id'] ?>"><?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Month</label>
                 <select name="month" class="form-select form-select-sm">
@@ -408,7 +440,7 @@ include '../includes/sidebar.php';
                                 $isHol     = $calEntry && in_array($calEntry['type'], ['holiday', 'no_class']);
                                 $rec       = $attMatrix[$stu['id']][$d] ?? null;
 
-                                $isDayOff = ($isWeekend || $isHol);
+                                $isDayOff = ($isWeekend || $isHol || !enrollmentReportDay($reportContext, $ds) || ($reportContext['managed'] && !enrollmentReportMemberDay($stu,$ds)));
                                 $cellCls  = 'day-cell' . ($isDayOff ? ' day-off' : '');
 
                                 if ($isDayOff):
@@ -484,8 +516,9 @@ include '../includes/sidebar.php';
                             $absent  = $amA + $pmA;
 
                             $pctEnrol = 0;
-                            $adaVal   = $sessionTotal > 0 ? ($present + $late) / $sessionTotal : 0;
-                            $pctAtt   = $sessionTotal > 0 ? (($present + $late) / $sessionTotal) * 100 : 0;
+                            $memberSessionTotal = $reportContext['managed'] ? enrollmentReportPossible($reportContext, (int)$sectionId, null, (int)$stu['id']) * $sessionsPerDay : $sessionTotal;
+                            $adaVal   = $memberSessionTotal > 0 ? ($present + $late) / $memberSessionTotal : 0;
+                            $pctAtt   = $memberSessionTotal > 0 ? (($present + $late) / $memberSessionTotal) * 100 : 0;
 
                             $sumPctEnrol += $pctEnrol;
                             $sumADA      += $adaVal;
@@ -517,11 +550,13 @@ include '../includes/sidebar.php';
                             </td>
                             <td class="remark-cell">
                                 <textarea
-                                    class="sf2-remark"
+                                    class="sf2-remark" <?= $reportContext['managed'] && $reportContext['year']['state'] === 'closed' ? 'readonly' : '' ?>
                                     data-student-id="<?= $stu['id'] ?>"
                                     rows="1"
                                     placeholder="Add remark..."
-                                ></textarea>
+                                    maxlength="1000"
+                                    data-version="<?= (int)($sf2Remarks[$stu['id']]['version'] ?? 0) ?>"
+                                ><?= htmlspecialchars($sf2Remarks[$stu['id']]['text'] ?? '', ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></textarea>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -1119,65 +1154,13 @@ include '../includes/sidebar.php';
 }
 </style>
 
-<script>
-(function () {
-    // Unique storage key per section + month + year
-    const STORAGE_KEY = 'sf2_remarks_<?= (int)$sectionId ?>_<?= (int)$month ?>_<?= (int)$year ?>';
-    const textareas   = document.querySelectorAll('.sf2-remark');
-
-    // 1. Load saved remarks
-    let saved = {};
-    try {
-        saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    } catch (e) {
-        saved = {};
-    }
-
-    // 2. Populate
-    textareas.forEach(function (ta) {
-        const id = ta.dataset.studentId;
-        if (saved[id]) {
-            ta.value = saved[id];
-            autoGrow(ta);
-        }
-    });
-
-    // 3. Save on input (debounced) + auto-grow
-    let saveTimer = null;
-    textareas.forEach(function (ta) {
-        ta.addEventListener('input', function () {
-            autoGrow(ta);
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(persist, 400);
-        });
-        ta.addEventListener('blur', persist);
-    });
-
-    function persist() {
-        const data = {};
-        textareas.forEach(function (ta) {
-            const v = ta.value.trim();
-            if (v) data[ta.dataset.studentId] = v;
-        });
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } catch (e) {
-            console.warn('Could not save remarks:', e);
-        }
-    }
-
-    function autoGrow(el) {
-        el.style.height = 'auto';
-        el.style.height = (el.scrollHeight) + 'px';
-    }
-
-    // Loading spinner on Generate
-    document.getElementById('sf2FilterForm')?.addEventListener('submit', function () {
-        document.getElementById('genSpin')?.classList.remove('d-none');
-        document.getElementById('genBtn').disabled = true;
-    });
-})();
-</script>
+<div class="d-flex align-items-center gap-2 my-3 no-print">
+    <span id="sf2RemarkStatus" class="small text-muted" role="status" aria-live="polite"
+          data-endpoint="<?= BASE_URL ?>reports/save_sf2_remark.php" data-section="<?= (int)$sectionId ?>"
+          data-month="<?= (int)$month ?>" data-year="<?= (int)$year ?>">Remarks are stored securely on the server.</span>
+    <button id="sf2RemarkRetry" type="button" class="btn btn-outline-primary btn-sm" hidden>Retry saving</button>
+</div>
+<script src="<?= BASE_URL ?>assets/js/sf2_remarks.js"></script>
 
 <div id="sf2PrintRoot" aria-hidden="true">
 <?php foreach ($sf2PrintPages as $sf2PageIndex => $sf2PageItems): ?>

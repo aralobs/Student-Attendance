@@ -3,7 +3,7 @@
  * Global Helper Functions
  * SPCCS Elementary Attendance System v2.0
  * Covers Kinder through Grade 6
- * Supports 4-event attendance: AM IN, AM OUT, PM IN, PM OUT
+ * Supports two daily scans: morning Time-In and grade-appropriate Time-Out
  * Includes single-session enforcement (one active browser per account)
  */
 
@@ -13,10 +13,15 @@ ini_set('log_errors', 1);
 
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/settings_security.php';
-
-// Idle timeout in seconds for admin/teacher accounts (0 = disabled).
-// Scanner 'scanner_operator' accounts are exempt so kiosks don't log themselves out.
-if (!defined('SESSION_IDLE_TIMEOUT')) define('SESSION_IDLE_TIMEOUT', 0);
+require_once __DIR__ . '/sms_status.php';
+require_once __DIR__ . '/notification_templates.php';
+require_once __DIR__ . '/csrf.php';
+require_once __DIR__ . '/abuse_security.php';
+require_once __DIR__ . '/session_security.php';
+require_once __DIR__ . '/security_audit.php';
+registerSecurityRequestAudit();
+if (PHP_SAPI !== 'cli' && !headers_sent()) header('X-Request-ID: ' . securityRequestId());
+require_once __DIR__ . '/../config/schedule_rules.php';
 
 // ─── Anti-cache headers ─────────────────────────────────────
 /**
@@ -37,12 +42,6 @@ function sendNoCacheHeaders(): void {
 }
 
 // ─── Session ────────────────────────────────────────────────
-
-function startSession() {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-}
 
 /**
  * Create a fresh token, store it in the DB and in $_SESSION.
@@ -75,112 +74,19 @@ function registerSession(int $userId): string {
         throw new RuntimeException('Could not register session — user not found or inactive.');
     }
 
+    // A new login starts a fresh kiosk result, even if PHP reuses the session cookie.
+    unset($_SESSION['scanner_last_result'], $_SESSION['app_csrf'], $_SESSION['settings_csrf'], $_SESSION['end_of_day_csrf']);
     $_SESSION['session_token'] = $token;
+    $_SESSION['authenticated_at'] = time();
+    $_SESSION['last_activity_at'] = $_SESSION['authenticated_at'];
     return $token;
-}
-
-/**
- * Returns null if the session is valid, otherwise a reason string:
- * 'invalid' | 'session_taken' | 'timeout'
- *
- * FAILS CLOSED: if the DB token is NULL/empty/mismatched, the session
- * is rejected — never silently allowed through.
- */
-function checkSession(): ?string {
-    startSession();
-
-    if (empty($_SESSION['user_id']) || empty($_SESSION['session_token'])) {
-        return 'invalid';
-    }
-
-    try {
-        $db   = getDB();
-        $stmt = $db->prepare("
-            SELECT session_token, role,
-                   TIMESTAMPDIFF(SECOND, session_last_activity, NOW()) AS idle_seconds
-            FROM users
-            WHERE id = ? AND is_active = 1
-            LIMIT 1
-        ");
-        $stmt->execute([$_SESSION['user_id']]);
-        $row = $stmt->fetch();
-    } catch (Throwable $e) {
-        error_log('checkSession error: ' . $e->getMessage());
-        return null; // fail open on transient DB error
-    }
-
-    if (!$row) {
-        return 'invalid';
-    }
-
-    // DB token was wiped (logged out elsewhere / kicked) → reject
-    if (empty($row['session_token'])) {
-        return 'invalid';
-    }
-
-    // Token mismatch → another browser logged in with the same account
-    if (!hash_equals((string)$row['session_token'], (string)$_SESSION['session_token'])) {
-        return 'session_taken';
-    }
-
-    // Refresh the role after account updates or a role migration.
-    $_SESSION['role'] = $row['role'];
-
-    // Optional idle timeout (not for scanner kiosks)
-    $idle = (int)($row['idle_seconds'] ?? 0);
-    if (SESSION_IDLE_TIMEOUT > 0 && $row['role'] !== 'scanner_operator' && $idle > SESSION_IDLE_TIMEOUT) {
-        return 'timeout';
-    }
-
-    // Touch session_last_activity, throttled to once per minute
-    if ($idle >= 60) {
-        try {
-            $db->prepare("
-                UPDATE users
-                SET session_last_activity = NOW(),
-                    session_ip = ?
-                WHERE id = ?
-            ")->execute([
-                $_SERVER['REMOTE_ADDR'] ?? null,
-                $_SESSION['user_id'],
-            ]);
-        } catch (Throwable $e) {
-            error_log('checkSession touch error: ' . $e->getMessage());
-        }
-    }
-
-    return null;
 }
 
 /** Wipe the local session and send the browser back to login. */
 function terminateSession(string $reason): void {
     startSession();
 
-    // Wipe local session
-    $_SESSION = [];
-
-    if (ini_get('session.use_cookies')) {
-        $p = session_get_cookie_params();
-        if (PHP_VERSION_ID >= 70300) {
-            setcookie(session_name(), '', [
-                'expires'  => time() - 42000,
-                'path'     => $p['path']   ?: '/',
-                'domain'   => $p['domain'] ?: '',
-                'secure'   => (bool)$p['secure'],
-                'httponly' => (bool)$p['httponly'],
-                'samesite' => $p['samesite'] ?? 'Lax',
-            ]);
-        } else {
-            setcookie(
-                session_name(), '',
-                time() - 42000,
-                $p['path'], $p['domain'], $p['secure'], $p['httponly']
-            );
-        }
-    }
-    if (session_status() === PHP_SESSION_ACTIVE) {
-        session_destroy();
-    }
+    clearLocalSession();
 
     // Build the login URL
     $base = defined('BASE_URL') ? BASE_URL : '/';
@@ -212,18 +118,21 @@ function isLoggedIn() {
     return !empty($_SESSION['user_id']) && checkSession() === null;
 }
 
-function requireLogin() {
+function requireLogin(bool $touchActivity = true) {
     startSession();
     sendNoCacheHeaders();
 
     if (empty($_SESSION['user_id'])) {
+        $GLOBALS['security_audit_outcome'] = 'denied';
         header('Location: ' . BASE_URL . 'index.php');
         exit;
     }
-    $reason = checkSession();
+    $reason = checkSession($touchActivity);
     if ($reason !== null) {
+        $GLOBALS['security_audit_outcome'] = 'denied';
         terminateSession($reason);
     }
+    securityAuditContext((int)$_SESSION['user_id']);
 }
 
 function isAdmin() {
@@ -234,6 +143,7 @@ function isAdmin() {
 function requireAdmin() {
     requireLogin();
     if (!isAdmin()) {
+        $GLOBALS['security_audit_outcome'] = 'denied';
         header('Location: ' . BASE_URL . 'dashboard.php');
         exit;
     }
@@ -268,6 +178,7 @@ function isTeacher(): bool {
 function requireScannerOperator(): void {
     requireLogin();
     if (!isScannerOperator()) {
+        $GLOBALS['security_audit_outcome'] = 'denied';
         header('Location: ' . BASE_URL . 'dashboard.php');
         exit;
     }
@@ -276,6 +187,7 @@ function requireScannerOperator(): void {
 function requireScannerAccess(): void {
     requireLogin();
     if (!isAdmin() && !isTeacher() && !isScannerOperator()) {
+        $GLOBALS['security_audit_outcome'] = 'denied';
         header('Location: ' . BASE_URL . 'index.php');
         exit;
     }
@@ -284,8 +196,13 @@ function requireScannerAccess(): void {
 function requireStaff(): void {
     requireLogin();
     if (isScannerOperator()) {
+        $GLOBALS['security_audit_outcome'] = 'denied';
         header('Location: ' . BASE_URL . 'attendance/scanner.php');
         exit;
+    }
+    if (!isAdmin() && !isTeacher()) {
+        http_response_code(403);
+        exit('Staff access is restricted to administrators and teachers.');
     }
 }
 
@@ -296,8 +213,19 @@ function isKioskMode(): bool {
 // ─── Teacher section access ──────────────────────────────────
 
 function getAllowedSections() {
+    require_once __DIR__ . '/enrollment_access.php';
     $db   = getDB();
     $user = currentUser();
+
+    if (enrollmentModelEnabled($db)) {
+        [$scope,$params] = enrollmentSectionScope('s',$user);
+        $stmt = $db->prepare("SELECT s.*,u.full_name AS adviser_name FROM sections s
+            LEFT JOIN users u ON s.adviser_id=u.id
+            WHERE s.is_active=1 AND ($scope) AND s.school_year_id=(SELECT id FROM school_years WHERE state='active')
+            ORDER BY FIELD(s.grade_level,'Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grade 6'),s.section_name");
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
 
     if (isAdmin()) {
         return $db->query("
@@ -323,6 +251,15 @@ function getAllowedSections() {
 }
 
 function canAccessSection(int $sectionId): bool {
+    require_once __DIR__ . '/enrollment_access.php';
+    if (!isAdmin() && !isTeacher()) return false;
+    if (enrollmentModelEnabled(getDB())) {
+        [$scope,$params] = enrollmentSectionScope('sec',currentUser());
+        $stmt=getDB()->prepare("SELECT sec.id FROM sections sec WHERE sec.id=? AND ($scope)
+            AND sec.school_year_id=(SELECT id FROM school_years WHERE state='active')");
+        $stmt->execute(array_merge([$sectionId],$params));
+        return (bool)$stmt->fetchColumn();
+    }
     if (isAdmin()) return true;
     $db   = getDB();
     $user = currentUser();
@@ -437,39 +374,32 @@ function getGradeLevels(): array {
 
 // ─── Attendance event detection ──────────────────────────────
 
+/** Saved section choices take priority; grades only supply defaults. */
+function getAttendanceScheduleType(array $section): string {
+    if (in_array($section['schedule_type'] ?? '', ['am_only', 'pm_only', 'full_day'], true)) return $section['schedule_type'];
+    $rule = getScheduleForGrade($section['grade_level'] ?? '');
+    return $rule['default_type'] ?? 'full_day';
+}
+
+function getAttendanceEvents(array $section): array {
+    $type = getAttendanceScheduleType($section);
+    return [$type === 'pm_only' ? 'pm_in' : 'am_in', $type === 'am_only' ? 'am_out' : 'pm_out'];
+}
+
 function getNextAttendanceEvent(?array $existing, array $section, ?string $now = null): string {
-    $scheduleType = $section['schedule_type'] ?? 'full_day';
-    $now          = $now ?: date('H:i:s');
-
-    $usesAM = in_array($scheduleType, ['full_day', 'am_only'], true);
-    $usesPM = in_array($scheduleType, ['full_day', 'pm_only'], true);
-
-    if (!$existing) {
-        if ($usesAM && $now < '12:00:00') return 'am_in';
-        if ($usesPM)                      return 'pm_in';
-        if ($usesAM)                      return 'am_in';
-        return 'complete';
-    }
-
-    $amIn  = !empty($existing['am_in']);
-    $amOut = !empty($existing['am_out']);
-    $pmIn  = !empty($existing['pm_in']);
-    $pmOut = !empty($existing['pm_out']);
-
-    $isPMTime = $usesPM && $now >= '12:00:00';
-
-    if ($usesAM && !$isPMTime) {
-        if (!$amIn)  return 'am_in';
-        if (!$amOut) return 'am_out';
-        if ($scheduleType === 'am_only') return 'complete';
-    }
-
-    if ($usesPM) {
-        if (!$pmIn)  return 'pm_in';
-        if (!$pmOut) return 'pm_out';
-    }
-
-    return 'complete';
+    $now = $now ?: date('H:i:s');
+    [$arrival, $departure] = getAttendanceEvents($section);
+    if (!empty($existing[$arrival]) && !empty($existing[$departure])) return 'complete';
+    $event = empty($existing[$arrival]) ? $arrival : $departure;
+    $prefix = $event;
+    $defaults = ['am_in' => ['00:00:00', '11:59:59'],
+        'pm_in' => ['13:00:00', '13:30:00'], 'am_out' => ['11:30:00', '12:00:00'], 'pm_out' => ['12:00:00', '23:59:59']];
+    $start = $section[$prefix . '_start'] ?? $defaults[$prefix][0];
+    $end = $section[$prefix . '_end'] ?? $defaults[$prefix][1];
+    if ($event === 'am_in' && $now >= '12:00:00') return 'outside_window';
+    if (in_array($event, ['pm_in', 'pm_out'], true) && $now < '12:00:00') return 'outside_window';
+    if ($event === 'am_out' && $now > '12:00:00') return 'outside_window';
+    return $now >= $start && $now <= $end ? $event : 'outside_window';
 }
 
 function getSessionStatus(string $time, string $thresholdKey, array $section): string {
@@ -478,28 +408,12 @@ function getSessionStatus(string $time, string $thresholdKey, array $section): s
     return strtotime($time) > strtotime($threshold) ? 'late' : 'present';
 }
 
+/** One required scan is Partial; both are Full Day for every schedule type. */
 function computeAttendanceType(array $record, array $section): string {
-    $scheduleType = $section['schedule_type'] ?? 'full_day';
-
-    $amIn  = !empty($record['am_in']);
-    $amOut = !empty($record['am_out']);
-    $pmIn  = !empty($record['pm_in']);
-    $pmOut = !empty($record['pm_out']);
-
-    if ($scheduleType === 'am_only') {
-        if ($amIn && $amOut) return 'full_day';
-        if ($amIn || $amOut) return 'partial';
-        return 'absent';
-    }
-
-    if ($scheduleType === 'pm_only') {
-        if ($pmIn && $pmOut) return 'full_day';
-        if ($pmIn || $pmOut) return 'partial';
-        return 'absent';
-    }
-
-    if ($amIn && $amOut && $pmIn && $pmOut) return 'full_day';
-    if ($amIn || $amOut || $pmIn || $pmOut) return 'partial';
+    [$arrival, $departure] = getAttendanceEvents($section);
+    if (!empty($record[$arrival]) && !empty($record[$departure])) return 'full_day';
+    if (!empty($record[$arrival]) || !empty($record[$departure])) return 'partial';
+    if (trim($record['remarks'] ?? '') !== '') return 'remarked';
     return 'absent';
 }
 
@@ -556,7 +470,7 @@ function getDashboardStats(?int $sectionId = null): array {
 // ─── QR Token generator ──────────────────────────────────────
 
 function generateQRToken(string $lrn): string {
-    return 'STU-' . $lrn . '-' . strtoupper(substr(md5(uniqid($lrn, true)), 0, 6));
+    return newStudentQRToken($lrn);
 }
 
 // ─── Sanitize ────────────────────────────────────────────────
@@ -580,7 +494,8 @@ function formatPhone(string $number): string {
 
 // ─── SMS via UniSMS ──────────────────────────────────────────
 
-function sendSMS(string $number, string $message, int $studentId, string $type): bool {
+function sendSMS(string $number, string $message, int $studentId, string $type, ?string &$deliveryStatus = null): bool {
+    $deliveryStatus = 'failed';
     $db     = getDB();
     $apiKey = getSetting('unisms_api_key');
 
@@ -608,19 +523,8 @@ function sendSMS(string $number, string $message, int $studentId, string $type):
             $status      = 'failed';
             $apiResponse = 'cURL returned false';
         } else {
-            $decoded     = json_decode($response, true);
             $apiResponse = $response;
-            $status      = 'failed';
-
-            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                if (
-                    (isset($decoded['message']['status']) && $decoded['message']['status'] === 'sent') ||
-                    (isset($decoded['event']) && $decoded['event'] === 'message.sent') ||
-                    (isset($decoded['status']) && $decoded['status'] === 'sent')
-                ) {
-                    $status = 'sent';
-                }
-            }
+            $status = smsResponseStatus($response);
         }
     } catch (Exception $e) {
         $status      = 'failed';
@@ -632,22 +536,14 @@ function sendSMS(string $number, string $message, int $studentId, string $type):
         VALUES (?, ?, ?, ?, ?, ?)")
        ->execute([$studentId, $phone, $message, $type, $status, $apiResponse]);
 
+    $deliveryStatus = $status;
     return $status === 'sent';
 }
 
 // ─── SMS message builder ─────────────────────────────────────
 
 function buildSMSMessage(string $templateKey, array $student): string {
-    $template = getSetting($templateKey) ?? '';
-    return str_replace(
-        ['{student_name}', '{time}', '{date}'],
-        [
-            $student['first_name'] . ' ' . $student['last_name'],
-            date('h:i A'),
-            date('F j, Y'),
-        ],
-        $template
-    );
+    return renderNotificationText(notificationTemplate($templateKey), $student);
 }
 
 // ─── Pagination ──────────────────────────────────────────────
@@ -708,6 +604,7 @@ function attendanceTypeBadge(string $type): string {
         'partial'  => '<span class="status-badge badge-partial">Partial</span>',
         'absent'   => '<span class="status-badge badge-absent">Absent</span>',
         'holiday'  => '<span class="status-badge badge-holiday">Holiday</span>',
+        'remarked' => '<span class="status-badge badge-secondary">Manual remark</span>',
         default    => '<span class="status-badge badge-secondary">—</span>',
     };
 }

@@ -4,10 +4,15 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+requireStudentManagement();
+require_once '../includes/enrollment_reports.php';
+guardCsrfPage(true);
 
 $pageTitle = 'Master List';
 $db        = getDB();
+$reportContext = prepareEnrollmentDirectory($db,true);
+[$sectionScope, $sectionScopeParams] = studentSectionScope('sec', $reportContext['managed'] ? (int)$reportContext['year']['id'] : null, $reportContext['managed']);
 
 // ---------------------------------------------------------------
 // Handle inline adviser update (AJAX POST)
@@ -28,8 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
         exit;
     }
     try {
-        $stmt = $db->prepare("UPDATE sections SET adviser_id = ? WHERE id = ?");
-        $stmt->execute([$adviserId, $sectionId]);
+        if (enrollmentModelEnabled($db)) {
+            require_once '../includes/enrollment_commands.php';
+            saveEnrollmentSectionAdvisers($db,currentUser(),[$sectionId=>$adviserId]);
+        } else {
+            $stmt = $db->prepare("UPDATE sections SET adviser_id = ? WHERE id = ?");
+            $stmt->execute([$adviserId, $sectionId]);
+        }
 
         // Fetch the new adviser name for the response
         $adviserName = null;
@@ -51,12 +61,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 $sy    = trim($_GET['sy']    ?? '');
 $grade = trim($_GET['grade'] ?? '');
 
+if ($reportContext['managed']) $sy=$reportContext['year']['label'];
 if ($sy === '') {
-    $latest = $db->query("
-        SELECT school_year FROM sections
-        WHERE school_year IS NOT NULL AND school_year != ''
+    $latestStmt = $db->prepare("
+        SELECT school_year FROM sections sec
+        WHERE school_year IS NOT NULL AND school_year != '' AND ({$sectionScope})
         ORDER BY school_year DESC LIMIT 1
-    ")->fetchColumn();
+    ");
+    $latestStmt->execute($sectionScopeParams);
+    $latest = $latestStmt->fetchColumn();
     $sy = $latest ?: '2026-2027';
 }
 
@@ -65,8 +78,8 @@ $gradeLevels = ['Kinder','Grade 1','Grade 2','Grade 3','Grade 4','Grade 5','Grad
 // ---------------------------------------------------------------
 // Fetch sections
 // ---------------------------------------------------------------
-$where  = ['sec.school_year = ?'];
-$params = [$sy];
+$where  = ['sec.school_year = ?', "({$sectionScope})"];
+$params = array_merge([$sy], $sectionScopeParams);
 
 if ($grade !== '') {
     $where[]  = 'sec.grade_level = ?';
@@ -89,23 +102,32 @@ $stmt = $db->prepare("
 ");
 $stmt->execute($params);
 $sections = $stmt->fetchAll();
+if ($reportContext['managed']) {
+    foreach ($sections as &$section) {
+        $section['student_count']=count(array_filter($reportContext['data']['roster'],fn($row)=>in_array((int)$section['id'],array_column($row['assignments'],'section_id'),true)));
+    }
+    unset($section);
+}
 
 // ---------------------------------------------------------------
 // Fetch students grouped by section
 // ---------------------------------------------------------------
 $studentsBySection = [];
-if ($sections) {
+if ($reportContext['managed']) {
+    foreach ($sections as $section) $studentsBySection[$section['id']]=enrollmentDirectoryRows($reportContext,'',(int)$section['id']);
+} elseif ($sections) {
     $ids = array_column($sections, 'id');
     $ph  = implode(',', array_fill(0, count($ids), '?'));
+    [$studentScope, $studentScopeParams] = studentRecordScope('s');
 
     $sStmt = $db->prepare("
         SELECT id, lrn, first_name, middle_name, last_name, gender, section_id,
                parent_name, parent_contact
-        FROM students
-        WHERE is_active = 1 AND section_id IN ($ph)
+        FROM students s
+        WHERE is_active = 1 AND section_id IN ($ph) AND ({$studentScope})
         ORDER BY last_name, first_name
     ");
-    $sStmt->execute($ids);
+    $sStmt->execute(array_merge($ids, $studentScopeParams));
     foreach ($sStmt->fetchAll() as $row) {
         $studentsBySection[$row['section_id']][] = $row;
     }
@@ -114,22 +136,25 @@ if ($sections) {
 // ---------------------------------------------------------------
 // Advisers dropdown list
 // ---------------------------------------------------------------
-$advisers = $db->query("
+$advisers = isAdmin() ? $db->query("
     SELECT id, full_name 
     FROM users 
     WHERE role IN ('teacher','admin') AND is_active = 1
     ORDER BY full_name
-")->fetchAll();
+")->fetchAll() : [];
 
 // Distinct school years for filter
-$schoolYears = $db->query("
-    SELECT DISTINCT school_year FROM sections 
-    WHERE school_year IS NOT NULL AND school_year != ''
+$yearStmt = $db->prepare("
+    SELECT DISTINCT school_year FROM sections sec
+    WHERE school_year IS NOT NULL AND school_year != '' AND ({$sectionScope})
     ORDER BY school_year DESC
-")->fetchAll(PDO::FETCH_COLUMN);
+");
+$yearStmt->execute($sectionScopeParams);
+$schoolYears = $reportContext['managed'] ? enrollmentReportYearLabels($db,currentUser()) : $yearStmt->fetchAll(PDO::FETCH_COLUMN);
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <?php showFlash(); ?>
@@ -149,6 +174,7 @@ include '../includes/sidebar.php';
             <i class="bi bi-printer me-1"></i>Print
         </button>
         <?php if (isAdmin()): ?>
+        <?php if (enrollmentModelEnabled($db)): ?><a href="moving_up.php" class="btn btn-outline-success">Moving Up</a><?php endif; ?>
         <a href="section_advisers.php?sy=<?= urlencode($sy) ?>" class="btn btn-outline-primary">
             <i class="bi bi-person-badge me-1"></i>Bulk Assign Advisers
         </a>
@@ -317,6 +343,7 @@ function updateAdviser(selectEl) {
 
     const formData = new FormData();
     formData.append('action', 'update_adviser');
+    formData.append('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
     formData.append('section_id', sectionId);
     formData.append('adviser_id', adviserId);
 

@@ -1,10 +1,12 @@
 <?php
 /**
- * Download QR code as PNG file
+ * Download the complete reusable student card as a self-contained SVG.
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-require_once '../includes/qr_helper.php';
+require_once '../includes/qr_access.php';
+requireQRManagement();
+require_once '../includes/qr_card.php';
 
 $id = (int)($_GET['id'] ?? 0);
 $db = getDB();
@@ -17,24 +19,12 @@ if (!$student) {
     http_response_code(404);
     exit('Student not found');
 }
+$student=requireQRStudentAccess($id,$student);
 
-$filename = 'QR_' . $student['lrn'] . '_' . $student['last_name'] . '.png';
-$savePath = sys_get_temp_dir() . '/' . $filename;
-
-$generated = generateQRCode($student['qr_token'], $savePath, 400);
-
-if ($generated && file_exists($savePath)) {
-    header('Content-Type: image/png');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    header('Content-Length: ' . filesize($savePath));
-    readfile($savePath);
-    unlink($savePath); // clean up temp file
-    exit;
-}
-
-// Fallback: serve SVG
-$svg = generateQRCodeSVG($student['qr_token'], 400);
-header('Content-Type: image/svg+xml');
-header('Content-Disposition: attachment; filename="QR_' . $student['lrn'] . '.svg"');
-echo $svg;
+// Generate in memory: no PII-derived filenames or shared temporary files.
+$card = generateStudentQRCardSVG($student, getSetting('school_name') ?? 'San Pablo City Central School');
+header('Content-Type: image/svg+xml; charset=UTF-8');
+header('Content-Disposition: attachment; filename="student-attendance-card.svg"');
+header('Cache-Control: no-store, private');
+echo $card;
 exit;

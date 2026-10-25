@@ -4,25 +4,28 @@
  */
 require_once '../config/database.php';
 require_once '../includes/functions.php';
-requireLogin();
+require_once '../includes/student_access.php';
+require_once '../includes/student_photos.php';
+requireStudentManagement();
+guardCsrfPage();
 
 $id = (int)($_GET['id'] ?? 0);
 $db = getDB();
+$managedEnrollment = enrollmentModelEnabled($db);
+[$studentScope, $scopeParams] = studentRecordScope('s');
 
-$stmt = $db->prepare("SELECT * FROM students WHERE id = ? AND is_active = 1");
-$stmt->execute([$id]);
+$stmt = $db->prepare("SELECT s.* FROM students s WHERE s.id = ? AND s.is_active = 1 AND ({$studentScope})");
+$stmt->execute(array_merge([$id], $scopeParams));
 $student = $stmt->fetch();
 
 if (!$student) {
+    $GLOBALS['security_audit_outcome'] = 'denied';
     setFlash('danger', 'Student not found.');
     header('Location: students.php');
     exit;
 }
 
-$sections = $db->query("
-    SELECT * FROM sections WHERE is_active = 1
-    ORDER BY " . gradeLevelOrderSQL('grade_level') . ", section_name
-")->fetchAll();
+$sections = getAllowedSections();
 
 $errors = [];
 
@@ -34,10 +37,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $gender        = $_POST['gender']              ?? '';
     $birthDate     = $_POST['birth_date']          ?? '';
     $address       = trim($_POST['address']        ?? '');
-    $sectionId     = (int)($_POST['section_id']    ?? 0);
+    $sectionId     = (int)($_POST['section_id']    ?? $student['section_id']);
     $parentName    = trim($_POST['parent_name']    ?? '');
     $parentContact = trim($_POST['parent_contact'] ?? '');
     $parentEmail   = trim($_POST['parent_email']   ?? '');
+
+    // A teacher cannot transfer even between sections they advise.
+    if (($managedEnrollment || !isAdmin()) && $sectionId !== (int)$student['section_id']) {
+        http_response_code(403);
+        exit('Use the enrollment workflow to change student placement.');
+    }
 
     if (empty($lrn))       $errors[] = 'LRN is required.';
     if (empty($firstName)) $errors[] = 'First name is required.';
@@ -74,30 +83,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($_FILES['photo']['size'] > 2 * 1024 * 1024) {
             $errors[] = 'Photo must be under 2MB.';
         } else {
-            $photo = 'student_' . time() . '_' . rand(1000,9999) . '.' . $ext;
-            $dest  = BASE_PATH . 'uploads/students/' . $photo;
-            if (!move_uploaded_file($_FILES['photo']['tmp_name'], $dest)) {
+            try {
+                $photo = storeStudentPhotoUpload($_FILES['photo']);
+            } catch (Throwable $error) {
                 $errors[] = 'Failed to upload photo.';
             }
         }
     }
 
     if (empty($errors)) {
-        $db->prepare("
-            UPDATE students SET
+        $writeScope = $studentScope;
+        $writeParams = $scopeParams;
+        if (!isAdmin()) {
+            $writeScope .= ' AND s.section_id = ?';
+            $writeParams[] = (int)$student['section_id'];
+        }
+        $db->beginTransaction();
+        try {
+        if ($managedEnrollment) {
+            requireEnrollmentWrite($db,currentUser(),$id,date('Y-m-d'));
+        }
+        $auditRead = $db->prepare("SELECT s.* FROM students s WHERE s.id = ? AND s.is_active = 1 AND ({$writeScope}) FOR UPDATE");
+        $auditRead->execute(array_merge([$id], $writeParams));
+        $beforeAudit = $auditRead->fetch();
+        if (!$beforeAudit) { $db->rollBack(); http_response_code(403); exit('Student access has changed.'); }
+        if ($managedEnrollment) {
+            // Profile edits never overwrite placement, including a stale form's projection.
+            $sectionId = (int)$beforeAudit['section_id'];
+            $gradeLevel = $beforeAudit['grade_level'];
+            $schoolYear = $beforeAudit['school_year'];
+        }
+        $save = $db->prepare("
+            UPDATE students s SET
                 lrn=?, first_name=?, middle_name=?, last_name=?,
                 gender=?, birth_date=?, address=?, section_id=?,
                 grade_level=?, school_year=?,
                 photo=?, parent_name=?, parent_contact=?, parent_email=?
-            WHERE id=?
-        ")->execute([
+            WHERE s.id=? AND s.is_active = 1 AND ({$writeScope})
+        ");
+        $save->execute(array_merge([
             $lrn, $firstName, $middleName, $lastName,
             $gender, $birthDate ?: null, $address, $sectionId ?: null,
             $gradeLevel, $schoolYear,
             $photo, $parentName, $parentContact, $parentEmail,
             $id
-        ]);
+        ], $writeParams));
+        // Reassignment or archiving during editing must revoke write access.
+        if ($save->rowCount() === 0) {
+            $checkAccess = $db->prepare("SELECT s.id FROM students s WHERE s.id = ? AND s.is_active = 1 AND ({$writeScope})");
+            $checkAccess->execute(array_merge([$id], $writeParams));
+            if (!$checkAccess->fetch()) { http_response_code(403); exit('Student access has changed. Reload the student list.'); }
+        }
 
+        $auditRead->execute(array_merge([$id], $writeParams));
+        $afterAudit = $auditRead->fetch();
+        // A transfer by an administrator remains in the admin scope.
+        if (!$afterAudit) throw new RuntimeException('Student history target is missing.');
+        $auditFields = array_flip(['lrn','first_name','middle_name','last_name','gender','birth_date','section_id','grade_level','school_year','parent_name','parent_contact','parent_email','address','photo']);
+        $beforeValues = array_intersect_key($beforeAudit, $auditFields);
+        $afterValues = array_intersect_key($afterAudit, $auditFields);
+        // Keep only changed fields; avoid duplicating unrelated PII in history.
+        foreach ($beforeValues as $field => $value) if ($value === $afterValues[$field]) { unset($beforeValues[$field], $afterValues[$field]); }
+        $contactChanged = false;
+        foreach (['parent_name','parent_contact','parent_email'] as $field) if ($beforeAudit[$field] !== $afterAudit[$field]) $contactChanged = true;
+        securityAuditChange($db, $contactChanged ? 'student.contact_change' : 'student.update', 'student', $id, $beforeValues, $afterValues, $contactChanged);
+        $db->commit();
+        } catch (DomainException $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            http_response_code(403); exit('Student access has changed. Reload the student list.');
+        } catch (Throwable $error) {
+            if ($db->inTransaction()) $db->rollBack();
+            http_response_code(503); exit('Unable to save the student.');
+        }
         setFlash('success', "Student {$firstName} {$lastName} updated successfully.");
         header('Location: view.php?id=' . $id);
         exit;
@@ -132,6 +189,7 @@ include '../includes/sidebar.php';
 <?php endif; ?>
 
 <form method="POST" enctype="multipart/form-data" novalidate>
+<?= csrfField() ?>
     <div class="row g-4">
 
         <!-- Photo -->
@@ -140,10 +198,9 @@ include '../includes/sidebar.php';
                 <div class="card-header"><i class="bi bi-camera me-2"></i>Photo</div>
                 <div class="card-body text-center">
                     <img id="photoPreview"
-                         src="<?= BASE_URL ?>uploads/students/<?= htmlspecialchars($student['photo']) ?>"
+                         src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?>"
                          class="rounded-circle mb-3"
-                         style="width:120px;height:120px;object-fit:cover;border:3px solid #1a56db"
-                         onerror="this.onerror=null;this.src='https://ui-avatars.com/api/?name=<?= urlencode($student['first_name'].' '.$student['last_name']) ?>&size=120&background=1a56db&color=fff'">
+                         style="width:120px;height:120px;object-fit:cover;border:3px solid #1a56db">
                     <div>
                         <label for="photo" class="btn btn-sm btn-outline-primary">
                             <i class="bi bi-camera me-1"></i>Change Photo
@@ -222,7 +279,10 @@ include '../includes/sidebar.php';
                         </div>
                         <div class="col-md-8">
                             <label class="form-label">Section</label>
-                            <select name="section_id" class="form-select">
+                            <?php if ($managedEnrollment || !isAdmin()): ?>
+                            <input type="hidden" name="section_id" value="<?= (int)$student['section_id'] ?>">
+                            <?php endif; ?>
+                            <select name="section_id" class="form-select" <?= $managedEnrollment || !isAdmin() ? 'disabled' : '' ?>>
                                 <option value="">Select Section</option>
                                 <?php
                                 $currentGrade = '';
@@ -241,6 +301,7 @@ include '../includes/sidebar.php';
                                 <?php endforeach; ?>
                                 <?php if ($currentGrade !== '') echo '</optgroup>'; ?>
                             </select>
+                            <?php if ($managedEnrollment): ?><small class="text-muted">Placement changes require an administrator. <?php if (isAdmin()): ?><a href="enrollment_corrections.php?student_id=<?= (int)$student['id'] ?>">Review enrollment correction</a><?php endif; ?></small><?php elseif (!isAdmin()): ?><small class="text-muted">Contact an administrator to transfer this student.</small><?php endif; ?>
                         </div>
                         <div class="col-12">
                             <label class="form-label">Address</label>

@@ -11,6 +11,7 @@
  */
 
 // Current script + folder, resolved ONCE
+require_once __DIR__ . '/school_years.php';
 $currentFile = basename($_SERVER['PHP_SELF']);                 // e.g. attendance.php
 $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slashes
 ?>
@@ -249,6 +250,15 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
     <!-- Navigation -->
     <ul class="nav flex-column px-2 py-2">
 
+        <?php if (isAdmin() || isTeacher()): ?>
+        <li class="nav-item">
+            <a href="<?= BASE_URL ?>profile.php"
+               class="nav-link <?= $currentFile === 'profile.php' ? 'active' : '' ?>">
+                <i class="bi bi-person-circle me-2"></i>My Profile
+            </a>
+        </li>
+        <?php endif; ?>
+
         <?php if (isScannerOperator()): ?>
             <?php /* ─── SCANNER OPERATOR MENU ─── */ ?>
 
@@ -286,6 +296,14 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                     <i class="bi bi-calendar3 me-2"></i>Attendance
                 </a>
             </li>
+
+            <?php if (isTeacher()): ?>
+            <li class="nav-item">
+                <a href="<?= BASE_URL ?>attendance/end_of_day.php" class="nav-link <?= $currentFile === 'end_of_day.php' ? 'active' : '' ?>">
+                    <i class="bi bi-exclamation-circle me-2"></i>End of Day Review
+                </a>
+            </li>
+            <?php endif; ?>
 
             <li class="nav-item">
                 <a href="<?= BASE_URL ?>calendar/calendar.php"
@@ -327,6 +345,13 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 </a>
             </li>
 
+            <?php if (isTeacher() && !isAdmin()): ?>
+            <li class="nav-item">
+                <a href="<?= BASE_URL ?>sections/sections.php" class="nav-link <?= $currentFile === 'sections.php' ? 'active' : '' ?>">
+                    <i class="bi bi-diagram-3 me-2"></i>Section Schedules
+                </a>
+            </li>
+            <?php endif; ?>
             <?php if (isAdmin()): ?>
                 <?php /* ─── ADMIN-ONLY REPORTS ─── */ ?>
 
@@ -345,6 +370,10 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 </li>
 
                 <li class="nav-section-label mt-2">ADMIN</li>
+                <?php if (enrollmentModelEnabled(getDB())): ?>
+                <li class="nav-item"><a href="<?= BASE_URL ?>students/moving_up.php" class="nav-link <?= $currentFile === 'moving_up.php' ? 'active' : '' ?>"><i class="bi bi-arrow-up-right-circle me-2"></i>Moving Up</a></li>
+                <li class="nav-item"><a href="<?= BASE_URL ?>students/enrollment_corrections.php" class="nav-link <?= $currentFile === 'enrollment_corrections.php' ? 'active' : '' ?>"><i class="bi bi-pencil-square me-2"></i>Enrollment Corrections</a></li>
+                <?php endif; ?>
 
                 <li class="nav-item">
                     <a href="<?= BASE_URL ?>users/users.php"
@@ -367,6 +396,10 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                     </a>
                 </li>
 
+                <li class="nav-item"><a href="<?= BASE_URL ?>security_audit.php" class="nav-link <?= $currentFile === 'security_audit.php' ? 'active' : '' ?>"><i class="bi bi-shield-check me-2"></i>Security Audit <?php $auditAlertCount = securityAuditAlertCount(); if ($auditAlertCount): ?><span class="badge bg-danger ms-1" title="Flagged events in the last 24 hours"><?= $auditAlertCount ?></span><?php endif; ?></a></li>
+                  <li class="nav-item">
+                    <a href="<?= BASE_URL ?>settings/school_years.php" class="nav-link <?= $currentFile === 'school_years.php' ? 'active' : '' ?>"><i class="bi bi-calendar-range me-2"></i>School Years</a>
+                </li>
                 <li class="nav-item">
                     <a href="<?= BASE_URL ?>settings/settings.php"
                        class="nav-link <?= $currentFile === 'settings.php' ? 'active' : '' ?>">

@@ -6,6 +6,8 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
 requireAdmin();
+require_once '../includes/enrollment_reports.php';
+guardCsrfPage();
 
 $pageTitle = 'Assign Advisers';
 $db        = getDB();
@@ -14,6 +16,10 @@ $db        = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $assignments = $_POST['adviser'] ?? []; // [section_id => user_id]
     try {
+        if (enrollmentModelEnabled($db)) {
+            require_once '../includes/enrollment_commands.php';
+            saveEnrollmentSectionAdvisers($db,currentUser(),$assignments);
+        } else {
         $db->beginTransaction();
         $upd = $db->prepare("UPDATE sections SET adviser_id = ? WHERE id = ?");
         foreach ($assignments as $sectionId => $adviserId) {
@@ -22,9 +28,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $upd->execute([$adviserId, $sectionId]);
         }
         $db->commit();
+        }
         setFlash('success', 'Advisers updated successfully.');
     } catch (Exception $e) {
-        $db->rollBack();
+        if ($db->inTransaction()) $db->rollBack();
         setFlash('error', 'Failed to update advisers: ' . $e->getMessage());
     }
     header('Location: section_advisers.php?sy=' . urlencode($_POST['sy'] ?? ''));
@@ -32,7 +39,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Filter by school year
-$sy = trim($_GET['sy'] ?? '');
+$reportContext=prepareEnrollmentDirectory($db,true);
+$sy = $reportContext['year']['label'] ?? trim($_GET['sy'] ?? '');
 if ($sy === '') {
     $latest = $db->query("
         SELECT school_year FROM sections
@@ -70,6 +78,7 @@ $schoolYears = $db->query("
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <?php showFlash(); ?>
@@ -108,6 +117,7 @@ include '../includes/sidebar.php';
 </div>
 
 <form method="POST">
+<?= csrfField() ?>
 <input type="hidden" name="sy" value="<?= sanitize($sy) ?>">
 
 <div class="card">

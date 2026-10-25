@@ -16,6 +16,7 @@ require_once 'includes/functions.php';
 // requireLogin() also sends no-cache headers, so the browser never
 // serves a stale dashboard from its own cache.
 requireStaff();
+require_once 'includes/enrollment_reports.php';
 
 $pageTitle = 'Dashboard';
 $db        = getDB();
@@ -39,7 +40,20 @@ $upcomingEvents = $db->query("
 ")->fetchAll();
 
 // ── Today's snapshot ───────────────────────────────────────
-$stats = getDashboardStats();
+if (enrollmentModelEnabled($db)) {
+    require_once 'includes/enrollment_operations.php';
+    $todayRoster=enrollmentOperationalRows($db,$today,null,$user);
+    $todayContext=prepareEnrollmentReport($db,$today,$today,null,true);
+    $todayIds=array_column($todayRoster,'id');
+    $stats=['total_students'=>count($todayRoster),'full_day_today'=>0,'partial_today'=>0,'absent_today'=>0,'late_today'=>0,'is_holiday'=>$isHoliday,'calendar_entry'=>$calendarEntry];
+    foreach ($todayContext['data']['attendance'] as $record) {
+        if (!in_array($record['student_id'],$todayIds)) continue;
+        $key=$record['attendance_type'].'_today';
+        if (isset($stats[$key])) $stats[$key]++;
+        if ($record['am_status']==='late' || $record['pm_status']==='late') $stats['late_today']++;
+    }
+    $stats['present_today']=$stats['full_day_today']+$stats['partial_today'];
+} else $stats = getDashboardStats();
 
 // ── Scope filter (for the 7-day mini trend) ────────────────
 $scopeFilter = '';
@@ -53,14 +67,17 @@ if (!isAdmin()) {
 $trend = [];
 $startDate = date('Y-m-d', strtotime('-6 days'));
 
+$reportContext = prepareEnrollmentReport($db,$startDate,$today,null,true);
+$reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
+
 $stmt = $db->prepare("
     SELECT
         a.date,
         SUM(a.attendance_type = 'full_day') AS full_day,
         SUM(a.attendance_type = 'partial')  AS partial,
         SUM(a.attendance_type = 'absent')   AS absent
-    FROM attendance a
-    JOIN students s      ON a.student_id = s.id
+    FROM {$reportAttendance} a
+    JOIN {$reportStudents} s ON a.student_id = s.id {$reportJoin}
     LEFT JOIN sections sec ON s.section_id = sec.id
     WHERE a.date BETWEEN ? AND ? {$scopeFilter}
     GROUP BY a.date
@@ -88,6 +105,7 @@ for ($i = 6; $i >= 0; $i--) {
 
 include 'includes/header.php';
 include 'includes/sidebar.php';
+enrollmentReportNotice($reportContext);
 ?>
 
 <style>
@@ -257,17 +275,15 @@ include 'includes/sidebar.php';
                     <thead class="sticky-top bg-white" style="z-index:1">
                         <tr>
                             <th>Student</th>
-                            <th class="text-center">AM In</th>
-                            <th class="text-center">AM Out</th>
-                            <th class="text-center">PM In</th>
-                            <th class="text-center">PM Out</th>
+                            <th class="text-center">Time-In</th>
+                            <th class="text-center">Time-Out</th>
                             <th>Last Event</th>
                             <th class="text-center">Type</th>
                         </tr>
                     </thead>
                     <tbody id="todayLogBody">
                         <tr>
-                            <td colspan="7" class="text-center text-muted py-4">
+                            <td colspan="5" class="text-center text-muted py-4">
                                 <span class="spinner-border spinner-border-sm me-2"></span>
                                 Loading today's log...
                             </td>
@@ -407,11 +423,11 @@ include 'includes/sidebar.php';
                     </div>
                     <?php if (isAdmin()): ?>
                     <div class="col-6 col-md-3">
-                        <a href="sms/sms.php" class="quick-tile">
+                        <a href="sms/logs.php" class="quick-tile">
                             <i class="bi bi-chat-dots text-danger"></i>
                             <div>
                                 <div class="qt-title">SMS</div>
-                                <div class="qt-sub">Send notifications</div>
+                                <div class="qt-sub">View SMS logs</div>
                             </div>
                         </a>
                     </div>
@@ -469,6 +485,7 @@ $extraJS = <<<JS
             pending:  'secondary'
         };
         const cls = map[type] || 'secondary';
+        if (type === 'remarked') return '<span class="badge bg-secondary">Manual remark</span>';
         const label = (type || '—').replace('_', ' ');
         return '<span class="badge bg-' + cls + '" style="font-size:0.65rem">' +
                esc(label) + '</span>';
@@ -481,7 +498,7 @@ $extraJS = <<<JS
     }
 
     function lastEventCell(r) {
-        const labels = {am_in: 'AM In', am_out: 'AM Out', pm_in: 'PM In', pm_out: 'PM Out'};
+        const labels = {am_in: 'Time-In', am_out: 'Time-Out (AM)', pm_in: 'Time-In (PM)', pm_out: 'Time-Out (PM)'};
         return '<span class="badge bg-secondary">' + esc(labels[r.last_event] || '') + '</span>' +
                '<div class="text-muted small">' + esc(r.last_event_time || '') + '</div>';
     }
@@ -506,7 +523,7 @@ $extraJS = <<<JS
                               (filtered.length === 1 ? '' : 's');
 
         if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">' +
                 '<i class="bi bi-inbox me-1"></i>' + (rows.length ? 'No scans match your filter.' : 'No scans today.') + '</td></tr>';
             return;
         }
@@ -519,10 +536,8 @@ $extraJS = <<<JS
                     esc(r.grade) + ' — ' + esc(r.section) +
                 '</div>' +
               '</td>' +
-              '<td class="text-center small">' + fmtCell(r.am_in,  r.am_status) + '</td>' +
-              '<td class="text-center small">' + fmtCell(r.am_out, null)         + '</td>' +
-              '<td class="text-center small">' + fmtCell(r.pm_in,  r.pm_status) + '</td>' +
-              '<td class="text-center small">' + fmtCell(r.pm_out, null)         + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.time_in, r.arrival_status) + '</td>' +
+              '<td class="text-center small">' + fmtCell(r.time_out, null)         + '</td>' +
               '<td>' + lastEventCell(r) + '</td>' +
               '<td class="text-center">' + typeBadge(r.attendance_type) + '</td>' +
             '</tr>'
@@ -530,7 +545,7 @@ $extraJS = <<<JS
     }
 
     async function load() {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">' +
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">' +
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading today\\'s log...</td></tr>';
         try {
             const res = await fetch(ENDPOINT, { credentials: 'same-origin' });
@@ -558,7 +573,7 @@ $extraJS = <<<JS
             render();
             updatedEl.textContent = 'Updated ' + new Date().toLocaleTimeString();
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">' +
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">' +
                 'Failed to load today\\'s log: ' + esc(err.message) + '</td></tr>';
             countEl.textContent = '—';
         }

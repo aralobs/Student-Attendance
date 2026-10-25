@@ -164,6 +164,27 @@ async function confirmAction(message, url, options = {}) {
     if (await showConfirm(message, options)) window.location.href = url;
 }
 
+// Confirm POST forms without turning their mutation into a navigation.
+document.addEventListener('submit', async event => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
+    const confirmation = form.matches('[data-confirm]') ? form :
+        (event.submitter?.matches('[data-confirm]') ? event.submitter : form.querySelector('button[data-confirm]'));
+    if (!confirmation) return;
+    event.preventDefault();
+    if (form.dataset.confirmPending) return;
+    form.dataset.confirmPending = 'true';
+    try {
+        if (await showConfirm(confirmation.dataset.confirm, {
+            title: confirmation.dataset.confirmTitle,
+            confirmLabel: confirmation.dataset.confirmLabel,
+            tone: confirmation.dataset.confirmTone
+        })) HTMLFormElement.prototype.submit.call(form);
+    } finally {
+        delete form.dataset.confirmPending;
+    }
+});
+
 document.addEventListener('click', async event => {
     const link = event.target.closest('a[data-confirm]');
     if (!link || event.defaultPrevented) return;
@@ -186,7 +207,7 @@ async function ajaxPost(url, data) {
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams(data).toString()
+            body: new URLSearchParams({...data, csrf_token: document.querySelector('meta[name="csrf-token"]').content}).toString()
         });
         if (!response.ok) throw new Error('Network response was not OK');
         return await response.json();
