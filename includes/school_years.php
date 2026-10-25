@@ -200,12 +200,49 @@ function schoolYearActivationSnapshot(PDO $db, array $locked, int $targetYearId)
     }
     foreach($locked['enrollments'] as $e) if ((int)$e['school_year_id']===(int)$source['id']) unset($futureOnly[(int)$e['student_id']]);
     foreach($locked['attendance'] as $a) if ($a['date']>=$source['starts_on'] && $a['date']<=$source['ends_on']) unset($futureOnly[(int)$a['student_id']]);
+    // Graduation remains applied decision metadata, so a live profile alone
+    // cannot demand invented annual rows in every following school year.
+    // Only a completed, applied graduation with no later placement evidence
+    // qualifies; generic migration/bootstrap readiness remains unchanged.
+    $graduates=[];
+    foreach ($locked['decisions'] as $decision) {
+        if ($decision['state']!=='applied' || $decision['outcome']!=='graduated' || $decision['destination_enrollment_id']!==null) continue;
+        $annual=$enrollments[$decision['source_enrollment_id']]??null;
+        $graduationYear=$years[$decision['target_year_id']]??null;
+        $priorYear=$annual ? ($years[$annual['school_year_id']]??null) : null;
+        if (!$annual || $annual['state']!=='completed' || !$priorYear || $priorYear['state']!=='closed' || !$graduationYear
+            || $priorYear['ends_on']>=$graduationYear['starts_on'] || $graduationYear['starts_on']>$source['starts_on']) continue;
+        $student=$students[$annual['student_id']]??null;
+        if ($student && $student['section_id']===null && $student['grade_level']===null && $student['school_year']===null) {
+            $id=(int)$annual['student_id'];
+            $graduates[$id]=max($graduates[$id]??$graduationYear['starts_on'],$graduationYear['starts_on']);
+        }
+    }
+    $laterAnnuals=[];
+    foreach ($locked['enrollments'] as $annual) {
+        $id=(int)$annual['student_id']; $year=$years[$annual['school_year_id']]??null;
+        if (!isset($graduates[$id]) || !$year || $year['starts_on']<$graduates[$id]) continue;
+        $laterAnnuals[(int)$annual['id']]=$id;
+        if ($annual['state']!=='cancelled') unset($graduates[$id]);
+    }
+    $laterAssignments=[];
+    foreach ($locked['assignments'] as $assignment) if (isset($laterAnnuals[(int)$assignment['enrollment_id']])) {
+        $laterAssignments[(int)$assignment['id']]=$laterAnnuals[(int)$assignment['enrollment_id']];
+    }
+    foreach ($locked['attendance'] as $scan) {
+        if ($scan['date']>=$source['starts_on'] && $scan['date']<=$source['ends_on']) unset($graduates[(int)$scan['student_id']]);
+        // A cancelled retention destination is harmless only while truly unused,
+        // including nullable or inconsistent references from another student.
+        if (isset($laterAnnuals[(int)$scan['enrollment_id']])) unset($graduates[$laterAnnuals[(int)$scan['enrollment_id']]]);
+        if (isset($laterAssignments[(int)$scan['assignment_id']])) unset($graduates[$laterAssignments[(int)$scan['assignment_id']]]);
+    }
     $readiness=[];
     foreach ([(int)$source['id'],$targetYearId] as $yearId) {
         $ready=enrollmentMigrationReadiness($db,$yearId);
         $readiness[$yearId]=['fingerprint'=>$ready['fingerprint'],'blocking_issues'=>$ready['blocking_issues']];
         foreach($ready['blocking_issues'] as $issue) {
-            if ($yearId===(int)$source['id'] && $issue['record_type']==='student' && $issue['code']==='missing_current_assignment' && isset($futureOnly[(int)$issue['record_id']])) continue;
+            if ($yearId===(int)$source['id'] && $issue['record_type']==='student' && $issue['code']==='missing_current_assignment'
+                && (isset($futureOnly[(int)$issue['record_id']]) || isset($graduates[(int)$issue['record_id']]))) continue;
             $add($issue['record_type'],(int)$issue['record_id'],$issue['code']);
         }
         foreach($ready['historical_issues'] as $issue) $historical[$issue['record_type'].':'.$issue['record_id'].':'.$issue['code']]=$issue;

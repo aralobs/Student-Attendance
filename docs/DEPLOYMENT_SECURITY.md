@@ -112,3 +112,12 @@ References: [OWASP Database Security](https://cheatsheetseries.owasp.org/cheatsh
 [OWASP File Upload](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html),
 [PHP PDO MySQL TLS options](https://www.php.net/manual/en/ref.pdo-mysql.php).
 Build reference: [Nixpacks PHP extension selection](https://nixpacks.com/docs/providers/php).
+
+Annual enrollment adds the [cutover and recovery requirements](SCHOOL_YEAR_ENROLLMENT.md):
+verified isolated restore with original keys/audit triggers, separate photo/upload
+preservation, maintenance that blocks new writes and drains in-flight requests,
+and stopping/draining the old finalizer before the model switch. Restart only the
+converted worker. Retain append-only audit grants/triggers and HTTP migration
+denial; grant only the documented runtime state-table rights. After new-model
+writes, rollback requires reconciliation or an explicitly assessed snapshot
+restore; never silently discard annual history.

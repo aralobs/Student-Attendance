@@ -97,6 +97,14 @@ The builder refuses to overwrite an existing output folder. Rename the previous
 `deployment/hostinger` folder first. Keep its private-transfer contents secure.
 The ZIP is prepared locally; live Hostinger configuration is still required.
 
+For annual enrollment, follow the additional [cutover and recovery sequence](SCHOOL_YEAR_ENROLLMENT.md)
+before restarting cron or opening access. Verify the complete release and a
+restorable database export with original keys/triggers and separate uploads.
+Block new web writes, drain requests, and stop/drain the old worker; apply
+schema and mappings, confirm the reviewed initial-year preview through CLI,
+then restart only the converted worker. A ZIP/schema install alone does not
+enable annual workflows.
+
 Hostinger instructions:
 - [File upload and custom PHP websites](https://www.hostinger.com/support/11792202-how-to-install-custom-php-on-hostinger-agency-plan/)
 - [Database imports](https://www.hostinger.com/support/1884149-how-to-import-a-database-with-phpmyadmin-in-hostinger/)

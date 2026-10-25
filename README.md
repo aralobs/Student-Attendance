@@ -1,6 +1,10 @@
 # Student-Attendance
 
 Hostinger ZIP deployment: see [docs/HOSTINGER_DEPLOYMENT.md](docs/HOSTINGER_DEPLOYMENT.md).
+Annual enrollment rollout and recovery: follow [docs/SCHOOL_YEAR_ENROLLMENT.md](docs/SCHOOL_YEAR_ENROLLMENT.md).
+Verify backup restoration, install the complete release, and drain web/worker
+writes before explicit CLI initialization. Additive schema alone leaves legacy
+mode enabled; later years use the administrator activation flow.
 Run `powershell -ExecutionPolicy Bypass -File tools/hostinger/build.ps1` to prepare
 the upload ZIP and separate development/database/private-transfer folders.
 

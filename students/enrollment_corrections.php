@@ -10,7 +10,9 @@ requireMovingUpAdmin($db,currentUser());
 guardCsrfPage();
 $input=$_SERVER['REQUEST_METHOD']==='POST' ? $_POST : $_GET;
 $enrollmentId=(int)($input['enrollment_id'] ?? 0); $studentId=(int)($input['student_id'] ?? 0);
-$enrollments=$db->query('SELECT e.id,e.student_id,e.school_year_id,e.state,e.starts_on,e.ends_on,e.version,y.label,y.state AS year_state FROM student_enrollments e JOIN school_years y ON y.id=e.school_year_id ORDER BY y.starts_on DESC,e.student_id,e.id')->fetchAll();
+$enrollments=$db->query('SELECT e.id,e.student_id,e.school_year_id,e.state,e.starts_on,e.ends_on,e.version,y.label,y.state AS year_state,s.first_name,s.middle_name,s.last_name,s.lrn FROM student_enrollments e JOIN school_years y ON y.id=e.school_year_id JOIN students s ON s.id=e.student_id ORDER BY y.starts_on DESC,e.student_id,e.id')->fetchAll();
+$learnerLabel=static fn(array $row): string => trim($row['last_name'].', '.$row['first_name'].' '.($row['middle_name'] ?? '')).' · LRN '.$row['lrn'];
+$correctionLabels=['reassign'=>'Future reassignment / reinstate unused prepared destination','cancel'=>'Cancel prepared destination without attendance','historical_assignment'=>'Reviewed historical assignment','sf2_remark'=>'SF2 remark correction'];
 if ($studentId) $enrollments=array_values(array_filter($enrollments,fn($e)=>(int)$e['student_id']===$studentId));
 $enrollment=null; foreach ($enrollments as $row) if ((int)$row['id']===$enrollmentId) $enrollment=$row;
 $assignments=[]; $sections=[]; $graduations=[];
@@ -50,18 +52,18 @@ include '../includes/header.php'; include '../includes/sidebar.php';
 <form method="GET" class="card card-body mb-3">
 <label for="enrollment" class="form-label">Annual enrollment</label>
 <select id="enrollment" class="form-select mb-2" name="enrollment_id"><option value="">Choose an enrollment</option>
-<?php foreach ($enrollments as $row): ?><option value="<?= (int)$row['id'] ?>" <?= (int)$row['id']===$enrollmentId?'selected':'' ?>><?= sanitize('Student #'.$row['student_id'].' · '.$row['label'].' · enrollment #'.$row['id'].' · '.$row['state']) ?></option><?php endforeach; ?></select>
+<?php foreach ($enrollments as $row): ?><option value="<?= (int)$row['id'] ?>" <?= (int)$row['id']===$enrollmentId?'selected':'' ?>><?= htmlspecialchars($learnerLabel($row).' · '.$row['label'].' · '.$row['state'].' · enrollment #'.$row['id'],ENT_QUOTES | ENT_SUBSTITUTE,'UTF-8') ?></option><?php endforeach; ?></select>
 <button class="btn btn-outline-primary" type="submit">Load enrollment</button></form>
 <?php if ($enrollment): ?>
 <div class="card card-body mb-3"><h2 class="h5"><?= sanitize($enrollment['label']) ?>: <?= sanitize($enrollment['starts_on'].' through '.$enrollment['ends_on']) ?></h2>
-<p>Student #<?= (int)$enrollment['student_id'] ?> · enrollment #<?= $enrollmentId ?> · <?= sanitize($enrollment['state']) ?> · year <?= sanitize($enrollment['year_state']) ?>.</p>
+<p><?= htmlspecialchars($learnerLabel($enrollment),ENT_QUOTES | ENT_SUBSTITUTE,'UTF-8') ?> · <?= sanitize($enrollment['state']) ?> · year <?= sanitize($enrollment['year_state']) ?>. Student #<?= (int)$enrollment['student_id'] ?> · enrollment #<?= $enrollmentId ?>.</p>
 <?php if ($enrollment['year_state']==='closed'): ?><p class="alert alert-warning">This year remains closed. Only the explicitly reviewed historical assignment or SF2 remark correction may be applied.</p><?php endif; ?>
 <ul><?php foreach ($assignments as $a): ?><li>Assignment #<?= (int)$a['id'] ?>: <?= sanitize($a['grade_level'].' — '.$a['section_name'].' ('.$a['starts_on'].' through '.$a['ends_on'].')') ?></li><?php endforeach; ?></ul>
 </div>
 <form method="POST" class="card card-body mb-3">
 <?= csrfField() ?><input type="hidden" name="enrollment_id" value="<?= $enrollmentId ?>">
 <label for="kind" class="form-label">Correction</label><select name="kind" id="kind" class="form-select mb-2">
-<?php foreach (['reassign'=>'Future reassignment / reinstate unused prepared destination','cancel'=>'Cancel prepared destination without attendance','historical_assignment'=>'Reviewed historical assignment'] as $key=>$label): ?><option value="<?= $key ?>" <?= ($input['kind'] ?? '')===$key?'selected':'' ?>><?= sanitize($label) ?></option><?php endforeach; ?></select>
+<?php foreach (array_slice($correctionLabels,0,3,true) as $key=>$label): ?><option value="<?= $key ?>" <?= ($input['kind'] ?? '')===$key?'selected':'' ?>><?= sanitize($label) ?></option><?php endforeach; ?></select>
 <label for="assignment" class="form-label">Assignment to revise (placement corrections)</label><select name="assignment_id" id="assignment" class="form-select mb-2">
 <?php foreach ($assignments as $a): ?><option value="<?= (int)$a['id'] ?>" <?= (int)($input['assignment_id'] ?? 0)===(int)$a['id']?'selected':'' ?>><?= sanitize('#'.$a['id'].' '.$a['section_name'].' '.$a['starts_on'].' through '.$a['ends_on']) ?></option><?php endforeach; ?></select>
 <label for="section" class="form-label">Destination section, or original SF2 report section</label><select name="section_id" id="section" class="form-select mb-2">
@@ -98,8 +100,10 @@ include '../includes/header.php'; include '../includes/sidebar.php';
 <?php endif; ?>
 <?php if ($preview): ?>
 <div class="card card-body mb-3"><h2 class="h5">Review correction #<?= $preview['correction_id'] ?></h2>
-<p>Enrollment #<?= $enrollmentId ?> · <?= sanitize($command['kind']) ?>.</p>
-<?php if (isset($command['starts_on'])): ?><p>Effective dates: <?= sanitize($command['starts_on'].' through '.$command['ends_on']) ?>. Destination section #<?= $command['section_id'] ?>.</p><?php endif; ?>
+<p><?= htmlspecialchars($learnerLabel($enrollment).' · '.$enrollment['label'].' · '.$enrollment['state'],ENT_QUOTES | ENT_SUBSTITUTE,'UTF-8') ?>. Enrollment #<?= $enrollmentId ?> · <?= sanitize($correctionLabels[$command['kind']]) ?>.</p>
+<?php if (isset($command['starts_on'])): ?>
+<?php $destination=null; foreach ($sections as $section) if ((int)$section['id']===(int)$command['section_id']) $destination=$section; ?>
+<p>Effective dates: <?= sanitize($command['starts_on'].' through '.$command['ends_on']) ?>. Destination: <?= htmlspecialchars($destination['grade_level'].' — '.$destination['section_name'],ENT_QUOTES | ENT_SUBSTITUTE,'UTF-8') ?> (section #<?= (int)$command['section_id'] ?>).</p><?php endif; ?>
 <?php if ($command['kind']==='sf2_remark'): ?><p>SF2 section #<?= $command['section_id'] ?>, <?= $command['report_month'] ?>/<?= $command['report_year'] ?>.</p><p>Corrected remark: <?= sanitize($command['remark']) ?></p><?php endif; ?>
 <p>Reason: <?= sanitize($command['reason']) ?></p>
 <p>Attendance ownership affected: <?= count($preview['affected_attendance_ids']) ?> record(s). Interval splits may also change assignment IDs in the later preserved portion.</p>

@@ -328,3 +328,149 @@ function enrollmentMigrationReadiness(PDO $db, int $yearId): array
     ksort($blocking,SORT_STRING);
     return ['ready'=>!$blocking,'blocking_issues'=>array_values($blocking),'historical_issues'=>$historical,'fingerprint'=>$inventory['fingerprint']];
 }
+
+/** Caller owns the transaction. No consistent snapshot reads precede these locks:
+ * a legacy request/worker must also have been drained by the deployment operator.
+ * This flag cannot retroactively convert a request that already chose its branch.
+ */
+function lockEnrollmentInitializationRows(PDO $db, array $actor): array
+{
+    if (!$db->inTransaction()) throw new LogicException('Initialization locks require a transaction.');
+    if (!$db->query('SELECT id FROM school_year_control WHERE id=1 FOR UPDATE')->fetchColumn()) throw new DomainException('School-year control is missing.');
+    $years=$db->query('SELECT id,label,starts_on,ends_on,state,version FROM school_years ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $sections=$db->query('SELECT id,school_year_id,school_year,grade_level,is_active,adviser_id FROM sections ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $students=$db->query('SELECT id,is_active,enrollment_status,section_id,grade_level,school_year FROM students ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $enrollments=$db->query('SELECT id,student_id,school_year_id,state,starts_on,ends_on,version FROM student_enrollments ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $assignments=$db->query('SELECT id,enrollment_id,section_id,grade_level,starts_on,ends_on,version FROM enrollment_sections ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $attendance=$db->query('SELECT id,student_id,date,enrollment_id,assignment_id FROM attendance ORDER BY student_id,date,id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $decisions=$db->query('SELECT id,source_enrollment_id,destination_enrollment_id,target_year_id,outcome,state,version FROM moving_up_decisions ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);
+    $users=$db->query('SELECT id,role,is_active,session_token FROM users ORDER BY id LOCK IN SHARE MODE')->fetchAll(PDO::FETCH_ASSOC);
+    $settings=$db->query("SELECT setting_key,setting_value FROM system_settings WHERE setting_key IN ('enrollment_model_version','school_year','enrollment_initialization_year_id','enrollment_initialization_fingerprint') ORDER BY setting_key FOR UPDATE")->fetchAll(PDO::FETCH_ASSOC);
+    requireSchoolYearActivationAdmin($db,$actor,true);
+    return compact('years','sections','students','enrollments','assignments','attendance','decisions','users','settings');
+}
+
+/** Read the original successful command identity, never derive a new replay token. */
+function enrollmentInitializationReplay(array $locked, int $yearId): ?array
+{
+    $settings=array_column($locked['settings'],'setting_value','setting_key');
+    $mode=$settings['enrollment_model_version']??'0';
+    $originalYear=$settings['enrollment_initialization_year_id']??null;
+    $originalToken=$settings['enrollment_initialization_fingerprint']??null;
+    if ($mode==='0' && $originalYear===null && $originalToken===null) return null;
+    if ($mode!=='1' || $originalYear!==(string)$yearId || !is_string($originalToken) || !preg_match('/\A[0-9a-f]{64}\z/',$originalToken)) {
+        throw new DomainException('Initialization identity conflicts or is missing. Use year activation after initial cutover; investigate inconsistent metadata in maintenance.');
+    }
+    return ['ready'=>true,'already_initialized'=>true,'blocking_issues'=>[],'historical_issues'=>[],'fingerprint'=>$originalToken];
+}
+
+/** Private canonical snapshot. Initial prepared rows are allowed in the selected
+ * year only; future planned-year rows cannot become operational by accident.
+ * Task 4 readiness retains its existing public shape and legacy-only fingerprint.
+ */
+function enrollmentInitializationSnapshot(PDO $db, array $actor, array $locked, int $yearId): array
+{
+    $years=array_column($locked['years'],null,'id'); $year=$years[$yearId]??null;
+    if (!$year || !in_array($year['state'],['planned','active'],true)) throw new DomainException('Choose a verified planned or active initial year.');
+    schoolYearLabelStart($year['label']);
+    if (validatedSchoolYearDate($year['starts_on'])>validatedSchoolYearDate($year['ends_on'])) throw new DomainException('Invalid verified year dates.');
+    $ready=enrollmentMigrationReadiness($db,$yearId); $blocking=[];
+    $add=static function(string $type,int $id,string $code) use (&$blocking): void { $blocking[$type.':'.$id.':'.$code]=['record_type'=>$type,'record_id'=>$id,'code'=>$code]; };
+    // Re-evaluate initial eligible assignments below, accepting active or prepared.
+    foreach ($ready['blocking_issues'] as $issue) if ($issue['code']!=='missing_current_assignment') $add($issue['record_type'],$issue['record_id'],$issue['code']);
+    foreach ($years as $candidate) if ($candidate['state']==='active' && (int)$candidate['id']!==$yearId) $add('school_year',(int)$candidate['id'],'another_active_year');
+    $sections=array_column($locked['sections'],null,'id');
+    $enrollments=array_column($locked['enrollments'],null,'id'); $byStudent=[]; $byEnrollment=[];
+    foreach ($locked['assignments'] as $assignment) $byEnrollment[(int)$assignment['enrollment_id']][]=$assignment;
+    $day=max($year['starts_on'],min($year['ends_on'],date('Y-m-d')));
+    foreach ($enrollments as $e) {
+        $id=(int)$e['id']; $ownerYear=$years[$e['school_year_id']]??null;
+        if ((int)$e['school_year_id']===$yearId) $byStudent[(int)$e['student_id']]=$e;
+        if (!$ownerYear) { $add('enrollment',$id,'missing_year'); continue; }
+        if ((int)$e['school_year_id']!==$yearId && ($e['state']==='active' || ($ownerYear['state']==='planned' && !in_array($e['state'],['prepared','cancelled'],true)))) $add('enrollment',$id,'invalid_noninitial_state');
+        if ($e['state']==='cancelled') continue;
+        // Historical-only ambiguity stays qualified by the inventory/report
+        // path; it does not force an invented repair before current cutover.
+        if ((int)$e['school_year_id']!==$yearId && $ownerYear['state']==='closed' && $e['state']==='completed') continue;
+        if ($e['starts_on']<$ownerYear['starts_on'] || $e['ends_on']>$ownerYear['ends_on']) $add('enrollment',$id,'outside_verified_year');
+        $assignments=$byEnrollment[$id]??[];
+        usort($assignments,fn($a,$b)=>strcmp($a['starts_on'],$b['starts_on']) ?: ((int)$a['id']<=>(int)$b['id']));
+        $end=null;
+        foreach ($assignments as $a) {
+            $section=$sections[$a['section_id']]??null;
+            if (!$section || (int)$section['school_year_id']!==(int)$e['school_year_id'] || $section['grade_level']!==$a['grade_level'] || $a['starts_on']<$e['starts_on'] || $a['ends_on']>$e['ends_on']) $add('assignment',(int)$a['id'],'invalid_assignment');
+            if ($end!==null && $a['starts_on']<=$end) $add('enrollment',$id,'overlapping_assignments');
+            $end=max($end??$a['ends_on'],$a['ends_on']);
+        }
+        if (in_array($e['state'],['active','prepared'],true) && !$assignments) $add('enrollment',$id,'missing_assignment');
+    }
+    foreach ($locked['students'] as $student) {
+        if (!(int)$student['is_active'] || in_array($student['enrollment_status'],['graduated','transferred_out','dropped'],true)) continue;
+        $id=(int)$student['id']; $e=$byStudent[$id]??null; $eligible=0;
+        if ($e && in_array($e['state'],['active','prepared'],true) && $day>=$e['starts_on'] && $day<=$e['ends_on']) {
+            foreach ($byEnrollment[(int)$e['id']]??[] as $a) {
+                $section=$sections[$a['section_id']]??null;
+                if ($section && (int)$section['school_year_id']===$yearId && (int)$section['is_active'] && $section['grade_level']===$a['grade_level'] && $day>=$a['starts_on'] && $day<=$a['ends_on']) $eligible++;
+            }
+        }
+        if ($eligible!==1) $add('student',$id,'missing_current_assignment');
+    }
+    // Blank legacy sections cannot hide outside planned-year readiness rules.
+    foreach ($sections as $section) if ((int)$section['is_active'] && $section['school_year_id']===null && trim((string)$section['school_year'])==='') $add('section',(int)$section['id'],'unmapped_current_section');
+    ksort($blocking,SORT_STRING);
+    $fingerprint=hash('sha256',json_encode([(int)$actor['id'],$yearId,date('Y-m-d'),$locked,$ready['fingerprint'],$blocking],JSON_THROW_ON_ERROR));
+    return ['ready'=>!$blocking,'already_initialized'=>false,'blocking_issues'=>array_values($blocking),'historical_issues'=>$ready['historical_issues'],'fingerprint'=>$fingerprint];
+}
+
+function enrollmentInitializationPreview(PDO $db, array $actor, int $activeYearId): array
+{
+    if ($db->inTransaction()) throw new LogicException('Initialization preview owns its transaction.');
+    $db->beginTransaction();
+    try {
+        $locked=lockEnrollmentInitializationRows($db,$actor);
+        $result=enrollmentInitializationReplay($locked,$activeYearId)??enrollmentInitializationSnapshot($db,$actor,$locked,$activeYearId);
+        $db->commit(); return $result;
+    } catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
+}
+
+/** Initial cutover only. The complete release and drained web/worker writes are
+ * operator prerequisites; all state becomes visible together at commit.
+ */
+function initializeEnrollmentModel(PDO $db, array $actor, int $activeYearId, string $expectedFingerprint): void
+{
+    require_once __DIR__.'/enrollment_commands.php';
+    if ($db->inTransaction()) throw new LogicException('Initialization owns its transaction.');
+    $db->beginTransaction();
+    try {
+        $locked=lockEnrollmentInitializationRows($db,$actor);
+        $replay=enrollmentInitializationReplay($locked,$activeYearId);
+        $snapshot=$replay??enrollmentInitializationSnapshot($db,$actor,$locked,$activeYearId);
+        if (!hash_equals($snapshot['fingerprint'],$expectedFingerprint)) throw new DomainException('Initialization preview is stale. Review it again.');
+        if ($replay!==null) { $db->commit(); return; }
+        if (!$snapshot['ready']) throw new DomainException('Resolve current enrollment mappings before initialization.');
+        securityAuditContext((int)$actor['id']);
+        $year=array_column($locked['years'],null,'id')[$activeYearId];
+        if ($year['state']!=='active') {
+            $db->prepare("UPDATE school_years SET state='active',version=version+1 WHERE id=?")->execute([$activeYearId]);
+            $after=$year; $after['state']='active'; $after['version']=(int)$year['version']+1;
+            securityAuditChange($db,'school_year.active','school_year',$activeYearId,$year,$after);
+        }
+        foreach ($locked['enrollments'] as $e) if ((int)$e['school_year_id']===$activeYearId && $e['state']==='prepared') {
+            $db->prepare("UPDATE student_enrollments SET state='active',version=version+1 WHERE id=?")->execute([$e['id']]);
+            $after=$e; $after['state']='active'; $after['version']=(int)$e['version']+1;
+            securityAuditChange($db,'enrollment.active','enrollment',(int)$e['id'],$e,$after);
+        }
+        $settings=['school_year'=>$year['label'],'enrollment_initialization_year_id'=>(string)$activeYearId,'enrollment_initialization_fingerprint'=>$expectedFingerprint,'enrollment_model_version'=>'1'];
+        $write=$db->prepare('INSERT INTO system_settings(setting_key,setting_value) VALUES(?,?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)');
+        foreach ($settings as $key=>$value) $write->execute([$key,$value]);
+        // The helper requires mode 1 inside this transaction. It is not visible
+        // to another connection unless every projection and audit also commits.
+        foreach ($locked['students'] as $student) {
+            updateCurrentEnrollmentProjection($db,(int)$student['id']);
+            $read=$db->prepare('SELECT id,is_active,enrollment_status,section_id,grade_level,school_year FROM students WHERE id=?'); $read->execute([$student['id']]); $after=$read->fetch(PDO::FETCH_ASSOC);
+            if ($student!==$after) securityAuditChange($db,'enrollment.project','student',(int)$student['id'],$student,$after);
+        }
+        securityAuditChange($db,'enrollment.initialize','school_year',$activeYearId,array_column($locked['settings'],'setting_value','setting_key'),$settings);
+        $db->commit();
+    } catch (Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
+}

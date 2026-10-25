@@ -76,6 +76,16 @@ function verifyEnrollmentOwnership(PDO $db): void
 {
     expectEnrollmentError(PDOException::class, fn()=>$db->exec('UPDATE attendance SET enrollment_id=1006 WHERE id=501'));
     expectEnrollmentError(PDOException::class, fn()=>$db->exec('UPDATE attendance SET assignment_id=2006 WHERE id=501'));
+    // Isolate annual ownership: a null assignment must not bypass the student FK.
+    $rejected = false;
+    try {
+        $db->exec('UPDATE attendance SET enrollment_id=1006,assignment_id=NULL WHERE id=501');
+    } catch (PDOException $error) {
+        $rejected = true;
+        checkEnrollment(str_contains($error->getMessage(), 'fk_attendance_enrollment'), 'Independent annual ownership rejection uses fk_attendance_enrollment');
+    }
+    checkEnrollment($rejected, 'Another student annual enrollment is rejected even with a null assignment');
+    checkEnrollment((int)$db->query('SELECT enrollment_id FROM attendance WHERE id=501')->fetchColumn() === 1001, 'Rejected annual ownership preserves attendance');
 }
 
 function verifyEnrollmentConstraints(PDO $db): void
