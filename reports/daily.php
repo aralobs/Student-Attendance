@@ -13,7 +13,8 @@ require_once '../includes/enrollment_reports.php';
 
 $pageTitle  = 'Daily Attendance Report';
 $db         = getDB();
-$date       = $_GET['date']    ?? date('Y-m-d');
+$defaultReportDate = enrollmentReportDefaultDate($db);
+$date       = $_GET['date']    ?? date('Y-m-d', strtotime($defaultReportDate));
 $gradeLevel = $_GET['grade']   ?? '';
 $sectionId  = (int)($_GET['section'] ?? 0);
 
@@ -100,7 +101,7 @@ include '../includes/sidebar.php';
 enrollmentReportNotice($reportContext);
 ?>
 
-<div class="page-header no-print">
+<div class="page-header analytics-template no-print">
     <div>
         <h1 class="page-title">
             <i class="bi bi-calendar-day me-2 text-primary"></i>Daily Attendance Report
@@ -148,14 +149,9 @@ enrollmentReportNotice($reportContext);
             <?php endif; ?>
             <div class="col-md-3">
                 <label class="form-label mb-1 small fw-600">Section</label>
-                <select name="section" class="form-select form-select-sm">
+                <select name="section" class="form-select form-select-sm" data-section-filter>
                     <option value="0">All Sections</option>
-                    <?php foreach ($allowedSections as $sec): ?>
-                    <option value="<?= $sec['id'] ?>"
-                            <?= $sectionId == $sec['id'] ? 'selected' : '' ?>>
-                        <?= sanitize($sec['grade_level'].' — '.$sec['section_name']) ?>
-                    </option>
-                    <?php endforeach; ?>
+                    <?php renderSectionFilterOptions($allowedSections, $sectionId, $gradeLevel); ?>
                 </select>
             </div>
             <div class="col-auto">

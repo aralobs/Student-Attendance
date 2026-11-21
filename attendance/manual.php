@@ -11,11 +11,20 @@ requireLogin();
 guardCsrfPage();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
 require_once '../includes/enrollment_operations.php';
+require_once '../includes/teacher_attendance_policy.php';
 
 $pageTitle = 'Manual Attendance';
 $db        = getDB();
 $today     = date('Y-m-d');
 $managed = enrollmentModelEnabled($db);
+if ($managed) {
+    require_once '../includes/delivery_modes.php';
+    if (panelTableAvailable($db,'attendance_decisions')) {
+        $panelManual=true;
+        require '../includes/attendance_sheet_page.php';
+        exit;
+    }
+}
 
 $allowedSections = getAllowedSections();
 
@@ -67,7 +76,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $absenceStudents = [];
     $db->beginTransaction();
     try {
+    requireTeacherAttendanceDate($db,currentUser(),$submittedDate);
     ksort($entries,SORT_NUMERIC);
+    if (!$managed) lockLegacyTeacherAttendanceRoster($db,currentUser(),$sectionId,array_keys($entries));
     $contexts=$managed?lockAttendanceEnrollmentBatch($db,array_keys($entries),$submittedDate,currentUser(),$sectionId):[];
     foreach ($entries as $studentId => $data) {
         $studentId = (int)$studentId;
@@ -104,6 +115,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($managed && $existing) verifyAttendanceEnrollment($existing,$contexts[$studentId]['context']);
 
         if ($existing) {
+            $correctionReason=trim($_POST['correction_reason'] ?? '');
+            if ($correctionReason==='' || strlen($correctionReason)>2000) throw new InvalidArgumentException('A correction reason of at most 2,000 bytes is required when updating existing attendance.');
             $db->prepare("
                 UPDATE attendance SET
                     am_in           = ?,
@@ -146,9 +159,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $attendanceId = $existing ? (int)$existing['id'] : (int)$db->lastInsertId();
         auditAttendanceAfterWrite($db, $attendanceId, $existing ?: null, 'attendance.manual');
+        if ($existing) securityAuditChange($db,'attendance.correction_reason','attendance',$attendanceId,null,['reason'=>$correctionReason]);
         if ($attendType === 'absent') $absenceStudents[] = $studentId;
     }
     $db->commit();
+    } catch (DomainException|InvalidArgumentException $error) {
+        if ($db->inTransaction()) $db->rollBack();
+        http_response_code($error instanceof DomainException?403:400);exit($error->getMessage());
     } catch (Throwable $error) {
         if ($db->inTransaction()) $db->rollBack();
         error_log('SECURITY_ALERT attendance_write_failed request_id=' . securityRequestId());
@@ -211,6 +228,7 @@ include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
+<div class="students-page workflow-page">
 <?php showFlash(); ?>
 
 <?php if ($isHolDate && $calEntry): ?>
@@ -224,7 +242,7 @@ include '../includes/sidebar.php';
 </div>
 <?php endif; ?>
 
-<div class="page-header">
+<div class="card students-card workflow-heading mb-4">
     <div>
         <h1 class="page-title">
             <i class="bi bi-pencil-square me-2 text-primary"></i>Manual Attendance
@@ -244,11 +262,12 @@ include '../includes/sidebar.php';
 
 <form method="POST" id="manualAttendanceForm">
 <?= csrfField() ?>
+<div class="mb-3"><label class="form-label" for="correctionReason">Correction reason (required when updating existing attendance)</label><input id="correctionReason" name="correction_reason" class="form-control" maxlength="2000"></div>
     <!-- Hidden fields -->
     <input type="hidden" name="section_id" value="<?= $sectionId ?>">
 
     <!-- Controls -->
-    <div class="card mb-3">
+    <div class="card students-card mb-3">
         <div class="card-body py-2">
             <div class="row g-2 align-items-end">
                 <div class="col-md-2">
@@ -302,7 +321,7 @@ include '../includes/sidebar.php';
     </div>
 
     <!-- Student Table -->
-    <div class="card">
+    <div class="card students-card workflow-list">
         <div class="card-header d-flex justify-content-between align-items-center">
             <span>
                 <i class="bi bi-people me-2"></i>
@@ -315,7 +334,7 @@ include '../includes/sidebar.php';
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover table-sm mb-0"
+                <table data-list-search="Search student name or LRN..." data-list-title="Manual Attendance" class="table table-hover table-sm mb-0 students-table"
                        style="font-size:0.82rem">
                     <thead>
                         <tr>
@@ -518,5 +537,6 @@ window.addEventListener('beforeunload', e => {
 });
 </script>
 JS;
+echo '</div><!-- /.workflow-page -->';
 include '../includes/footer.php';
 ?>

@@ -59,11 +59,22 @@ function lockEnrollmentCorrectionRows(PDO $db,array $actor,int $enrollmentId): a
         $attendanceWhere.=" OR assignment_id IN ($assignmentMarks)"; $attendanceParams=array_merge($attendanceParams,$assignmentIds);
     }
     $q=$db->prepare("SELECT id,student_id,enrollment_id,assignment_id,date,am_in,am_out,am_status,pm_in,pm_out,pm_status,attendance_type,remarks,recorded_by FROM attendance WHERE $attendanceWhere ORDER BY student_id,date,id FOR UPDATE"); $q->execute($attendanceParams); $attendance=$q->fetchAll(PDO::FETCH_ASSOC);
+    $attendanceDecisions=[];
+    $hasDecisionTable=$db->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='attendance_decisions'")->fetchColumn();
+    if($hasDecisionTable){
+        $decisionWhere="enrollment_id IN ($marks)";$decisionParams=$ids;
+        if($assignments){$decisionWhere.=" OR assignment_id IN ($assignmentMarks)";$decisionParams=array_merge($decisionParams,$assignmentIds);}
+        $q=$db->prepare("SELECT * FROM attendance_decisions WHERE $decisionWhere ORDER BY enrollment_id,learning_date,id FOR UPDATE");$q->execute($decisionParams);$attendanceDecisions=$q->fetchAll(PDO::FETCH_ASSOC);
+    }
     $q=$db->prepare("SELECT id,batch_id,source_enrollment_id,destination_enrollment_id,target_year_id,outcome,state,version FROM moving_up_decisions WHERE source_enrollment_id IN ($marks) OR destination_enrollment_id IN ($marks) ORDER BY id FOR UPDATE"); $q->execute(array_merge($ids,$ids)); $decisions=$q->fetchAll(PDO::FETCH_ASSOC);
     $q=$db->prepare('SELECT student_id,section_id,report_month,report_year,remark_ciphertext,version FROM sf2_remarks WHERE student_id=? ORDER BY section_id,report_year,report_month FOR UPDATE'); $q->execute([$studentId]); $remarks=$q->fetchAll(PDO::FETCH_ASSOC);
     requireMovingUpAdmin($db,$actor,true);
     if (count(array_filter($years,fn($year)=>$year['state']==='active'))!==1) throw new DomainException('One active managed year is required.');
     $annualById=array_column($enrollments,null,'id'); $assignmentById=array_column($assignments,null,'id'); $yearById=array_column($years,null,'id');
+    foreach($attendanceDecisions as $decision){
+        $annual=$annualById[$decision['enrollment_id']]??null;$assignment=$assignmentById[$decision['assignment_id']]??null;$annualYear=$annual?($yearById[$annual['school_year_id']]??null):null;
+        if(!$annual||!$assignment||!$annualYear||(int)$assignment['enrollment_id']!==(int)$annual['id']||$decision['learning_date']<max($annual['starts_on'],$annualYear['starts_on'],$assignment['starts_on'])||$decision['learning_date']>min($annual['ends_on'],$annualYear['ends_on'],$assignment['ends_on']))throw new DomainException('Manual attendance decisions require coherent reviewed ownership.');
+    }
     foreach ($attendance as $scan) {
         if ((int)$scan['student_id']!==$studentId) throw new DomainException('Attendance references another student\'s enrollment or assignment. Resolve ownership before correction.');
         $annual=$scan['enrollment_id']===null ? null : ($annualById[$scan['enrollment_id']] ?? null);
@@ -82,7 +93,7 @@ function lockEnrollmentCorrectionRows(PDO $db,array $actor,int $enrollmentId): a
         // exact-ID repair. This validation never infers or writes missing IDs.
     }
     securityAuditContext((int)$actor['id']);
-    return compact('years','sections','student','enrollments','assignments','attendance','decisions','remarks');
+    return compact('years','sections','student','enrollments','assignments','attendance','attendanceDecisions','decisions','remarks');
 }
 
 /** Build the exact reviewed transformation without writing. The first segment keeps
@@ -106,6 +117,8 @@ function enrollmentCorrectionSnapshot(array $locked,int $enrollmentId,array $com
     }
     $assignmentIds=array_map('intval',array_column($assignments,'id'));
     $annualAttendance=array_values(array_filter($locked['attendance'],fn($a)=>(int)$a['enrollment_id']===$enrollmentId || in_array((int)$a['assignment_id'],$assignmentIds,true) || ($a['date']>=$e['starts_on'] && $a['date']<=$e['ends_on'])));
+    $annualDecisions=array_values(array_filter($locked['attendanceDecisions']??[],fn($d)=>(int)$d['enrollment_id']===$enrollmentId));
+    if($annualDecisions && ($direct || $command['kind']==='cancel' || $e['state']==='cancelled'))throw new DomainException('Manual attendance decisions require reviewed historical correction.');
     if ($direct && ($year['state']!=='planned' || !in_array($e['state'],['prepared','cancelled'],true) || $annualAttendance || !in_array($command['kind'],['cancel','reassign'],true))) throw new DomainException('Direct revision requires a prepared destination without attendance. Use reviewed correction.');
     $segments=[]; $affected=[]; $assignment=null; $remark=null; $decisionChanges=[];
     if ($command['kind']==='cancel') {
@@ -165,9 +178,15 @@ function enrollmentCorrectionSnapshot(array $locked,int $enrollmentId,array $com
         if ($sourceGrade===false || $targetGrade===false || !in_array($targetGrade,[$sourceGrade,$sourceGrade+1],true)) throw new DomainException('Destination must retain or promote the source grade.');
         $decisionChanges[]=['before'=>$decision,'state'=>'prepared','outcome'=>$targetGrade===$sourceGrade ? 'retained' : 'promoted'];
     }
-    sort($affected,SORT_NUMERIC);
+    $affectedDecisions=[];
+    if($assignment)foreach($annualDecisions as $decision){
+        if((int)$decision['assignment_id']!==(int)$assignment['id'])continue;
+        foreach($segments as $index=>$segment)if($decision['learning_date']>=$segment['starts_on']&&$decision['learning_date']<=$segment['ends_on']&&($index!==0||$segment['section_id']!==(int)$assignment['section_id']))$affectedDecisions[]=(int)$decision['id'];
+    }
+    if($command['kind']==='reassign' && $affectedDecisions)throw new DomainException('Manual attendance in the changed interval requires historical correction.');
+    sort($affectedDecisions,SORT_NUMERIC);sort($affected,SORT_NUMERIC);
     $fingerprint=hash('sha256',json_encode([$locked,$enrollmentId,$command,date('Y-m-d')],JSON_THROW_ON_ERROR));
-    return ['enrollment'=>$e,'year'=>$year,'assignment'=>$assignment,'segments'=>$segments,'affected_attendance_ids'=>$affected,'remark'=>$remark,'decision_changes'=>$decisionChanges,'fingerprint'=>$fingerprint];
+    return ['enrollment'=>$e,'year'=>$year,'assignment'=>$assignment,'segments'=>$segments,'affected_attendance_ids'=>$affected,'affected_decision_ids'=>$affectedDecisions,'remark'=>$remark,'decision_changes'=>$decisionChanges,'fingerprint'=>$fingerprint];
 }
 
 function revisePreparedEnrollment(PDO $db,array $actor,int $enrollmentId,array $change,int $expectedVersion): void
@@ -193,7 +212,7 @@ function previewEnrollmentCorrection(PDO $db,array $actor,int $enrollmentId,arra
         $db->prepare('UPDATE enrollment_corrections SET command_ciphertext=? WHERE id=?')->execute([encryptPII(json_encode($command,JSON_THROW_ON_ERROR),'enrollment-correction:'.$id),$id]);
         securityAuditChange($db,'enrollment.correction_preview','enroll_correct',$id,null,['enrollment_id'=>$enrollmentId,'command'=>$command,'affected_attendance_ids'=>$snapshot['affected_attendance_ids'],'fingerprint'=>$snapshot['fingerprint']]);
         $db->commit();
-        return ['correction_id'=>$id,'affected_attendance_ids'=>$snapshot['affected_attendance_ids'],'fingerprint'=>$snapshot['fingerprint']];
+        return ['correction_id'=>$id,'affected_attendance_ids'=>$snapshot['affected_attendance_ids'],'affected_decision_ids'=>$snapshot['affected_decision_ids'],'fingerprint'=>$snapshot['fingerprint']];
     } catch(Throwable $error) { if ($db->inTransaction()) $db->rollBack(); throw $error; }
 }
 
@@ -245,6 +264,14 @@ function applyEnrollmentCorrectionLocked(PDO $db,array $actor,array $locked,arra
                 $segment['id']=(int)$db->lastInsertId();
             }
         } unset($segment);
+        foreach($locked['attendanceDecisions']??[] as $decision){
+            if(!in_array((int)$decision['id'],$snapshot['affected_decision_ids'],true))continue;
+            foreach($segments as $segment)if($decision['learning_date']>=$segment['starts_on']&&$decision['learning_date']<=$segment['ends_on']){
+                $db->prepare('UPDATE attendance_decisions SET assignment_id=?,revision=revision+1 WHERE id=?')->execute([$segment['id'],$decision['id']]);
+                securityAuditChange($db,'enrollment.correct_manual_ownership','attendance',(int)$decision['id'],['assignment_id'=>$decision['assignment_id'],'revision'=>$decision['revision']],['assignment_id'=>$segment['id'],'revision'=>(int)$decision['revision']+1,'reason'=>$command['reason']]);
+            }
+        }
+        if($locked['attendanceDecisions']??[]){require_once __DIR__.'/attendance_decisions.php';queueAttendanceRecompute($db,$enrollmentId,$command['starts_on']);}
         foreach ($locked['attendance'] as $row) {
             if (!in_array((int)$row['id'],$snapshot['affected_attendance_ids'],true)) continue;
             foreach ($segments as $segment) if ($row['date']>=$segment['starts_on'] && $row['date']<=$segment['ends_on']) {

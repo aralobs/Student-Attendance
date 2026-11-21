@@ -60,6 +60,19 @@ function endOfDayRows(string $date, array $user, ?DateTimeImmutable $now = null)
     $stmt->execute($params);
     $rows = [];
     foreach ($stmt->fetchAll() as $row) {
+        if ($managed) {
+            require_once __DIR__.'/delivery_modes.php';
+            if (panelTableAvailable($db,'delivery_modes')) {
+                $ctx=getEnrollmentContext($db,(int)$row['student_id'],$date);
+                if (!$ctx) continue;
+                $delivery=resolveDeliveryDay($db,$ctx['school_year_id'],$ctx['section_id'],$date);
+                if (!$delivery['eligible'] || $delivery['mode']!=='face_to_face') continue;
+                if (panelTableAvailable($db,'attendance_decisions')) {
+                    $read=$db->prepare('SELECT id FROM attendance_decisions WHERE enrollment_id=? AND learning_date=?');$read->execute([$ctx['enrollment_id'],$date]);
+                    if ($read->fetchColumn()) continue;
+                }
+            }
+        }
         $reason = endOfDayReason($row, $row, $date, $now);
         if ($reason) { $row['reason'] = $reason; $rows[] = $row; }
     }
@@ -91,6 +104,15 @@ function submitEndOfDayReview(string $date, array $entries, array $user, ?callab
             if ($managed) {
                 $ctx=$contexts[$id]['context'];
                 if ($ctx['section_id']!==(int)$row['section_id']) throw new DomainException('The review section changed.');
+                require_once __DIR__.'/delivery_modes.php';
+                if(panelTableAvailable($db,'delivery_modes')){
+                    $delivery=resolveDeliveryDay($db,$ctx['school_year_id'],$ctx['section_id'],$date);
+                    if(!$delivery['eligible']||$delivery['mode']!=='face_to_face')throw new InvalidArgumentException('The delivery schedule changed. Reload the review list.');
+                }
+                if(panelTableAvailable($db,'attendance_decisions')){
+                    $decisionRead=$db->prepare('SELECT id FROM attendance_decisions WHERE enrollment_id=? AND learning_date=? FOR UPDATE');$decisionRead->execute([$ctx['enrollment_id'],$date]);
+                    if($decisionRead->fetchColumn())throw new InvalidArgumentException('An attendance decision changed. Reload the review list.');
+                }
                 $readProfile=$db->prepare('SELECT created_at AS student_created_at,parent_contact,first_name,last_name FROM students WHERE id=? FOR UPDATE');
                 $readProfile->execute([$id]);
                 $section=array_merge($contexts[$id]['section'],$readProfile->fetch(PDO::FETCH_ASSOC));

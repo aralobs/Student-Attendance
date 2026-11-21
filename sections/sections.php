@@ -8,6 +8,7 @@ ini_set('display_errors', 0);
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/school_years.php';
+require_once '../includes/viewing_school_year.php';
 require_once '../config/schedule_rules.php';
 requireLogin();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Section editing is restricted to administrators and teachers.'); }
@@ -19,7 +20,8 @@ $managedEnrollment = enrollmentModelEnabled($db);
 $selectedYearId = null;
 if ($managedEnrollment) {
     $managedYears = $db->query('SELECT * FROM school_years ORDER BY starts_on DESC')->fetchAll();
-    $selectedYearId = (int)($_GET['school_year_id'] ?? getActiveSchoolYear($db)['id']);
+    $viewingYear = requireViewingSchoolYear($db,currentUser());
+    $selectedYearId = (int)$viewingYear['id'];
 }
 
 // ── Active / Archived view ────────────────────────────────────
@@ -56,15 +58,16 @@ foreach ($grades as $g) {
     if ($rule) $gradeDefaults[$g] = $rule;
 }
 
+ob_start();
+if ($managedEnrollment) renderViewingSchoolYearControl($db,currentUser(),$viewingYear);
+$pageSchoolYearControl = ob_get_clean();
 include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
 <?php showFlash(); ?>
-<?php if ($managedEnrollment): ?><form method="get" class="mb-3"><input type="hidden" name="view" value="<?= $isArchive ? 'archived' : 'active' ?>"><label class="form-label">School year</label><select class="form-select" name="school_year_id" onchange="this.form.submit()">
-<?php foreach ($managedYears as $year): ?><option value="<?= (int)$year['id'] ?>" <?= (int)$year['id'] === $selectedYearId ? 'selected' : '' ?>><?= sanitize($year['label']) ?> (<?= sanitize($year['state']) ?>)</option><?php endforeach; ?></select><noscript><button>Choose year</button></noscript></form><?php endif; ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-diagram-3 me-2 text-primary"></i>Sections
@@ -77,6 +80,7 @@ include '../includes/sidebar.php';
             <i class="bi bi-list-ul me-1"></i>Active
         </a>
         <?php if (isAdmin()): ?>
+        <?php if ($managedEnrollment): ?><a href="prepare.php?<?= sanitize(http_build_query(['return_to'=>'sections.php?'.http_build_query(['school_year_id'=>$selectedYearId,'view'=>$view])])) ?>" class="btn btn-sm btn-outline-success"><i class="bi bi-files me-1" aria-hidden="true"></i>Prepare Next-Year Sections</a><?php endif; ?>
         <a href="?view=archived<?= $managedEnrollment ? '&amp;school_year_id=' . $selectedYearId : '' ?>"
            class="btn btn-sm <?= $isArchive ? 'btn-primary' : 'btn-outline-primary' ?>">
             <i class="bi bi-archive me-1"></i>Archived
@@ -91,7 +95,7 @@ include '../includes/sidebar.php';
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0" style="font-size:0.85rem">
+            <table data-list-search="Search section, grade, adviser or school year..." data-list-title="Section List" class="table table-hover mb-0" style="font-size:0.85rem">
                 <thead>
                     <tr>
                         <th>Grade</th>
@@ -225,7 +229,7 @@ include '../includes/sidebar.php';
                             <label class="form-label">
                                 Section Name <span class="text-danger">*</span>
                             </label>
-                            <input type="text" name="section_name" id="secName"
+                            <input type="text" name="section_name" id="secName" data-title-case="section"
                                    class="form-control" required
                                    placeholder="e.g. Sampaguita">
                         </div>
@@ -497,5 +501,6 @@ HTML;
 
 $extraJS = '<script>const CAN_MANAGE_SECTIONS = ' . (isAdmin() ? 'true' : 'false') . '; const GRADE_DEFAULTS = ' . $gradeDefaultsJson . '; const SECTION_YEAR_CONFIG = ' . $sectionYearConfigJson . ';</script>' . "\n" . $jsCode;
 
+$extraJS .= '<script src="' . BASE_URL . 'assets/js/new_entry_names.js"></script>';
 include '../includes/footer.php';
 ?>

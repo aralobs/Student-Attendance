@@ -4,6 +4,8 @@ foreach(['','/includes','/reports'] as $dir)mkdir($fixture.$dir);
 try {
     copy($root.'/includes/student_access.php',$fixture.'/includes/student_access.php');
     copy($root.'/reports/export_pdf.php',$fixture.'/reports/export_pdf.php');
+    // Rendering is covered by the real copied-app workflow; this fixture isolates the authorization boundary.
+    file_put_contents($fixture.'/reports/sf2.php','<?php if(($_GET["download_pdf"]??"")!=="1")throw new RuntimeException("Direct PDF mode required"); echo "%PDF-synthetic-renderer";');
     file_put_contents($fixture.'/includes/enrollment_access.php','<?php function enrollmentModelEnabled(PDO $db): bool { return false; }');
     file_put_contents($fixture.'/includes/functions.php', <<<'PHP'
 <?php
@@ -30,19 +32,20 @@ if($argv[1]==='teacher_bad_month')$_GET['month']=13;
 if($argv[1]==='teacher_bad_year')$_GET['year']=[];
 if($argv[1]==='teacher_bad_section')$_GET['section']='10 OR 1=1';
 PHP);
-    foreach(['guest'=>401,'scanner'=>403,'teacher'=>302,'teacher_foreign'=>403,'teacher_inactive'=>403,'teacher_missing'=>403,
-        'teacher_bad_month'=>400,'teacher_bad_year'=>400,'teacher_bad_section'=>400,'admin'=>302] as $case=>$expected){
+    foreach(['guest'=>401,'scanner'=>403,'teacher'=>200,'teacher_foreign'=>403,'teacher_inactive'=>403,'teacher_missing'=>403,
+        'teacher_bad_month'=>400,'teacher_bad_year'=>400,'teacher_bad_section'=>400,'admin'=>200] as $case=>$expected){
         $process=proc_open([PHP_BINARY,'-d','auto_prepend_file='.$fixture.'/request.php',$fixture.'/reports/export_pdf.php',$case],[1=>['pipe','w'],2=>['pipe','w']],$pipes,$fixture);
         $out=stream_get_contents($pipes[1]);$err=stream_get_contents($pipes[2]);fclose($pipes[1]);fclose($pipes[2]);$exit=proc_close($process);
         if($exit!==0||$err!==''||!preg_match('/(\{"status":.*\})$/',$out,$match))throw new RuntimeException("$case failed: $err $out");
         $result=json_decode($match[1],true);
         if($result['status']!==$expected)throw new RuntimeException("$case incorrect status");
+        if($expected===200&&!str_starts_with($out,'%PDF-'))throw new RuntimeException('Authorized caller did not reach direct PDF response');
         if(in_array($expected,[400,401],true)||$case==='scanner'){if($result['reads']!==0)throw new RuntimeException('Rejected caller reached report queries');}
         else if($result['reads']!==1)throw new RuntimeException('Unexpected report queries');
         $checks++;
     }
     echo "Legacy PDF access checks passed ($checks cases; isolated section data).\n";
 } finally {
-    foreach(['includes/student_access.php','includes/enrollment_access.php','includes/functions.php','reports/export_pdf.php','request.php'] as $file)unlink($fixture.'/'.$file);
+    foreach(['includes/student_access.php','includes/enrollment_access.php','includes/functions.php','reports/export_pdf.php','reports/sf2.php','request.php'] as $file)unlink($fixture.'/'.$file);
     foreach(['/reports','/includes',''] as $dir)rmdir($fixture.$dir);
 }

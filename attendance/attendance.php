@@ -12,6 +12,15 @@ requireStaff();
 
 $pageTitle = 'Attendance';
 $db        = getDB();
+require_once '../includes/enrollment_operations.php';
+if (enrollmentModelEnabled($db)) {
+    require_once '../includes/delivery_modes.php';
+    if (panelTableAvailable($db,'attendance_decisions')) {
+        $panelManual=false;
+        require '../includes/attendance_sheet_page.php';
+        exit;
+    }
+}
 $today     = date('Y-m-d');
 
 // Filters
@@ -19,8 +28,10 @@ $date       = $_GET['date']    ?? $today;
 $gradeLevel = $_GET['grade']   ?? '';
 $sectionId  = (int)($_GET['section'] ?? 0);
 $typeFilter = $_GET['type']    ?? '';
+$search = trim((string)($_GET['search'] ?? ''));
+require_once '../includes/list_view.php';
 $page       = max(1, (int)($_GET['page'] ?? 1));
-$perPage    = 25;
+$perPage    = 15;
 $offset     = ($page - 1) * $perPage;
 
 // Allowed sections
@@ -29,7 +40,9 @@ $allowedIds      = array_column($allowedSections, 'id');
 if (empty($allowedIds)) $allowedIds = [0];
 
 $grades   = getGradeLevels();
-$sections = $allowedSections;
+$allSections = $allowedSections;
+$sections = array_values(array_filter($allowedSections, static fn($s) => $gradeLevel === '' || $s['grade_level'] === $gradeLevel));
+if ($sectionId && in_array($sectionId, $allowedIds) && !in_array($sectionId, array_column($sections, 'id'))) $sectionId = 0;
 
 // Calendar check
 $calEntry  = getCalendarEntry($date);
@@ -53,10 +66,18 @@ if ($sectionId > 0 && (isAdmin() || in_array($sectionId, $allowedIds))) {
     $params[] = $sectionId;
 }
 if ($typeFilter) {
-    $where[]  = 'a.attendance_type = ?';
-    $params[] = $typeFilter;
+    if ($typeFilter === 'late') {
+        $where[] = "(a.am_status = 'late' OR a.pm_status = 'late')";
+    } else {
+        $where[]  = 'a.attendance_type = ?';
+        $params[] = $typeFilter;
+    }
 }
 
+if ($search !== '') {
+    $where[] = '(s.first_name LIKE ? OR s.last_name LIKE ? OR s.lrn LIKE ? OR sec.section_name LIKE ?)';
+    $params = array_merge($params, array_fill(0, 4, '%' . $search . '%'));
+}
 $whereSQL = implode(' AND ', $where);
 
 // ── Count ─────────────────────────────────────────────────────
@@ -68,7 +89,9 @@ $countStmt = $db->prepare("
     WHERE {$whereSQL}
 ");
 $countStmt->execute($params);
-$total = $countStmt->fetchColumn();
+$total = (int)$countStmt->fetchColumn();
+$page = min($page, max(1, (int)ceil($total / $perPage)));
+$offset = ($page - 1) * $perPage;
 
 // ── Records ───────────────────────────────────────────────────
 $orderSQL = gradeLevelOrderSQL('sec.grade_level');
@@ -113,6 +136,7 @@ $dayStats  = $db->prepare("
         SUM(a.attendance_type = 'absent')    AS absent,
         SUM(a.am_status = 'late')            AS am_late,
         SUM(a.pm_status = 'late')            AS pm_late
+        ,SUM(a.am_status = 'late' OR a.pm_status = 'late') AS late
     FROM attendance a
     JOIN students s ON a.student_id = s.id
     LEFT JOIN sections sec ON s.section_id = sec.id
@@ -125,6 +149,7 @@ include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
+<div class="attendance-page">
 <?php showFlash(); ?>
 
 <?php if ($isHolDate && $calEntry): ?>
@@ -138,29 +163,28 @@ include '../includes/sidebar.php';
 </div>
 <?php endif; ?>
 
-<div class="page-header">
+<div class="card attendance-card mb-4"><div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
-        <h1 class="page-title">
+        <h1 class="mb-2">
             <i class="bi bi-calendar3 me-2 text-primary"></i>Attendance
         </h1>
-        <p class="page-subtitle">
+        <p class="month-badge mb-0">
             Daily records — <?= date('F j, Y', strtotime($date)) ?>
         </p>
     </div>
-    <div class="d-flex gap-2">
-        <a href="manual.php" class="btn btn-outline-primary">
+    <div class="attendance-actions d-flex gap-2">
+        <a href="manual.php" class="btn btn-sm btn-outline-primary">
             <i class="bi bi-pencil-square me-1"></i>Manual Entry
         </a>
-        <a href="scanner.php" class="btn btn-primary">
+        <a href="scanner.php" class="btn btn-sm btn-primary">
             <i class="bi bi-qr-code-scan me-1"></i>Scanner
         </a>
     </div>
 </div>
 
 <!-- Filters -->
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="GET" class="row g-2 align-items-end">
+<div class="card-body">
+        <form method="GET" class="row g-2 align-items-end"><input type="hidden" name="search" value="<?= sanitize($search) ?>">
             <div class="col-6 col-md-2">
                 <label class="form-label mb-1 small fw-600">Date</label>
                 <input type="date" name="date"
@@ -170,7 +194,7 @@ include '../includes/sidebar.php';
             <?php if (isAdmin()): ?>
             <div class="col-6 col-md-2">
                 <label class="form-label mb-1 small fw-600">Grade</label>
-                <select name="grade" class="form-select form-select-sm">
+                <select id="attendanceGrade" name="grade" class="form-select form-select-sm">
                     <option value="">All Grades</option>
                     <?php foreach ($grades as $g): ?>
                     <option value="<?= $g ?>"
@@ -183,8 +207,8 @@ include '../includes/sidebar.php';
             <?php endif; ?>
             <div class="col-6 col-md-3">
                 <label class="form-label mb-1 small fw-600">Section</label>
-                <select name="section" class="form-select form-select-sm">
-                    <option value="">All Sections</option>
+                <select id="attendanceSection" name="section" class="form-select form-select-sm">
+                    <option value="0">All Sections</option>
                     <?php foreach ($sections as $sec): ?>
                     <option value="<?= $sec['id'] ?>"
                             <?= $sectionId == $sec['id'] ? 'selected' : '' ?>>
@@ -204,6 +228,7 @@ include '../includes/sidebar.php';
                     <option value="absent"
                             <?= $typeFilter === 'absent'   ? 'selected' : '' ?>>Absent</option>
                     <option value="remarked" <?= $typeFilter === 'remarked' ? 'selected' : '' ?>>Manual remark</option>
+                    <option value="late" <?= $typeFilter === 'late' ? 'selected' : '' ?>>Late</option>
                 </select>
             </div>
             <div class="col-auto d-flex gap-1">
@@ -218,6 +243,9 @@ include '../includes/sidebar.php';
     </div>
 </div>
 
+<?php renderListSearch($search, 'Search student name, LRN or section...'); ?>
+<div class="card attendance-card mb-4"><div class="card-body">
+<div class="section-divider"><i class="bi bi-calendar-check"></i>Daily overview</div>
 <!-- Day stats -->
 <div class="row g-2 mb-3">
     <?php foreach ([
@@ -225,28 +253,20 @@ include '../includes/sidebar.php';
         ['Full Day', 'full_day', 'green',  'check-circle-fill'],
         ['Partial',  'partial',  'orange', 'clock-history'],
         ['Absent',   'absent',   'red',    'x-circle-fill'],
-        ['AM Late',  'am_late',  'orange', 'sun'],
-        ['PM Late',  'pm_late',  'orange', 'moon'],
+        ['Late',     'late',     'orange', 'clock'],
     ] as [$label,$key,$color,$icon]): ?>
-    <div class="col-6 col-md-2">
-        <div class="stat-card <?= $color ?> py-2">
-            <div class="stat-icon <?= $color ?>"
-                 style="width:36px;height:36px;font-size:0.9rem">
-                <i class="bi bi-<?= $icon ?>"></i>
-            </div>
-            <div>
-                <div class="stat-number" style="font-size:1.2rem">
-                    <?= $ds[$key] ?? 0 ?>
-                </div>
-                <div class="stat-label"><?= $label ?></div>
-            </div>
+    <div class="col-6 col-md">
+        <div class="metric-tile p-3 text-center">
+            <div class="metric-label"><?= $label ?></div>
+            <div class="metric-value text-<?= ['blue'=>'primary','green'=>'success','orange'=>'warning','red'=>'danger'][$color] ?>"><?= $ds[$key] ?? 0 ?></div>
         </div>
     </div>
     <?php endforeach; ?>
 </div>
 
+</div></div>
 <!-- Table -->
-<div class="card">
+<div class="card attendance-card">
     <div class="card-header d-flex justify-content-between align-items-center">
         <span>
             <i class="bi bi-table me-1"></i>
@@ -262,7 +282,7 @@ include '../includes/sidebar.php';
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0" style="font-size:0.8rem">
+            <table data-list-title="Attendance List" data-list-native="1" data-list-total="<?= (int)$total ?>" class="table table-hover mb-0 attendance-table">
                 <thead>
                     <tr>
                         <th>Student</th>
@@ -348,12 +368,15 @@ include '../includes/sidebar.php';
             'attendance.php?date=' . urlencode($date) .
             '&grade=' . urlencode($gradeLevel) .
             '&section=' . $sectionId .
-            '&type=' . urlencode($typeFilter)) ?>
+            '&type=' . urlencode($typeFilter) . '&search=' . urlencode($search)) ?>
     </div>
     <?php endif; ?>
 </div>
 
+</div>
 <!-- Override Modal -->
+<script id="attendanceSectionData" type="application/json"><?= json_encode(array_map(static fn($s)=>['id'=>(int)$s['id'],'grade'=>$s['grade_level'],'name'=>$s['section_name']],$allSections),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?></script>
+<?php if (isAdmin()): ?><script src="<?= BASE_URL ?>assets/js/attendance_filters.js" defer></script><?php endif; ?>
 <div class="modal fade" id="overrideModal" tabattendance="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -441,7 +464,9 @@ include '../includes/sidebar.php';
                         </div>
 
                         <div class="col-12">
-                            <label class="form-label small">Remarks</label>
+                            <label class="form-label small" for="overrideReason">Correction reason</label>
+                            <input name="correction_reason" id="overrideReason" class="form-control form-control-sm mb-2" maxlength="2000" required>
+                            <label class="form-label small" for="ovRemarks">Remarks</label>
                             <textarea name="remarks" id="ovRemarks"
                                       class="form-control form-control-sm"
                                       rows="2"

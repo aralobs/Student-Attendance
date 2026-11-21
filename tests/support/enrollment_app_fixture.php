@@ -10,7 +10,7 @@ function createEnrollmentAppFixture(string $destination): void
     if (file_exists($destination)) throw new RuntimeException('Fixture destination must be new');
     mkdir($destination,0700,true);
     $root=dirname(__DIR__,2);
-    foreach (['includes','students','sections','settings','attendance','reports','migrations'] as $dir) {
+    foreach (['includes','students','sections','settings','attendance','reports','migrations','calendar','analytics','backups'] as $dir) {
         mkdir($destination.'/'.$dir);
         foreach (glob($root.'/'.$dir.'/*.php') as $file) copy($file,$destination.'/'.$dir.'/'.basename($file));
     }

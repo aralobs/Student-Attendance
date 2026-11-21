@@ -1,6 +1,8 @@
+param([string]$OutputDirectory = 'deployment/hostinger')
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$outputRoot = Join-Path $projectRoot 'deployment/hostinger'
+$outputRoot = [IO.Path]::GetFullPath((Join-Path $projectRoot $OutputDirectory))
+if (!$outputRoot.StartsWith(($projectRoot + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) { throw 'Output must remain inside this project.' }
 if (Test-Path -LiteralPath $outputRoot) {
     throw 'deployment/hostinger already exists. Rename that folder before rebuilding to preserve your previous package.'
 }
@@ -16,9 +18,28 @@ foreach ($directory in @($webRoot, $excludedRoot, $databaseRoot, $privateRoot)) 
 }
 # Copy from an explicit application allowlist. Never package .git, sessions or local data.
 $runtimeDirectories = @('analytics','assets','attendance','calendar','includes',
-    'reports','sections','settings','sms','students','users','vendor','migrations')
+    'reports','sections','settings','sms','students','users','vendor','migrations','backups')
 foreach ($name in $runtimeDirectories) {
+    if ($name -eq 'vendor') {
+        # Composer may have installed source clones when ZIP support is unavailable.
+        # Copy runtime files without repository metadata, leaving source dependencies untouched.
+        $vendorSource = Join-Path $projectRoot 'vendor'
+        $vendorTarget = Join-Path $webRoot 'vendor'
+        foreach ($file in Get-ChildItem -LiteralPath $vendorSource -File -Recurse -Force) {
+            $relative = $file.FullName.Substring($vendorSource.Length).TrimStart('\','/')
+            if ($relative.Replace('\','/') -match '(^|/)\.git(/|$)') { continue }
+            $target = Join-Path $vendorTarget $relative
+            $parent = Split-Path -Parent $target
+            if (!(Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+            Copy-Item -LiteralPath $file.FullName -Destination $target
+        }
+        continue
+    }
     Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $webRoot -Recurse
+}
+New-Item -ItemType Directory -Path (Join-Path $webRoot 'tools') | Out-Null
+foreach ($name in @('backup_database.php','process_absence_interventions.php','hostinger_maintenance.php')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot "tools/$name") -Destination (Join-Path $webRoot 'tools')
 }
 foreach ($name in @('.htaccess','index.php','dashboard.php','heartbeat.php','logout.php',
     'profile.php','qr_image.php','register.php','security_audit.php','student_photo.php')) {
@@ -32,8 +53,8 @@ foreach ($name in @('storage/private','storage/sessions','uploads/students','qrc
     New-Item -ItemType Directory -Path (Join-Path $webRoot $name) -Force | Out-Null
 }
 # These copies are for local reference only; source files remain in place.
-foreach ($name in @('tests','docs','.github','.qa','tools','README.md','SECURITY_REVIEW.md',
-    'nixpacks.toml','package.json','package-lock.json','composer.json','composer.lock','.gitignore')) {
+foreach ($name in @('tests','docs','.github','tools','README.md','SECURITY_REVIEW.md',
+    'package.json','package-lock.json','composer.json','composer.lock','.gitignore')) {
     $source = Join-Path $projectRoot $name
     if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $excludedRoot -Recurse }
 }
@@ -51,8 +72,18 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'hosting.example.php') -Destinat
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/HOSTINGER_DEPLOYMENT.md') -Destination (Join-Path $outputRoot 'START-HERE.md')
 # ZipFile includes dotfiles such as .htaccess, unlike Compress-Archive.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+Add-Type -AssemblyName System.IO.Compression
 $zipPath = Join-Path $outputRoot 'hostinger-upload.zip'
-[IO.Compression.ZipFile]::CreateFromDirectory($webRoot, $zipPath)
+$zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
+try {
+    # Windows PowerShell's .NET Framework can write backslashes into ZIP names.
+    # Linux extraction needs explicit POSIX paths, including empty directories.
+    foreach ($item in Get-ChildItem -LiteralPath $webRoot -Recurse -Force) {
+        $relative = $item.FullName.Substring($webRoot.Length).TrimStart('\','/').Replace('\','/')
+        if ($item.PSIsContainer) { $null = $zip.CreateEntry($relative + '/') }
+        else { $null = [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $item.FullName, $relative, [IO.Compression.CompressionLevel]::Optimal) }
+    }
+} finally { $zip.Dispose() }
 $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
 try {
     $names = @($archive.Entries | ForEach-Object { $_.FullName.Replace('\','/') })
@@ -60,7 +91,9 @@ try {
         if ($required -notin $names) { throw "Required archive entry missing: $required" }
     }
     foreach ($entry in $names) {
-        if ($entry -match '^(tests|docs|tools|deployment|\.git|\.qa)/' -or
+        if ($entry -match '^(tests|docs|deployment|\.git|\.qa)/' -or
+            $entry -match '(^|/)\.git(/|$)' -or
+            ($entry -match '^tools/.+[^/]$' -and $entry -notin @('tools/backup_database.php','tools/process_absence_interventions.php','tools/hostinger_maintenance.php')) -or
             $entry -match '^config/(pii_key|settings_key)\.php$' -or
             $entry -match '^(storage|uploads|qrcodes)/.+[^/]$') {
             throw "Private/development data found in upload archive: $entry"

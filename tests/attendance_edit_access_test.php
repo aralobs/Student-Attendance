@@ -4,19 +4,21 @@ $root=dirname(__DIR__);$fixture=__DIR__.'/.attendance-access-'.bin2hex(random_by
 foreach(['','/config','/includes','/attendance'] as $dir) mkdir($fixture.$dir);
 // This legacy adapter fixture deliberately selects version0; managed SQL is
 // exercised separately against disposable MySQL in enrollment_attendance_test.
+copy($root.'/includes/teacher_attendance_policy.php',$fixture.'/includes/teacher_attendance_policy.php');
 file_put_contents($fixture.'/includes/enrollment_operations.php','<?php function enrollmentModelEnabled($db){return false;}');
 $stub= <<<'PHP'
 <?php
 $case=$argv[1];$writes=0;$schedule=null;
 http_response_code(200);
 register_shutdown_function(function(){echo "\nRESULT:".json_encode(['status'=>http_response_code(),'writes'=>$GLOBALS['writes'],'schedule'=>$GLOBALS['schedule'],'record'=>$GLOBALS['record']??null]);});
-class FakeStatement {
+class FakeStatement extends PDOStatement {
  function __construct(public $sql){}
- function execute($params=[]){if(preg_match('/^\s*(INSERT|UPDATE|DELETE)/i',$this->sql))$GLOBALS['writes']++;return true;}
- function fetch(){if(str_contains($this->sql,'SELECT a.*'))return ['id'=>1,'section_id'=>in_array($GLOBALS['case'],['other_section','admin_other_section'])?20:($GLOBALS['case']==='unassigned'?null:10),'schedule_type'=>$GLOBALS['case']==='teacher_pm'?'pm_only':'am_only'];return false;}
- function fetchAll(){return [['id'=>1],['id'=>2]];}
+ function execute(?array $params=null): bool{if(preg_match('/^\s*(INSERT|UPDATE|DELETE)/i',$this->sql))$GLOBALS['writes']++;return true;}
+ function fetch(int $mode=PDO::FETCH_DEFAULT,int $orientation=PDO::FETCH_ORI_NEXT,int $offset=0): mixed {if(str_contains($this->sql,'SELECT a.*'))return ['id'=>1,'adviser_id'=>$GLOBALS['case']==='teacher_revoked'?8:7,'section_active'=>1,'student_active'=>1,'date'=>date('Y-m-d',strtotime($GLOBALS['case']==='teacher_old'?'-10 days':'today')),'section_id'=>in_array($GLOBALS['case'],['other_section','admin_other_section'])?20:($GLOBALS['case']==='unassigned'?null:10),'schedule_type'=>$GLOBALS['case']==='teacher_pm'?'pm_only':'am_only'];return false;}
+ function fetchColumn(int $column=0): mixed {return $GLOBALS['case']==='teacher_revoked'?false:10;}
+ function fetchAll(int $mode=PDO::FETCH_DEFAULT,mixed ...$args): array {if($GLOBALS['case']==='teacher_moved' && str_contains($this->sql,'id IN'))return [];return [['id'=>1],['id'=>2]];}
 }
-class FakeDB {function prepare($sql){return new FakeStatement($sql);} function beginTransaction(){} function commit(){} function inTransaction(){return true;} function rollBack(){} function lastInsertId(){return 1;}}
+class FakeDB extends PDO { function __construct(){parent::__construct('sqlite::memory:');parent::exec('CREATE TABLE system_settings(setting_key TEXT,setting_value TEXT)');} function prepare(string $sql,array $options=[]): PDOStatement|false {return new FakeStatement($sql);} function query(string $sql,?int $mode=null,mixed ...$args): PDOStatement|false {return parent::query(str_replace(' LOCK IN SHARE MODE','',$sql));} function beginTransaction(): bool {return true;} function commit(): bool {return true;} function inTransaction(): bool {return true;} function rollBack(): bool {return true;} function lastInsertId(?string $name=null): string|false {return '1';}}
 function getDB(){return new FakeDB;}
 define('BASE_URL','/');
 PHP;
@@ -29,7 +31,8 @@ function isTeacher(){return !in_array($GLOBALS['case'],['guest','scanner','unkno
 function canAccessSection($id){return isAdmin()||$id===10;}
 function getAllowedSections(){return [['id'=>10]];}
 function getSection($id){return ['schedule_type'=>$GLOBALS['case']==='teacher_pm'?'pm_only':'am_only'];}
-function currentUser(){return ['id'=>7];}
+function currentUser(){return ['id'=>7,'role'=>isAdmin()?'admin':'teacher'];}
+function securityAuditChange(...$args){}
 function auditAttendanceAfterWrite(...$args){}
 function setFlash(...$args){}
 function getAttendanceScheduleType($section){return $section['schedule_type'];}
@@ -39,7 +42,9 @@ PHP);
 file_put_contents($fixture.'/request.php', <<<'PHP'
 <?php
 $case=$argv[1];$_SERVER['REQUEST_METHOD']='POST';
-$_POST=['attendance_id'=>1,'section_id'=>in_array($case,['other_section','admin_other_section'])?20:10,'attendance_date'=>'2026-10-05','schedule_type'=>'pm_only','am_in'=>'08:00','entries'=>[1=>['am_in'=>'08:00']]];
+$_POST=['attendance_id'=>1,'section_id'=>in_array($case,['other_section','admin_other_section'])?20:10,'attendance_date'=>date('Y-m-d'),'correction_reason'=>'Synthetic correction','schedule_type'=>'pm_only','am_in'=>'08:00','entries'=>[1=>['am_in'=>'08:00']]];
+if($case==='teacher_old')$_POST['attendance_date']=date('Y-m-d',strtotime('-10 days'));
+if($case==='teacher_missing_reason')unset($_POST['correction_reason']);
 if($case==='teacher_pm'){$_POST['pm_in']='13:00';$_POST['pm_out']='15:30';$_POST['entries']=[1=>['am_in'=>'08:00','pm_in'=>'13:00','pm_out'=>'15:30']];}
 if($case==='mixed_batch')$_POST['entries'][99]=['am_in'=>'08:00'];
 if($case==='foreign_student')$_POST['entries']=[99=>['am_in'=>'08:00']];
@@ -47,8 +52,8 @@ if($case==='invalid_id')$_POST['entries']=['1x'=>['am_in'=>'08:00']];
 if($case==='invalid_data')$_POST['entries']=[1=>'invalid'];
 if($case==='invalid_batch')$_POST['entries']='invalid';
 PHP);
-$cases=['override'=>['guest'=>401,'scanner'=>403,'unknown'=>403,'other_section'=>403,'unassigned'=>403,'teacher'=>302,'teacher_pm'=>302,'admin'=>302,'admin_other_section'=>302],
- 'manual'=>['guest'=>401,'scanner'=>403,'unknown'=>403,'other_section'=>403,'foreign_student'=>403,'mixed_batch'=>403,'invalid_id'=>400,'invalid_data'=>400,'invalid_batch'=>400,'teacher'=>302,'teacher_pm'=>302,'admin'=>302,'admin_other_section'=>302]];
+$cases=['override'=>['guest'=>401,'scanner'=>403,'unknown'=>403,'other_section'=>403,'unassigned'=>403,'teacher_revoked'=>403,'teacher_old'=>403,'teacher_missing_reason'=>400,'teacher'=>302,'teacher_pm'=>302,'admin'=>302,'admin_other_section'=>302],
+ 'manual'=>['guest'=>401,'scanner'=>403,'unknown'=>403,'other_section'=>403,'foreign_student'=>403,'mixed_batch'=>403,'invalid_id'=>400,'invalid_data'=>400,'invalid_batch'=>400,'teacher_revoked'=>403,'teacher_moved'=>403,'teacher_old'=>403,'teacher'=>302,'teacher_pm'=>302,'admin'=>302,'admin_other_section'=>302]];
 file_put_contents($fixture . '/includes/functions.php', "\nfunction startSession(): void {}\n", FILE_APPEND);
 file_put_contents($fixture . '/includes/functions.php', 'require_once ' . var_export($root . '/includes/csrf.php', true) . ';' . "\n" . '$_SESSION["app_csrf"] = str_repeat("a", 64); $_POST["csrf_token"] = $_SESSION["app_csrf"];' . "\n", FILE_APPEND);
 
@@ -64,8 +69,8 @@ try {
    if($case==='teacher_pm' && (($result['record']['pm_in']??null)!=='13:00' || ($result['record']['pm_out']??null)!=='15:30' || !empty($result['record']['am_in'])))throw new RuntimeException("$endpoint PM half-day manual entry lost its two PM times");
   }
  }
- echo "Attendance access checks passed (22 cases).\n";
+ echo "Attendance access checks passed (28 cases).\n";
 } finally {
- foreach(['config/database.php','includes/functions.php','includes/enrollment_operations.php','request.php','attendance/manual.php','attendance/override.php'] as $file)if(is_file($fixture.'/'.$file))unlink($fixture.'/'.$file);
+ foreach(['config/database.php','includes/functions.php','includes/enrollment_operations.php','includes/teacher_attendance_policy.php','request.php','attendance/manual.php','attendance/override.php'] as $file)if(is_file($fixture.'/'.$file))unlink($fixture.'/'.$file);
  foreach(['/attendance','/includes','/config',''] as $dir)rmdir($fixture.$dir);
 }

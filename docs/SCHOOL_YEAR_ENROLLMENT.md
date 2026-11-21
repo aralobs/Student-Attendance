@@ -5,6 +5,28 @@ identity. Each year owns annual enrollments and dated section assignments.
 Preparing next year leaves today's attendance unchanged. Graduation preserves
 the learner and historical scans. No record purge is introduced.
 
+## Viewing school year
+
+The shared **Viewing school year** control remembers a staff member's choice for
+that signed-in session across Dashboard, Students, Sections, Analytics, Reports,
+Attendance and Intervention Monitoring. A fresh login starts with the active
+school year. Pages unrelated to annual records hide the control without clearing
+the choice. Available historical years follow the staff member's section access,
+which is checked again on each request.
+
+A non-current year displays a viewing notice and **Return to current year**.
+Closed/past years are labeled **Historical view**. Switching years clears section,
+grade and date filters so old filters cannot hide the new year's records. Default
+report dates fall inside the selected year; explicit date filters remain valid.
+Historical Dashboard shows a dated snapshot and trend, without today's live scan
+log, upcoming-event panel or live refresh.
+
+The shared selector changes a viewing preference only. It never activates a school
+year, moves a learner or grants write access. Scanning always uses the active year
+and is labeled **Current school year only**. Enrollment forms retain explicit
+destination-year choices and existing write guards. Explicit annual report links
+can temporarily show their linked year without replacing the remembered choice.
+
 ## Deployment gate and verified recovery
 
 Deploy the entire reviewed release containing converted student/section,
@@ -110,6 +132,13 @@ sections; names may repeat across different years. Returning Student Enrollment
 uses an existing profile. Moving Up selects the complete source-section roster
 and previews promotion, retention or Grade 6 graduation. Preparing a destination
 does not alter current scans, profiles or historical reports.
+
+Use **Prepare Next-Year Sections** from Sections or Moving Up to copy selected
+active sections into a later planned year. Names, current grades, schedule types,
+and scan time windows stay the same; new advisers start unassigned. Preview the
+selection, then confirm. Existing name/grade matches are skipped, including
+archived sections (restore those through the target year's archived Sections
+list). This prepares sections only; student Moving Up remains a separate step.
 
 Later changes use School Years' activation preview and confirmation, never
 initialization. Review outcomes, blocking mappings, historical notices and

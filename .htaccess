@@ -4,8 +4,16 @@ Options -Indexes
 RewriteEngine On
 RewriteRule ^(?:\.git|\.qa|\.agents|\.codex|config|includes|migrations|tests|docs|storage|deployment|tools)(?:/|$) - [F,L,NC]
 RewriteRule ^uploads/students(?:/|$) - [F,L,NC]
+RewriteRule ^qrcodes(?:/|$) - [F,L,NC]
 RewriteRule (?:^|/)(?:\.[^/]+|[^/]+\.(?:sql|bak|backup|old|orig|log|env|ini|zip|tar|gz|7z))$ - [F,L,NC]
 
 <FilesMatch "(?i)^(?:composer\.(?:json|lock)|SECURITY_REVIEW\.md|README\.md)$">
     Require all denied
 </FilesMatch>
+
+# Start with a short, host-only HSTS lifetime while verifying the live change.
+<IfModule mod_headers.c>
+    Header always set Strict-Transport-Security "max-age=300"
+    Header unset X-Powered-By
+    Header always unset X-Powered-By
+</IfModule>

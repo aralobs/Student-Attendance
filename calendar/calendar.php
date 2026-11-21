@@ -6,6 +6,7 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 require_once '../includes/calendarific.php';
+require_once '../includes/delivery_modes.php';
 requireStaff();
 
 $pageTitle = 'School Calendar';
@@ -28,6 +29,43 @@ $calendarEntries = getCalendarMonth($month, $year);
 // Handle AJAX requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
     header('Content-Type: application/json');
+    if (($_POST['action'] ?? '') === 'delivery_delete') {
+        requireCsrfPost(true);
+        try {
+            echo json_encode(['success'=>true]+deleteDeliveryMode($db,currentUser(),['id'=>$_POST['id']??null,'confirm_token'=>$_POST['confirm_token']??'']));
+        } catch (DomainException|InvalidArgumentException $e) {
+            echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
+        } catch (Throwable $e) {
+            http_response_code(503);
+            echo json_encode(['success'=>false,'message'=>'Unable to delete the delivery entry. Reload the calendar and try again.']);
+        }
+        exit;
+    }
+    if (($_POST['action'] ?? '') === 'delivery') {
+        requireCsrfPost(true);
+        try {
+            requirePanelFeatures($db);
+            $activeYear = getActiveSchoolYear($db);
+            if (!$activeYear) throw new DomainException('No active school year is available.');
+            $deadline = $_POST['deadline_at'] ?? '';
+            if (!is_string($deadline)) throw new InvalidArgumentException('Enter a valid modular deadline.');
+            $result = saveDeliveryModes($db, currentUser(), [
+                'year_id' => (int)$activeYear['id'],
+                'section_id' => (int)($_POST['section_id'] ?? 0),
+                'from' => $_POST['from'] ?? '', 'to' => $_POST['to'] ?? '',
+                'mode' => $_POST['mode'] ?? '',
+                'deadline_at' => $deadline !== '' ? str_replace('T', ' ', $deadline) . ':00' : null,
+                'confirm_token' => $_POST['confirm_token'] ?? '',
+            ]);
+            echo json_encode(['success' => true] + $result);
+        } catch (DomainException|InvalidArgumentException $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        } catch (Throwable $e) {
+            http_response_code(503);
+            echo json_encode(['success' => false, 'message' => 'Unable to save the delivery schedule. Please try again.']);
+        }
+        exit;
+    }
     requireAdmin();
 
     if (!validSettingsCsrf($_POST['csrf_token'] ?? null)) {
@@ -59,7 +97,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
                 if ($action === 'calendarific_test') {
                     echo json_encode(['success' => true, 'message' => 'Connection successful. Found ' . count($holidays) . ' Philippine national holiday dates for ' . $importYear . '.']);
                 } else {
-                    $counts = importCalendarificHolidays($db, $holidays, (int)currentUser()['id']);
+                    require_once '../includes/calendar_protection.php';
+                    $counts = importCalendarificHolidays($db, $holidays, (int)currentUser()['id'], 'protectedCalendarImportGuard');
                     $message = "Imported {$counts['added']} holiday dates for {$importYear}; preserved {$counts['skipped']} existing entries.";
                     setFlash('success', $message);
                     echo json_encode(['success' => true, 'message' => $message]);
@@ -88,11 +127,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
         }
 
         try {
-            $db->prepare("INSERT INTO school_calendar (date, title, type, description, created_by)
-                          VALUES (?, ?, ?, ?, ?)
-                          ON DUPLICATE KEY UPDATE title=?, type=?, description=?")
-               ->execute([$date, $title, $type, $desc, currentUser()['id'],
-                           $title, $type, $desc]);
+            require_once '../includes/calendar_protection.php';
+            saveProtectedCalendarEntry($db,currentUser(),['date'=>$date,'title'=>$title,'type'=>$type,'description'=>$desc]);
             echo json_encode(['success' => true, 'message' => 'Calendar entry saved.']);
         } catch (Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
@@ -106,8 +142,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax'])) {
             echo json_encode(['success' => false, 'message' => 'Date required.']);
             exit;
         }
-        $db->prepare("DELETE FROM school_calendar WHERE date = ?")->execute([$date]);
-        echo json_encode(['success' => true]);
+        try {
+            require_once '../includes/calendar_protection.php';
+            saveProtectedCalendarEntry($db,currentUser(),['date'=>$date,'delete'=>true]);
+            echo json_encode(['success'=>true]);
+        } catch (DomainException|InvalidArgumentException $e) { echo json_encode(['success'=>false,'message'=>$e->getMessage()]); }
+        catch (Throwable $e) { http_response_code(503); echo json_encode(['success'=>false,'message'=>'Unable to change the calendar.']); }
         exit;
     }
 
@@ -131,30 +171,65 @@ $upcoming = $db->query("
     LIMIT 8
 ")->fetchAll();
 
+$deliveryEntries = $savedDeliveryEntries = $todayDelivery = [];
+$deliveryAvailable = false;
+$deliveryLoadError = false;
+$calendarDeliveryYear = null;
+$calendarDeliverySections = [];
+try {
+    $deliveryAvailable = enrollmentModelEnabled($db) && panelTableAvailable($db, 'delivery_modes');
+    if ($deliveryAvailable) {
+        $calendarDeliveryYear = getActiveSchoolYear($db);
+        $calendarDeliverySections = getAllowedSections();
+        $monthStart = sprintf('%04d-%02d-01', $year, $month);
+        $monthEnd = sprintf('%04d-%02d-%02d', $year, $month, $daysInMonth);
+        $savedDeliveryEntries = getDeliveryCalendarRange($db, currentUser(), $monthStart, $monthEnd, true);
+        foreach ($savedDeliveryEntries as $deliveryDate => $schedules) {
+            foreach ($schedules as $schedule) {
+                if ($schedule['eligible']) $deliveryEntries[$deliveryDate][] = $schedule;
+            }
+        }
+        $today = date('Y-m-d');
+        $todayDelivery = ($today >= $monthStart && $today <= $monthEnd)
+            ? ($deliveryEntries[$today] ?? [])
+            : (getDeliveryCalendarRange($db, currentUser(), $today, $today)[$today] ?? []);
+    }
+} catch (Throwable $e) {
+    $deliveryLoadError = true;
+    error_log('Unable to load calendar delivery schedules.');
+}
+
 include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-calendar3 me-2 text-primary"></i>School Calendar
         </h1>
-        <p class="page-subtitle">Manage holidays, no-class days, and special events</p>
+        <p class="page-subtitle">School days, delivery schedules, holidays, and special events</p>
     </div>
-    <?php if (isAdmin()): ?>
     <div class="d-flex gap-2 flex-wrap">
+    <a class="btn btn-outline-primary" href="delivery_modes.php">View scheduled dates</a>
+    <?php if (isAdmin()): ?>
     <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#calendarificModal">
         <i class="bi bi-cloud-arrow-down me-1"></i>Calendarific API
     </button>
+    <?php endif; ?>
+    <?php if (isAdmin() || ($calendarDeliveryYear && $calendarDeliverySections && !$deliveryLoadError)): ?>
     <button class="btn btn-primary" onclick="openAddModal(null)">
         <i class="bi bi-plus-circle me-1"></i>Add Entry
     </button>
-    </div>
     <?php endif; ?>
+    </div>
 </div>
+
+<?php if ($deliveryLoadError): ?>
+<div class="alert alert-warning">Delivery schedules could not be loaded. Please reload the calendar.</div>
+<?php endif; ?>
 
 <div class="row g-4">
 
@@ -208,7 +283,7 @@ include '../includes/sidebar.php';
                         }
                     ?>
                     <div class="<?= $cellClass ?>"
-                         onclick="<?= isAdmin() ? "openAddModal('{$dateStr}')" : "showEntry('{$dateStr}')" ?>"
+                         onclick="<?= isAdmin() || ($calendarDeliveryYear && $calendarDeliverySections && !$deliveryLoadError) ? "openAddModal('{$dateStr}')" : "showEntry('{$dateStr}')" ?>"
                          data-date="<?= $dateStr ?>">
                         <div class="d-flex justify-content-between align-items-start">
                             <span class="day-number fw-700"><?= $d ?></span>
@@ -222,6 +297,12 @@ include '../includes/sidebar.php';
                             <?= strlen($entry['title']) > 14 ? '…' : '' ?>
                         </div>
                         <?php endif; ?>
+                        <?php foreach ($deliveryEntries[$dateStr] ?? [] as $delivery): ?>
+                        <div class="entry-label delivery-label text-primary" title="<?= sanitize(($delivery['section_name'] ?? 'Whole school') . ': ' . deliveryLabels()[$delivery['mode']] . ($delivery['deadline_at'] ? ' — Due ' . $delivery['deadline_at'] . ' (Manila time)' : '')) ?>">
+                            <?= sanitize(deliveryLabels()[$delivery['mode']]) ?>
+                            <span class="d-block text-muted"><?= sanitize($delivery['section_name'] ?? 'Whole school') ?></span>
+                        </div>
+                        <?php endforeach; ?>
                     </div>
                     <?php endfor; ?>
                 </div>
@@ -269,9 +350,26 @@ include '../includes/sidebar.php';
                     <strong><?= ucfirst(str_replace('_',' ',$todayEntry['type'])) ?>:</strong>
                     <?= sanitize($todayEntry['title']) ?>
                 </div>
+                <?php elseif ($deliveryLoadError): ?>
+                <div class="alert alert-warning py-2 mb-0">Delivery schedule unavailable</div>
+                <?php elseif (!deliveryCalendarEligible($db, date('Y-m-d'))): ?>
+                <div class="alert alert-secondary py-2 mb-0">No scheduled classes (weekend)</div>
+                <?php elseif ($todayDelivery): ?>
+                <div class="alert alert-info py-2 mb-0">
+                    <?php foreach ($todayDelivery as $delivery): ?>
+                    <div class="mb-2">
+                        <strong><?= sanitize(deliveryLabels()[$delivery['mode']]) ?></strong>
+                        <span class="d-block small"><?= sanitize($delivery['section_name'] ?? 'Whole school') ?><?= (int)$delivery['scope_section_id'] !== 0 ? ' (section override)' : '' ?></span>
+                        <?php if ($delivery['deadline_at']): ?>
+                        <span class="d-block small">Deadline: <?= sanitize($delivery['deadline_at']) ?> (Manila time)</span>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                    <div class="small">Section overrides take priority. Other sections follow the whole-school schedule or default to face-to-face.</div>
+                </div>
                 <?php else: ?>
                 <div class="alert alert-success py-2 mb-0">
-                    <i class="bi bi-check-circle me-1"></i>Regular school day
+                    <i class="bi bi-check-circle me-1"></i><?= $deliveryAvailable ? 'Face-to-face (default)' : 'Regular school day' ?>
                 </div>
                 <?php endif; ?>
             </div>
@@ -307,44 +405,9 @@ include '../includes/sidebar.php';
             </div>
         </div>
 
-        <!-- This month's entries -->
-        <div class="card">
-            <div class="card-header fw-700">
-                <i class="bi bi-list-ul me-2 text-primary"></i>
-                <?= date('F', mktime(0,0,0,$month,1,$year)) ?> Entries
-            </div>
-            <div class="card-body p-0" style="max-height:300px;overflow-y:auto">
-                <?php if (empty($calendarEntries)): ?>
-                <div class="text-center text-muted py-3 small">No entries this month</div>
-                <?php else: ?>
-                <ul class="list-group list-group-flush">
-                    <?php foreach ($calendarEntries as $date => $entry): ?>
-                    <li class="list-group-item py-2 px-3 d-flex justify-content-between align-items-center">
-                        <div>
-                            <div class="fw-600 small"><?= sanitize($entry['title']) ?></div>
-                            <div class="text-muted" style="font-size:0.72rem">
-                                <?= date('l, j', strtotime($date)) ?>
-                            </div>
-                        </div>
-                        <div class="d-flex align-items-center gap-1">
-                            <span class="badge bg-<?= entryColor($entry['type']) ?>">
-                                <?= ucfirst(str_replace('_',' ',$entry['type'])) ?>
-                            </span>
-                            <?php if (isAdmin()): ?>
-                            <button class="btn btn-sm btn-outline-danger p-0 px-1"
-                                    data-entry-date="<?= sanitize($date) ?>" data-entry-title="<?= sanitize($entry['title']) ?>"
-                                    onclick="deleteEntry(this.dataset.entryDate, this.dataset.entryTitle)"
-                                    style="font-size:0.7rem">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                            <?php endif; ?>
-                        </div>
-                    </li>
-                    <?php endforeach; ?>
-                </ul>
-                <?php endif; ?>
-            </div>
-        </div>
+        <!-- All saved entries for the selected month -->
+        <?php include '../includes/calendar_month_entries.php'; ?>
+
     </div>
 </div>
 
@@ -381,59 +444,12 @@ $calendarificConfigured = (bool)$keyStatus->fetchColumn();
         </div>
     </div></div>
 </div>
-<div class="modal fade" id="calendarModal" tabcalendar="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title fw-700">
-                    <i class="bi bi-calendar-plus me-2"></i>
-                    <span id="modalTitle">Add Calendar Entry</span>
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">Date</label>
-                    <input type="date" id="entryDate" class="form-control" required>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Title <span class="text-danger">*</span></label>
-                    <input type="text" id="entryTitle" class="form-control"
-                           placeholder="e.g. Christmas Day, No Class - Storm Signal">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Type</label>
-                    <select id="entryType" class="form-select">
-                        <option value="holiday">🎉 Holiday</option>
-                        <option value="no_class">📢 No Class / School Closure</option>
-                        <option value="special_event">⭐ Special Event</option>
-                        <option value="school_day">📚 Regular School Day</option>
-                    </select>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Description (optional)</label>
-                    <textarea id="entryDescription" class="form-control" rows="2"
-                              placeholder="Additional details..."></textarea>
-                </div>
-                <div id="modalMsg"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary btn-sm"
-                        data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary btn-sm"
-                        onclick="saveEntry()">
-                    <i class="bi bi-save me-1"></i>Save Entry
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
 <?php endif; ?>
+<?php include '../includes/calendar_entry_modal.php'; ?>
 
 <?php
 $extraJS = <<<'JS'
 <script>
-let calendarModal = null;
 function calendarCsrf() {
     return encodeURIComponent(document.getElementById('calendarCsrf')?.value || '');
 }
@@ -477,83 +493,12 @@ async function calendarificAction(action) {
     }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    const el = document.getElementById('calendarModal');
-    if (el) calendarModal = new bootstrap.Modal(el);
-});
-
-function openAddModal(date) {
-    document.getElementById('entryDate').value        = date || '';
-    document.getElementById('entryTitle').value       = '';
-    document.getElementById('entryType').value        = 'holiday';
-    document.getElementById('entryDescription').value = '';
-    document.getElementById('modalMsg').innerHTML     = '';
-    document.getElementById('modalTitle').textContent =
-        date ? `Add Entry — ${date}` : 'Add Calendar Entry';
-
-    // If date has existing entry, load it
-    if (date) {
-        fetch('calendar.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `ajax=1&action=get&csrf_token=${calendarCsrf()}&date=${encodeURIComponent(date)}`
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.entry) {
-                document.getElementById('entryTitle').value       = data.entry.title;
-                document.getElementById('entryType').value        = data.entry.type;
-                document.getElementById('entryDescription').value = data.entry.description || '';
-                document.getElementById('modalTitle').textContent = `Edit Entry — ${date}`;
-            }
-        });
-    }
-
-    calendarModal?.show();
-}
-
 function showEntry(date) {
     // For non-admins — just highlight
     const cells = document.querySelectorAll('.calendar-cell');
     cells.forEach(c => c.style.outline = '');
     const cell = document.querySelector(`[data-date="${date}"]`);
     if (cell) cell.style.outline = '3px solid #1a56db';
-}
-
-async function saveEntry() {
-    const date  = document.getElementById('entryDate').value;
-    const title = document.getElementById('entryTitle').value.trim();
-    const type  = document.getElementById('entryType').value;
-    const desc  = document.getElementById('entryDescription').value.trim();
-    const msg   = document.getElementById('modalMsg');
-
-    if (!date || !title) {
-        msg.innerHTML = '<div class="alert alert-danger py-2">Date and title are required.</div>';
-        return;
-    }
-
-    try {
-        const res  = await fetch('calendar.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `ajax=1&action=add&csrf_token=${calendarCsrf()}&date=${encodeURIComponent(date)}&title=${encodeURIComponent(title)}&type=${encodeURIComponent(type)}&description=${encodeURIComponent(desc)}`
-        });
-        const data = await res.json();
-
-        if (data.success) {
-            calendarModal?.hide();
-            // Reload page to reflect changes
-            const url = new URL(window.location);
-            const d   = new Date(date);
-            url.searchParams.set('month', d.getMonth() + 1);
-            url.searchParams.set('year',  d.getFullYear());
-            window.location = url.toString();
-        } else {
-            msg.innerHTML = `<div class="alert alert-danger py-2">${data.message}</div>`;
-        }
-    } catch (e) {
-        msg.innerHTML = '<div class="alert alert-danger py-2">Network error.</div>';
-    }
 }
 
 async function deleteEntry(date, title) {
@@ -574,5 +519,7 @@ async function deleteEntry(date, title) {
 }
 </script>
 JS;
+$extraJS .= '<script src="' . BASE_URL . 'assets/js/calendar_entry.js"></script>';
+$extraJS .= '<script src="' . BASE_URL . 'assets/js/delivery_delete.js"></script>';
 include '../includes/footer.php';
 ?>

@@ -92,6 +92,10 @@ $student['schedule_type'] = $scheduleType;
 // Selection, window validation, cooldown and saving share the row lock.
 try {
     $scan = saveAttendanceScan($db, (int)$student['id'], $today, $section, (int)currentUser()['id']);
+} catch (DomainException $e) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    exit;
 } catch (Throwable $e) {
     error_log('Attendance scan save failed: ' . $e->getMessage());
     http_response_code(500);

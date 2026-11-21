@@ -1,8 +1,7 @@
 # Deployment and finalization controls (F11)
 
 Production requires `APP_ENV=production`, explicit database host/name/user/password
-and a canonical HTTPS `BASE_URL`. Railway environment metadata also selects
-production automatically. Without APP_ENV, development defaults apply only to
+and a canonical HTTPS `BASE_URL`. Without APP_ENV, development defaults apply only to
 CLI or direct loopback HTTP with a loopback hostname and no forwarded headers.
 Remote/proxied web requests otherwise use production validation. Explicit
 development/local/test/testing modes retain local XAMPP behavior; never use those
@@ -15,16 +14,18 @@ Supported variables:
 | Setting | Requirement |
 | --- | --- |
 | `APP_ENV` | `production` on web and worker deployments |
-| `MYSQLHOST` / `DB_HOST` | Explicit database hostname |
-| `MYSQLPORT` / `DB_PORT` | Valid port; defaults to 3306 |
-| `MYSQLDATABASE` / `DB_NAME` | Explicit application database |
-| `MYSQLUSER` / `DB_USER` | Dedicated non-root runtime account |
-| `MYSQLPASSWORD` / `DB_PASS` | Nonempty production credential from secret storage |
+| `DB_HOST` | Explicit database hostname |
+| `DB_PORT` | Valid port; defaults to 3306 |
+| `DB_NAME` | Explicit application database |
+| `DB_USER` | Dedicated non-root runtime account |
+| `DB_PASS` | Nonempty production credential from secret storage |
 | `BASE_URL` | Canonical HTTPS URL, including the application's path |
 | `DB_TLS_CA` | Absolute readable trusted CA bundle for every non-loopback DB host |
 | `TRUSTED_PROXY_IPS` | Comma-separated exact IP addresses of controlled TLS proxies only |
 
-MySQL/Railway names take precedence when present. Configure these consistently for
+On Hostinger, store these in the private `attendance-private/hosting.php` file
+described in [HOSTINGER_DEPLOYMENT.md](HOSTINGER_DEPLOYMENT.md).
+Configure these consistently for
 the web server and scheduled worker; CLI processes do not automatically inherit
 Apache's per-directory environment. Secret values are never printed in setup
 examples or browser errors.
@@ -94,9 +95,9 @@ JPEG or PNG under a cryptographically random filename. This discards metadata,
 appended payloads and animation (GIF avatars become a still image; unsupported
 animated WebP content is rejected). Unsupported,
 truncated or oversized images fail closed. PHP GD with the required decoders must
-be installed; Composer now declares GD, mbstring and OpenSSL platform requirements
-so the Nixpacks provider can select them. Validate the deployed build with
-`composer check-platform-reqs --no-dev`; the local platform check passes.
+be installed; Composer declares GD, mbstring and OpenSSL platform requirements.
+Enable the required extensions in Hostinger's PHP configuration and validate the
+deployment environment with `composer check-platform-reqs --no-dev` where available.
 Private storage is outside the document root, and direct legacy upload paths are
 blocked. The authorized handler serves only an allowed image MIME with nosniff.
 Never add a PHP handler for the private storage directory.
@@ -111,7 +112,6 @@ configuration and worker scheduling require operator verification.
 References: [OWASP Database Security](https://cheatsheetseries.owasp.org/cheatsheets/Database_Security_Cheat_Sheet.html),
 [OWASP File Upload](https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html),
 [PHP PDO MySQL TLS options](https://www.php.net/manual/en/ref.pdo-mysql.php).
-Build reference: [Nixpacks PHP extension selection](https://nixpacks.com/docs/providers/php).
 
 Annual enrollment adds the [cutover and recovery requirements](SCHOOL_YEAR_ENROLLMENT.md):
 verified isolated restore with original keys/audit triggers, separate photo/upload

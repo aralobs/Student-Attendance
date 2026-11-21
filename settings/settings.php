@@ -16,6 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'school_name',
         'school_id',
         'school_head',
+        'teacher_attendance_edit_days',
+        'attendance_locked_through',
         'school_address',
         'grade_level',
         'time_in_start',
@@ -29,6 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'sms_departure_template',
         'sms_absence_template',
         'sms_missing_checkout_template',
+        'sms_intervention_template',
         'email_arrival_subject',
         'email_departure_subject',
         'email_absence_subject',
@@ -68,6 +71,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new InvalidArgumentException('Message templates must be at most 4,000 characters; subjects must be a single line of at most 200 characters.');
             }
         }
+        if (isset($_POST['teacher_attendance_edit_days']) && filter_var($_POST['teacher_attendance_edit_days'],FILTER_VALIDATE_INT,['options'=>['min_range'=>0,'max_range'=>365]])===false) throw new InvalidArgumentException('Teacher editing days must be between 0 and 365.');
+        if (!empty($_POST['attendance_locked_through'])) validatedSchoolYearDate($_POST['attendance_locked_through']);
         $db->beginTransaction();
         foreach ($keys as $key) {
             if (isSecretSetting($key)) {
@@ -123,7 +128,7 @@ include '../includes/sidebar.php';
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-gear-fill me-2 text-primary"></i>System Settings
@@ -137,6 +142,10 @@ include '../includes/sidebar.php';
     <div class="row g-4">
 
 
+        <div class="card mb-4"><div class="card-header">Teacher Attendance Access</div><div class="card-body row g-3">
+            <div class="col-md-6"><label class="form-label" for="teacherEditDays">Days teachers may edit before today</label><input class="form-control" id="teacherEditDays" name="teacher_attendance_edit_days" type="number" min="0" max="365" value="<?= (int)($settings['teacher_attendance_edit_days']??7) ?>"><small class="text-muted">0 allows today only. Administrators handle older corrections.</small></div>
+            <div class="col-md-6"><label class="form-label" for="attendanceLockedThrough">Finalize attendance through</label><input class="form-control" id="attendanceLockedThrough" name="attendance_locked_through" type="date" value="<?= htmlspecialchars($settings['attendance_locked_through']??'') ?>"><small class="text-muted">Teachers cannot change this date or earlier dates. Leave blank for no additional lock.</small></div>
+        </div></div>
         <!-- School Information -->
         <div class="col-12">
             <div class="card">
@@ -304,6 +313,8 @@ include '../includes/sidebar.php';
                                 class="form-control" rows="4"><?= htmlspecialchars($settings['sms_absence_template'] ?? '') ?></textarea>
                         </div>
                         <div class="col-md-12">
+                            <label class="form-label">School Attendance Intervention</label>
+                            <textarea name="sms_intervention_template" class="form-control mb-3" rows="3" maxlength="4000"><?= htmlspecialchars($settings['sms_intervention_template'] ?? notificationTemplateDefaults()['sms_intervention_template']) ?></textarea>
                             <label class="form-label" for="missingCheckoutTemplate">Missing Time-Out Alert</label>
                             <textarea id="missingCheckoutTemplate" name="sms_missing_checkout_template" class="form-control" rows="3" maxlength="4000"><?= htmlspecialchars($settings['sms_missing_checkout_template']) ?></textarea>
                             <small class="text-muted">Sent only when a teacher selects a parent alert in End of Day Review. Editing this message does not resend earlier alerts.</small>
@@ -368,7 +379,7 @@ include '../includes/sidebar.php';
                         <div class="col-md-6">
                             <label class="form-label">From Name</label>
                             <input type="text" name="mail_from_name" class="form-control"
-                                value="<?= htmlspecialchars($settings['mail_from_name'] ?? 'SPCCS Kinder Attendance') ?>">
+                                value="<?= htmlspecialchars($settings['mail_from_name'] ?? 'ASAM') ?>">
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">From Email</label>

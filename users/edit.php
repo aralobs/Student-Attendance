@@ -153,7 +153,7 @@ include '../includes/sidebar.php';
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title"><i class="bi bi-pencil-square me-2 text-primary"></i>Edit User</h1>
         <p class="page-subtitle">Update account details for <?= sanitize($user['full_name']) ?></p>

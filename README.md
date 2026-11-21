@@ -1,7 +1,11 @@
 # Student-Attendance
 
+Panel revisions, manual decisions, delivery modes, interventions, PDF downloads and backups: see [installation and operation](docs/PANEL_REVISIONS_DEPLOYMENT.md) and [acceptance evidence](docs/PANEL_REVISIONS_ACCEPTANCE.md).
+
 Hostinger ZIP deployment: see [docs/HOSTINGER_DEPLOYMENT.md](docs/HOSTINGER_DEPLOYMENT.md).
 Annual enrollment rollout and recovery: follow [docs/SCHOOL_YEAR_ENROLLMENT.md](docs/SCHOOL_YEAR_ENROLLMENT.md).
+
+Class adviser permissions, change requests and intervention follow-ups: see [teacher access](docs/TEACHER_ACCESS.md).
 Verify backup restoration, install the complete release, and drain web/worker
 writes before explicit CLI initialization. Additive schema alone leaves legacy
 mode enabled; later years use the administrator activation flow.
@@ -41,4 +45,4 @@ Teachers can add remarks and explicitly select missing-checkout students for par
 
 Checks: `php tests/end_of_day_alerts_test.php` and `php tests/end_of_day_integration_test.php`. The integration test creates a randomly named temporary database and substitutes an SMS callback; no real parent notifications are sent.
 
-Security event and encrypted change history: run `php migrations/security_audit.php` on each existing deployment, then use the administrator **Security Audit** menu. See [audit/dependency deployment notes](docs/SECURITY_AUDIT.md) for keys, append-only DB permissions, in-app alerts and automated advisory/integrity checks.
+Security event and encrypted change history: run `php migrations/security_audit.php` on each existing deployment, then use the administrator **Logs** menu. See [audit/dependency deployment notes](docs/SECURITY_AUDIT.md) for keys, append-only DB permissions, in-app alerts and automated advisory/integrity checks.

@@ -1,6 +1,23 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/enrollment_access.php';
+require_once __DIR__ . '/viewing_school_year.php';
+require_once __DIR__ . '/section_filter.php';
+
+/** Default report periods follow the viewed year; explicit date filters still win. */
+function enrollmentReportDefaultDate(PDO $db): string
+{
+    if (!enrollmentModelEnabled($db)) return date('Y-m-d');
+    try {
+        $query=$_GET;
+        if (!empty($query['section']) && empty($query['view_school_year']) && empty($query['school_year_id']) && empty($query['sy'])) {
+            $q=$db->prepare('SELECT school_year_id FROM sections WHERE id=?'); $q->execute([(int)$query['section']]);
+            $query['school_year_id']=(int)$q->fetchColumn();
+        }
+        return viewingSchoolYearDate(viewingSchoolYear($db,currentUser(),$query));
+    }
+    catch (InvalidArgumentException|DomainException $e) { http_response_code(400); exit(htmlspecialchars($e->getMessage(),ENT_QUOTES,'UTF-8')); }
+}
 
 /** Correlated ownership predicate. Aliases are developer supplied, values are bound. */
 function attendanceOwnershipScope(string $attendanceAlias, array $actor, int $yearId, ?int $sectionId = null): array
@@ -122,7 +139,7 @@ function enrollmentReportSources(PDO $db, array $report): array
         JOIN students profile ON profile.id=member.student_id JOIN sections sec ON sec.id=member.section_id JOIN school_years y ON y.id=sec.school_year_id)';
     $ids=array_map('intval',array_column($report['attendance'],'id'));
     $attendance='(SELECT record.*,own.section_id AS report_section_id FROM attendance record JOIN enrollment_sections own ON own.id=record.assignment_id AND own.enrollment_id=record.enrollment_id WHERE record.id IN ('.implode(',',$ids ?: [0]).'))';
-    return ['students'=>$students,'attendance'=>$attendance];
+    return ['students'=>$students,'attendance'=>$report['attendance_source']??$attendance];
 }
 
 /** HTTP adapter, invoked only after staff guards. Legacy callers retain their exact sources. */
@@ -130,15 +147,20 @@ function prepareEnrollmentReport(PDO $db, string $from, string $to, ?int $sectio
 {
     if (!enrollmentModelEnabled($db)) return ['managed'=>false,'students'=>'students','attendance'=>'attendance','join'=>'','year'=>null,'sections'=>null,'data'=>null];
     try {
-        $id=(int)($_GET['school_year_id'] ?? 0);
-        if (!$id && !empty($_GET['sy'])) {
-            $q=$db->prepare('SELECT id FROM school_years WHERE label=?'); $q->execute([$_GET['sy']]);
-            $id=(int)$q->fetchColumn(); if (!$id) throw new DomainException('School year not found.');
+        if (!$operational && empty($_GET['view_school_year']) && empty($_GET['school_year_id']) && empty($_GET['sy']) && empty($_SESSION['viewing_school_year'])) {
+            resolveEnrollmentReportYear($db,0,$from,$to);
         }
-        if ($operational && !$id) $id=(int)(getActiveSchoolYear($db)['id'] ?? 0);
-        if (!$id && $sectionId) { $q=$db->prepare('SELECT school_year_id FROM sections WHERE id=?'); $q->execute([$sectionId]); $id=(int)$q->fetchColumn(); }
+        $id=(int)viewingSchoolYear($db,currentUser())['id'];
+        if ($sectionId && empty($_GET['view_school_year']) && empty($_GET['school_year_id']) && empty($_GET['sy'])) {
+            $q=$db->prepare('SELECT school_year_id FROM sections WHERE id=?'); $q->execute([$sectionId]); $id=(int)$q->fetchColumn() ?: $id;
+        }
         $year=resolveEnrollmentReportYear($db,$id,$from,$to);
         $report=loadEnrollmentReport($db,currentUser(),(int)$year['id'],$sectionId,$from,$to);
+        $decisionTable=$db->query("SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='attendance_decisions'")->fetchColumn();
+        if ($decisionTable) {
+            require_once __DIR__.'/attendance_decisions.php';
+            $report=overlayAttendanceDecisions($db,$report);
+        }
         return array_merge(enrollmentReportSources($db,$report),['managed'=>true,'join'=>' AND a.enrollment_id=s.enrollment_id AND a.report_section_id=s.section_id',
             'year'=>$year,'sections'=>enrollmentReportSections($db,currentUser(),(int)$year['id']),'data'=>$report]);
     } catch (InvalidArgumentException|DomainException $error) { http_response_code(400); exit(htmlspecialchars($error->getMessage(),ENT_QUOTES,'UTF-8')); }
@@ -147,18 +169,16 @@ function prepareEnrollmentReport(PDO $db, string $from, string $to, ?int $sectio
 function enrollmentReportNotice(array $context): void
 {
     if (!$context['managed']) return;
-    echo '<div class="alert alert-info">School year: '.htmlspecialchars($context['year']['label']).'.';
-    if ($context['data']['unresolved_count']) echo ' '.(int)$context['data']['unresolved_count'].' unresolved historical ownership exceptions; totals exclude records without verified ownership.';
-    echo '</div>';
-    $labels=enrollmentReportYearLabels(getDB(),currentUser());
-    echo '<form method="get" class="no-print mb-3"><label>School year <select name="sy" onchange="this.form.submit()">';
-    foreach ($labels as $label) echo '<option value="'.htmlspecialchars($label).'"'.($label===$context['year']['label'] ? ' selected' : '').'>'.htmlspecialchars($label).'</option>';
-    echo '</select></label>';
-    foreach ($_GET as $key=>$value) {
-        if (in_array($key,['sy','school_year_id','section','enrollment_id','page'],true) || !is_scalar($value)) continue;
-        echo '<input type="hidden" name="'.htmlspecialchars((string)$key).'" value="'.htmlspecialchars((string)$value).'">';
+    if ($context['data']['unresolved_count']) {
+        echo '<div class="alert alert-warning">'.(int)$context['data']['unresolved_count'].' unresolved historical ownership exceptions; totals exclude records without verified ownership.</div>';
     }
-    echo '<button type="submit" class="btn btn-sm btn-outline-secondary">Select year</button></form>';
+}
+
+/** Render the year filter in the shared navbar without adding a content row. */
+function enrollmentReportYearControl(array $context): void
+{
+    if (!$context['managed']) return;
+    renderViewingSchoolYearControl(getDB(),currentUser(),$context['year']);
 }
 
 function enrollmentReportDay(array $context, string $date): bool
@@ -193,17 +213,13 @@ function enrollmentReportPossible(array $context, ?int $sectionId=null, ?string 
 function prepareEnrollmentDirectory(PDO $db, bool $wholeYear=false): array
 {
     if (!enrollmentModelEnabled($db)) return prepareEnrollmentReport($db,date('Y-m-d'),date('Y-m-d'));
-    $id=(int)($_GET['school_year_id'] ?? 0);
+    $viewYear=requireViewingSchoolYear($db,currentUser());
+    $id=(int)$viewYear['id'];
     if (!empty($_GET['enrollment_id'])) {
         $q=$db->prepare('SELECT school_year_id FROM student_enrollments WHERE id=?'); $q->execute([(int)$_GET['enrollment_id']]);
         $id=(int)$q->fetchColumn(); if (!$id) { http_response_code(404); exit('Enrollment not found.'); }
     }
-    if (!$id && !empty($_GET['sy'])) {
-        $q=$db->prepare('SELECT id FROM school_years WHERE label=?'); $q->execute([$_GET['sy']]); $id=(int)$q->fetchColumn();
-        if (!$id) { http_response_code(404); exit('School year not found.'); }
-    }
-    $historical=$wholeYear || $id>0;
-    if (!$id) $id=(int)(getActiveSchoolYear($db)['id'] ?? 0);
+    $historical=$wholeYear || $id!==(int)(getActiveSchoolYear($db)['id'] ?? 0) || !empty($_GET['enrollment_id']) || !empty($_GET['sy']) || !empty($_GET['school_year_id']);
     $year=resolveEnrollmentReportYear($db,$id,date('Y-m-d'),date('Y-m-d'));
     $from=$historical ? $year['starts_on'] : date('Y-m-d'); $to=$historical ? $year['ends_on'] : $from;
     $report=loadEnrollmentReport($db,currentUser(),$id,null,$from,$to);

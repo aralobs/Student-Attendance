@@ -9,18 +9,26 @@ requireAdmin();
 $pageTitle = 'SMS Logs';
 $db        = getDB();
 $page      = max(1, (int)($_GET['page'] ?? 1));
-$perPage   = 25;
+$perPage   = 15;
 $offset    = ($page - 1) * $perPage;
 $type      = $_GET['type'] ?? '';
+$search = trim((string)($_GET['search'] ?? ''));
+require_once '../includes/list_view.php';
 
 $where  = ['1=1'];
 $params = [];
 if ($type) { $where[] = 'l.type = ?'; $params[] = $type; }
+if ($search !== '') {
+    $where[] = '(l.recipient_number LIKE ? OR l.message LIKE ? OR l.status LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)';
+    $params = array_merge($params, array_fill(0, 5, '%' . $search . '%'));
+}
 $whereSQL = implode(' AND ', $where);
 
-$total = $db->prepare("SELECT COUNT(*) FROM sms_logs l WHERE {$whereSQL}");
+$total = $db->prepare("SELECT COUNT(*) FROM sms_logs l LEFT JOIN students s ON l.student_id=s.id WHERE {$whereSQL}");
 $total->execute($params);
-$total = $total->fetchColumn();
+$total = (int)$total->fetchColumn();
+$page = min($page, max(1, (int)ceil($total / $perPage)));
+$offset = ($page - 1) * $perPage;
 
 $logs = $db->prepare("
     SELECT l.*, s.first_name, s.last_name
@@ -39,7 +47,7 @@ include '../includes/sidebar.php';
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-chat-dots-fill me-2 text-primary"></i>SMS Logs
@@ -48,10 +56,11 @@ include '../includes/sidebar.php';
     </div>
 </div>
 
+<?php renderListSearch($search, 'Search student name, recipient number, message or status...'); ?>
 <!-- Filters -->
 <div class="card mb-3">
     <div class="card-body py-2">
-        <form method="GET" class="row g-2 align-items-center">
+        <form method="GET" class="row g-2 align-items-center"><input type="hidden" name="search" value="<?= sanitize($search) ?>">
             <div class="col-md-3">
                 <select name="type" class="form-select form-select-sm">
                     <option value="">All Types</option>
@@ -59,6 +68,7 @@ include '../includes/sidebar.php';
                     <option value="departure" <?= $type === 'departure' ? 'selected' : '' ?>>Departure</option>
                     <option value="absence"   <?= $type === 'absence'   ? 'selected' : '' ?>>Absence</option>
                     <option value="missing_checkout" <?= $type === 'missing_checkout' ? 'selected' : '' ?>>Missing Time-Out</option>
+                    <option value="intervention" <?= $type === 'intervention' ? 'selected' : '' ?>>Attendance intervention</option>
                 </select>
             </div>
             <div class="col-auto">
@@ -76,7 +86,7 @@ include '../includes/sidebar.php';
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table data-list-title="SMS Logs" data-list-native="1" data-list-total="<?= (int)$total ?>" class="table table-hover mb-0">
                 <thead>
                     <tr>
                         <th>Date/Time</th>
@@ -133,7 +143,7 @@ include '../includes/sidebar.php';
         <small class="text-muted">
             Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $total) ?> of <?= $total ?>
         </small>
-        <?= paginate($total, $perPage, $page, "logs.php?type={$type}") ?>
+        <?= paginate($total, $perPage, $page, 'logs.php?type=' . urlencode($type) . '&search=' . urlencode($search)) ?>
     </div>
     <?php endif; ?>
 </div>

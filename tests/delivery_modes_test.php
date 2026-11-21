@@ -1,0 +1,31 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/support/enrollment_fixture.php';
+$service=dirname(__DIR__).'/includes/delivery_modes.php';
+if (is_file($service)) require_once $service;
+checkEnrollment(function_exists('resolveDeliveryDay'), 'Delivery day resolver must exist');
+withEnrollmentFixture(function(array $f): void {
+    $db=$f['db']; ensureDeliverySchema($db);
+    $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES('enrollment_model_version','1')");
+    checkEnrollment(resolveDeliveryDay($db,1,10,'2026-10-13')['mode']==='face_to_face','Normal days default to face-to-face');
+    $cmd=['year_id'=>1,'section_id'=>null,'from'=>'2026-10-12','to'=>'2026-10-16','mode'=>'online','deadline_at'=>null];
+    $preview=saveDeliveryModes($db,$f['admin'],$cmd);
+    checkEnrollment($preview['saved']===false && count($preview['dates'])===5,'First request previews without writes');
+    $cmd['confirm_token']=$preview['token']; saveDeliveryModes($db,$f['admin'],$cmd);
+    checkEnrollment(resolveDeliveryDay($db,1,10,'2026-10-13')['mode']==='online','School-wide mode resolves');
+    $override=['year_id'=>1,'section_id'=>10,'from'=>'2026-10-13','to'=>'2026-10-13','mode'=>'modular','deadline_at'=>'2026-10-16 17:00:00'];
+    $preview=saveDeliveryModes($db,$f['teacher'],$override); $override['confirm_token']=$preview['token'];
+    saveDeliveryModes($db,$f['teacher'],$override);
+    $day=resolveDeliveryDay($db,1,10,'2026-10-13');
+    checkEnrollment($day['mode']==='modular' && $day['source']==='section','Section override wins');
+    $db->exec("INSERT INTO school_calendar(date,title,type) VALUES('2026-10-13','Synthetic closure','no_class')");
+    checkEnrollment(resolveDeliveryDay($db,1,10,'2026-10-13')['eligible']===false,'Closure wins over override');
+    expectEnrollmentError(DomainException::class,fn()=>saveDeliveryModes($db,$f['otherTeacher'],$override));
+    expectEnrollmentError(DomainException::class,fn()=>saveDeliveryModes($db,$f['teacher'],$cmd));
+    expectEnrollmentError(DomainException::class,fn()=>resolveDeliveryDay($db,2,10,'2027-10-20'));
+    $bad=$override; $bad['deadline_at']='2026-10-12 17:00:00';
+    expectEnrollmentError(InvalidArgumentException::class,fn()=>saveDeliveryModes($db,$f['teacher'],$bad));
+    $db->exec("UPDATE school_years SET state='closed' WHERE id=1");
+    expectEnrollmentError(DomainException::class,fn()=>saveDeliveryModes($db,$f['admin'],$cmd));
+});
+echo 'Delivery modes passed ('.$GLOBALS['enrollment_checks']." checks).\n";

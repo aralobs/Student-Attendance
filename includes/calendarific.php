@@ -56,7 +56,7 @@ function fetchCalendarificHolidays(string $key, int $year): array {
     return calendarificHolidaysFromResponse($body, $status, $year);
 }
 
-function importCalendarificHolidays(PDO $db, array $holidays, int $userId): array {
+function importCalendarificHolidays(PDO $db, array $holidays, int $userId, ?callable $guard = null): array {
     $added = 0;
     $skipped = 0;
     $insert = $db->prepare("INSERT INTO school_calendar (date, title, type, description, created_by)
@@ -64,6 +64,7 @@ function importCalendarificHolidays(PDO $db, array $holidays, int $userId): arra
     $db->beginTransaction();
     try {
         foreach ($holidays as $holiday) {
+            if ($guard && !$guard($db,$holiday['date'])) { $skipped++; continue; }
             try {
                 $insert->execute([$holiday['date'], $holiday['title'], $holiday['description'], $userId]);
                 $added++;

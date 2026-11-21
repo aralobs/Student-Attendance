@@ -12,8 +12,9 @@ require_once '../includes/enrollment_reports.php';
 
 $pageTitle  = 'By Grade Level';
 $db         = getDB();
-$month      = (int)($_GET['month'] ?? date('n'));
-$year       = (int)($_GET['year']  ?? date('Y'));
+$defaultReportDate = enrollmentReportDefaultDate($db);
+$month      = (int)($_GET['month'] ?? date('n', strtotime($defaultReportDate)));
+$year       = (int)($_GET['year']  ?? date('Y', strtotime($defaultReportDate)));
 $grades     = getGradeLevels();
 
 $reportFrom = sprintf('%04d-%02d-01', $year, $month);
@@ -65,7 +66,7 @@ include '../includes/sidebar.php';
 enrollmentReportNotice($reportContext);
 ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-bar-chart-steps me-2 text-primary"></i>By Grade Level

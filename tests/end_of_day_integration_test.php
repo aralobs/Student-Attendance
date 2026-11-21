@@ -3,7 +3,7 @@
 putenv('PII_ENCRYPTION_KEY=' . base64_encode(random_bytes(32)));
 $name = 'enrollment_test_' . bin2hex(random_bytes(8));
 if (!preg_match('/\Aenrollment_test_[0-9a-f]{16}\z/',$name)) throw new RuntimeException('Invalid disposable database name');
-putenv('MYSQLDATABASE=' . $name);
+putenv('DB_NAME=' . $name);
 require_once dirname(__DIR__) . '/includes/end_of_day_alerts.php';
 $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $admin = new PDO($dsn, DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);

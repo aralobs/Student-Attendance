@@ -1,0 +1,732 @@
+/* Shared Monthly Analytics design system.
+   Load once through includes/header.php (or the standalone corrections frame).
+   Page-specific selectors keep the rollout scoped; student_form.css and official
+   school-form/QR print layouts remain separate. */
+
+/* Shared list display and printing */
+
+@media screen {
+  .list-page-hidden { display: none !important; }
+  .list-card { overflow: hidden; }
+  .list-card > .card-header { display: flex; align-items: center; flex-wrap: wrap; gap: 0.25rem; }
+  .list-card > .card-body:has(.list-table) { padding: 0px !important; }
+  .list-table.table { font-size: 0.875rem; }
+  .list-card .list-pagination { flex-wrap: wrap; gap: 0.75rem; background: rgb(255, 255, 255); }
+  .list-pagination[hidden] { display: none !important; }
+  .list-table.sf2-table, .list-table.sf4-table { margin-bottom: 0px; }
+}
+
+@media print {
+  .list-pagination, .list-search, .list-empty { display: none !important; }
+  .list-page-hidden { display: table-row !important; }
+}
+
+/* Requested pages and shared modals */
+
+@media screen {
+  .content-area:has(> .analytics-template) { --template-header: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%); --template-border: #e5e9f0; }
+  .content-area > .analytics-template { background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(238, 242, 247) 100%); border-bottom: 1px solid rgb(229, 233, 240); border-radius: 14px; box-shadow: rgba(0, 0, 0, 0.06) 0px 2px 12px; padding: 0.9rem 1.15rem; gap: 0.75rem; }
+  .analytics-template .page-title { font-size: 0.875rem; font-weight: 600; }
+  .analytics-template .page-subtitle, .analytics-template > div > p { font-size: 0.8rem; color: rgb(107, 114, 128); margin: 0.25rem 0px 0px; }
+  .analytics-template > .d-flex { flex-wrap: wrap; gap: 0.5rem; }
+  .content-area:has(> .analytics-template) .card { border-width: medium; border-style: none; border-color: currentcolor; border-image: none; border-radius: 14px; box-shadow: rgba(0, 0, 0, 0.06) 0px 2px 12px; transition: box-shadow 0.2s; }
+  .content-area:has(> .analytics-template) .card:hover { box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 18px; }
+  .content-area:has(> .analytics-template) .card > .card-header { background: var(--template-header); border-bottom: 1px solid var(--template-border); color: rgb(55, 65, 81); font-weight: 600; font-size: 0.875rem; padding: 0.9rem 1.15rem; border-radius: 14px 14px 0px 0px !important; }
+  .content-area:has(> .analytics-template) .card-footer { background: rgb(255, 255, 255); border-color: var(--template-border); border-radius: 0px 0px 14px 14px; flex-wrap: wrap; gap: 0.75rem; }
+  .content-area:has(> .analytics-template) .btn { font-size: 0.875rem; padding: 0.25rem 0.5rem; }
+  .content-area:has(> .analytics-template) :is(.form-control, .form-select) { font-size: 0.875rem; }
+  .content-area:has(> .analytics-template) :is(.form-label, form.row label, .row > div > label) { font-size: 0.75rem; color: rgb(107, 114, 128); margin-bottom: 0.25rem; }
+  .content-area:has(> .analytics-template) > form.row { background: rgb(255, 255, 255); border-radius: 14px; box-shadow: rgba(0, 0, 0, 0.06) 0px 2px 12px; padding: 1rem; margin-left: 0px; margin-right: 0px; }
+  .content-area:has(> .analytics-template) .card:has(.table) > .card-header { display: flex; align-items: center; text-align: center; flex-wrap: wrap; gap: 0.5rem; justify-content: center !important; }
+  .content-area:has(> .analytics-template) .table { margin-bottom: 0px; border-color: var(--template-border); font-size: 0.875rem !important; }
+  .content-area:has(> .analytics-template) .table thead th { vertical-align: middle; border-bottom: 1px solid var(--template-border); padding: 0.8rem 0.75rem; text-align: center !important; background: rgb(255, 255, 255) !important; }
+  .content-area:has(> .analytics-template) .table > :not(caption) > * > * { border-left-width: 0px; border-right-width: 0px; }
+  .content-area:has(> .analytics-template) .table tbody td { padding: 0.85rem 0.75rem; vertical-align: middle; }
+  .content-area:has(> .analytics-template) .table-responsive { border-radius: 0px 0px 14px 14px; }
+  .content-area:has(> .analytics-template) .list-search { padding: 1rem 1.15rem !important; }
+  .content-area:has(> .analytics-template) .stat-card { border: 1px solid var(--template-border); border-radius: 12px; box-shadow: none; padding: 1rem; }
+  .content-area:has(> .analytics-template) .stat-number { font-size: 1.4rem; font-weight: 700; }
+  .content-area:has(> .analytics-template) .stat-label { font-size: 0.7rem; letter-spacing: 0.5px; }
+  .content-area:has(> .analytics-template) .stat-icon { display: none; }
+  .content-area:has(> .analytics-template) .report-card { border-top-width: 0px !important; }
+  .content-area:has(> .analytics-template) .report-card:hover { transform: translateY(-2px); box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 18px !important; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) { --template-header: linear-gradient(135deg, #f8fafc 0%, #eef2f7 100%); --template-border: #e5e9f0; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) .modal-content { border-width: medium; border-style: none; border-color: currentcolor; border-image: none; border-radius: 14px; box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 18px; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) .modal-header { background: var(--template-header); border-radius: 14px 14px 0px 0px; gap: 0.75rem; border-bottom: 1px solid var(--template-border) !important; padding: 0.9rem 1.15rem !important; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) .modal-title { font-weight: 600; color: rgb(55, 65, 81); font-size: 0.875rem !important; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) .modal-footer { background: rgb(255, 255, 255); border-radius: 0px 0px 14px 14px; gap: 0.5rem; border-top: 1px solid var(--template-border) !important; padding: 0.9rem 1.15rem !important; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) :is(.form-control, .form-select, .btn) { font-size: 0.875rem; }
+  :is(#sectionModal, #calendarModal, #calendarificModal, #overrideModal, #actionModal, #enrollmentCorrectionsModal) .form-label { font-size: 0.75rem; color: rgb(107, 114, 128); margin-bottom: 0.25rem; }
+  @media (max-width: 575.98px) {
+  .content-area > .analytics-template { padding: 0.9rem 1rem; }
+  .analytics-template > .d-flex { width: 100%; }
+  .analytics-template > .d-flex .btn { flex: 1 1 auto; }
+  .content-area:has(> .analytics-template) .card-header .d-flex { flex-wrap: wrap; }
+  .content-area:has(> .analytics-template) .card-header .form-select { max-width: 100%; }
+}
+  @media (prefers-reduced-motion: reduce) {
+  .content-area:has(> .analytics-template) :is(.card, .stat-card) { transition: none; }
+  .content-area:has(> .analytics-template) :is(.card, .stat-card):hover { transform: none; }
+}
+}
+
+/* analytics/analytics.php */
+
+:where(body:has(.monthly-analytics-page)) .analytics-card,
+:where(body:has(.dashboard-page)) .dashboard-page .analytics-card,
+.scanner-page.analytics-card,
+.interventions-card,
+.students-page .students-card,
+.attendance-page .attendance-card {
+    border-width: medium;
+    border-style: none;
+    border-color: currentcolor;
+    border-image: none;
+    border-radius: 14px;
+    box-shadow: rgba(0, 0, 0, 0.06) 0px 2px 12px;
+    transition: box-shadow 0.2s;
+}
+
+:where(body:has(.monthly-analytics-page)) .analytics-card:hover,
+:where(body:has(.dashboard-page)) .dashboard-page .analytics-card:hover,
+.scanner-page.analytics-card:hover,
+.interventions-card:hover,
+.students-page .students-card:hover,
+.attendance-page .attendance-card:hover {
+    box-shadow: rgba(0, 0, 0, 0.1) 0px 4px 18px;
+}
+
+:where(body:has(.monthly-analytics-page)) .analytics-card > .card-header,
+:where(body:has(.dashboard-page)) .dashboard-page .analytics-card > .card-header,
+.interventions-card > .card-header,
+.students-page .students-card > .card-header,
+.attendance-page .attendance-card > .card-header {
+    background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(238, 242, 247) 100%);
+    border-bottom: 1px solid rgb(229, 233, 240);
+    font-weight: 600;
+    padding: 0.9rem 1.15rem;
+    border-radius: 14px 14px 0px 0px !important;
+}
+
+:where(body:has(.monthly-analytics-page)) .metric-tile,
+.interventions-card .metric-tile {
+    border: 1px solid rgb(229, 233, 240);
+    border-radius: 12px;
+    background: rgb(255, 255, 255);
+    transition: 0.2s;
+}
+
+:where(body:has(.monthly-analytics-page)) .metric-tile:hover,
+:where(body:has(.dashboard-page)) .dashboard-page .metric-tile:hover,
+.scanner-page .metric-tile:hover,
+.interventions-card .metric-tile:hover,
+.workflow-page .workflow-metric:hover,
+.attendance-page .metric-tile:hover {
+    transform: translateY(-2px);
+    box-shadow: rgba(0, 0, 0, 0.08) 0px 4px 12px;
+}
+
+:where(body:has(.monthly-analytics-page)) .analytics-card .metric-tile > .card-header,
+.scanner-page .metric-tile > .card-header {
+    background: rgb(255, 255, 255);
+    border-bottom: 1px solid rgb(229, 233, 240);
+    border-radius: 12px 12px 0px 0px;
+    color: rgb(107, 114, 128);
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 1rem;
+}
+
+:where(body:has(.monthly-analytics-page)) .metric-tile .metric-label,
+:where(body:has(.dashboard-page)) .dashboard-page .metric-label,
+.scanner-page .metric-label,
+.interventions-card .metric-label,
+.attendance-page .metric-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: rgb(107, 114, 128);
+    font-weight: 600;
+}
+
+:where(body:has(.monthly-analytics-page)) .metric-tile .metric-value,
+:where(body:has(.dashboard-page)) .dashboard-page .metric-value,
+.scanner-page .metric-value,
+.interventions-card .metric-value,
+.workflow-page .workflow-metric .stat-number,
+.attendance-page .metric-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+}
+
+:where(body:has(.monthly-analytics-page)) .chart-wrapper {
+    position: relative;
+    width: 100%;
+    min-height: 240px;
+}
+
+:where(body:has(.monthly-analytics-page)) .chart-wrapper canvas {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+:where(body:has(.monthly-analytics-page)) .grade-progress-item {
+    padding: 0.6rem 0.75rem;
+    border-radius: 10px;
+    transition: background 0.15s;
+}
+
+:where(body:has(.monthly-analytics-page)) .grade-progress-item:hover {
+    background: rgb(248, 250, 252);
+}
+
+:where(body:has(.monthly-analytics-page)) .month-badge,
+:where(body:has(.dashboard-page)) .dashboard-page .month-badge,
+.scanner-page .scan-count-badge,
+.attendance-page .month-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: linear-gradient(135deg, rgb(99, 102, 241), rgb(139, 92, 246));
+    color: rgb(255, 255, 255);
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+:where(body:has(.monthly-analytics-page)) .rank-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: rgb(255, 255, 255);
+}
+
+:where(body:has(.monthly-analytics-page)) .rank-1 {
+    background: linear-gradient(135deg, rgb(220, 38, 38), rgb(239, 68, 68));
+}
+
+:where(body:has(.monthly-analytics-page)) .rank-2 {
+    background: linear-gradient(135deg, rgb(234, 88, 12), rgb(249, 115, 22));
+}
+
+:where(body:has(.monthly-analytics-page)) .rank-3 {
+    background: linear-gradient(135deg, rgb(202, 138, 4), rgb(234, 179, 8));
+}
+
+:where(body:has(.monthly-analytics-page)) .rank-n {
+    background: rgb(148, 163, 184);
+}
+
+:where(body:has(.monthly-analytics-page)) .section-divider,
+:where(body:has(.dashboard-page)) .dashboard-page .section-divider,
+.scanner-page .section-divider,
+.interventions-card .section-divider,
+.students-page .section-divider,
+.attendance-page .section-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0.5rem 0px 1rem;
+    color: rgb(100, 116, 139);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+:where(body:has(.monthly-analytics-page)) .section-divider::after,
+:where(body:has(.dashboard-page)) .dashboard-page .section-divider::after,
+.scanner-page .section-divider::after,
+.interventions-card .section-divider::after,
+.students-page .section-divider::after,
+.attendance-page .section-divider::after {
+    content: "";
+    flex: 1 1 0%;
+    height: 1px;
+    background: linear-gradient(to right, rgb(226, 232, 240), transparent);
+}
+
+:where(body:has(.monthly-analytics-page)) .sticky-thead th,
+.interventions-card .sticky-thead th {
+    position: sticky;
+    top: 0px;
+    background: rgb(255, 255, 255);
+    z-index: 2;
+    box-shadow: rgb(229, 233, 240) 0px 1px 0px;
+}
+
+/* dashboard.php */
+
+:where(body:has(.dashboard-page)) .dashboard-page .metric-tile,
+.scanner-page .metric-tile {
+    border: 1px solid rgb(229, 233, 240);
+    border-radius: 12px;
+    background: rgb(255, 255, 255);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page .dashboard-log-filters,
+.scanner-page .camera-controls,
+.workflow-page .workflow-heading .d-flex {
+    flex-wrap: wrap;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page .dashboard-log-filters .form-select {
+    width: auto;
+    max-width: 100%;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page .dashboard-log-filters .form-control {
+    width: 220px;
+    max-width: 100%;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page .dashboard-log-scroll {
+    max-height: 420px;
+    overflow: auto;
+    border-radius: 12px;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page #todayLogTable {
+    min-width: 580px;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page #todayLogTable th,
+.scanner-page .scanner-log-scroll thead th {
+    background: rgb(255, 255, 255);
+    box-shadow: rgb(229, 233, 240) 0px 1px 0px;
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page .card-footer {
+    background: rgb(255, 255, 255);
+    border-top: 1px solid rgb(229, 233, 240);
+}
+
+@media (max-width: 575.98px) {
+  :where(body:has(.dashboard-page)) .dashboard-page .dashboard-log-filters { width: 100%; }
+  :where(body:has(.dashboard-page)) .dashboard-page .dashboard-log-filters .form-control { flex: 1 1 180px; }
+  :where(body:has(.dashboard-page)) .dashboard-page .month-badge { margin-left: 0px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(body:has(.dashboard-page)) .dashboard-page .metric-tile, :where(body:has(.dashboard-page)) .dashboard-page .analytics-card { transition: none; }
+  :where(body:has(.dashboard-page)) .dashboard-page .metric-tile:hover { transform: none; }
+}
+
+:where(body:has(.dashboard-page)) .dashboard-page .mini-trend-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-day {
+    flex: 1 1 0%;
+    text-align: center;
+    font-size: 0.72rem;
+    color: rgb(100, 116, 139);
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-day .label {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-bar {
+    height: 60px;
+    display: flex;
+    flex-direction: column-reverse;
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgb(241, 245, 249);
+    margin-bottom: 0.25rem;
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-bar span {
+    display: block;
+    width: 100%;
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-bar .seg-full {
+    background: rgb(14, 159, 110);
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-bar .seg-partial {
+    background: rgb(245, 158, 11);
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-bar .seg-absent {
+    background: rgb(224, 36, 36);
+}
+
+:where(body:has(.dashboard-page)) .mini-trend-day .totals {
+    font-size: 0.68rem;
+    color: rgb(148, 163, 184);
+}
+
+:where(body:has(.dashboard-page)) .quick-tile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    text-decoration: none;
+    color: rgb(30, 41, 59);
+    transition: 0.15s;
+    height: 100%;
+}
+
+:where(body:has(.dashboard-page)) .quick-tile:hover {
+    color: rgb(30, 41, 59);
+}
+
+:where(body:has(.dashboard-page)) .quick-tile i {
+    font-size: 1.4rem;
+}
+
+:where(body:has(.dashboard-page)) .quick-tile .qt-title {
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+:where(body:has(.dashboard-page)) .quick-tile .qt-sub {
+    font-size: 0.72rem;
+    color: rgb(100, 116, 139);
+}
+
+/* attendance/scanner.php */
+
+.scanner-page.analytics-card > .card-header {
+    background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(238, 242, 247) 100%);
+    border-bottom: 1px solid rgb(229, 233, 240);
+    border-radius: 14px 14px 0px 0px;
+    font-weight: 600;
+    padding: 0.9rem 1.15rem;
+}
+
+.scanner-page #qr-reader {
+    border: 1px solid rgb(229, 233, 240);
+    border-radius: 12px;
+}
+
+.scanner-page #qr-reader:empty {
+    min-height: 240px;
+    display: grid;
+    place-items: center;
+    background: rgb(248, 250, 252);
+}
+
+.scanner-page #qr-reader:empty::before {
+    content: "Start the camera to scan a student QR code";
+    padding: 1.5rem;
+    text-align: center;
+    color: rgb(107, 114, 128);
+    font-size: 0.8rem;
+}
+
+.scanner-page .scanner-log-scroll {
+    max-height: 350px;
+    overflow: auto;
+    border-radius: 0px 0px 12px 12px;
+}
+
+.scanner-page .scanner-log-scroll table {
+    min-width: 480px;
+}
+
+.scanner-page #scanFeedback:empty,
+.scanner-page .scanner-result-panel:has(#resultArea:empty),
+.workflow-page .workflow-metric .stat-icon {
+    display: none;
+}
+
+.scanner-page #resultArea {
+    overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanner-page.analytics-card, .scanner-page .metric-tile { transition: none; }
+  .scanner-page .metric-tile:hover { transform: none; }
+}
+
+/* attendance/interventions.php */
+
+.interventions-card .attendance-filters,
+.attendance-page .attendance-filters {
+    flex: 1 1 100%;
+}
+
+.interventions-card .attendance-filters > div,
+.attendance-page .attendance-filters > div {
+    flex: 1 1 150px;
+    min-width: 0px;
+}
+
+.interventions-card .attendance-filters .filter-action,
+.attendance-page .attendance-filters .filter-action {
+    flex: 0 0 auto;
+}
+
+.interventions-card .attendance-filters label,
+.students-page .form-label,
+.attendance-page .attendance-filters label {
+    font-size: 0.75rem;
+    color: rgb(107, 114, 128);
+    margin-bottom: 0.25rem;
+}
+
+@media (max-width: 575.98px) {
+  .interventions-card .attendance-filters > div { flex-basis: 100%; }
+  .interventions-card .attendance-filters .filter-action, .interventions-card .filter-action button { width: 100%; }
+}
+
+/* Student directory */
+
+.students-page .students-actions .btn,
+.workflow-page .btn {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.students-page .students-list,
+.workflow-page .workflow-list {
+    overflow: hidden;
+}
+
+.students-page .students-table th {
+    text-align: center;
+    vertical-align: middle;
+    background: rgb(255, 255, 255);
+    border-bottom: 1px solid rgb(229, 233, 240);
+    padding: 0.8rem 0.75rem;
+}
+
+.students-page .students-table td {
+    padding: 0.85rem 0.75rem;
+}
+
+.students-page .students-list .card-footer,
+.workflow-page .card-footer {
+    background: rgb(255, 255, 255);
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+@media (max-width: 575.98px) {
+  .students-page .students-actions { width: 100%; }
+  .students-page .students-actions .btn { flex: 1 1 auto; }
+}
+
+/* Student and enrollment workflows */
+
+.workflow-page {
+    min-width: 0px;
+}
+
+.workflow-page .workflow-heading {
+    display: flex;
+    flex-flow: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1.15rem;
+    background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(238, 242, 247) 100%);
+    border-bottom: 1px solid rgb(229, 233, 240);
+}
+
+.workflow-page .page-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.workflow-page .page-subtitle {
+    margin-top: 0.25rem;
+}
+
+.workflow-page .form-control, .workflow-page .form-select {
+    font-size: 0.875rem;
+}
+
+.workflow-page .form-label {
+    font-weight: 600;
+}
+
+.workflow-page small {
+    color: rgb(107, 114, 128);
+}
+
+.workflow-page .students-table {
+    font-size: 0.875rem;
+    margin-bottom: 0px;
+}
+
+.workflow-page .students-table thead th {
+    vertical-align: middle;
+    text-align: center !important;
+    background: rgb(255, 255, 255) !important;
+    border-left: 0px !important;
+}
+
+.workflow-page .students-table tbody td {
+    vertical-align: middle;
+}
+
+.workflow-page .workflow-list > .card-header, .workflow-page .list-card > .card-header {
+    text-align: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center !important;
+}
+
+.workflow-page .workflow-list > .card-header > .btn {
+    margin-left: 0.5rem;
+}
+
+.workflow-page .workflow-metric {
+    display: block;
+    border: 1px solid rgb(229, 233, 240);
+    border-radius: 12px;
+    background: rgb(255, 255, 255);
+    padding: 1rem;
+    height: 100%;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.workflow-page .workflow-metric .stat-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: rgb(107, 114, 128);
+}
+
+.workflow-page .workflow-metric.blue .stat-number {
+    color: rgb(37, 99, 235);
+}
+
+.workflow-page .workflow-metric.green .stat-number {
+    color: rgb(22, 163, 74);
+}
+
+.workflow-page .workflow-metric.orange .stat-number {
+    color: rgb(217, 119, 6);
+}
+
+.workflow-page .workflow-metric.red .stat-number {
+    color: rgb(220, 38, 38);
+}
+
+.workflow-page .workflow-filter-title {
+    margin-bottom: 1rem;
+}
+
+.workflow-page .workflow-form-heading {
+    background: linear-gradient(135deg, rgb(248, 250, 252) 0%, rgb(238, 242, 247) 100%);
+    border-bottom: 1px solid rgb(229, 233, 240);
+    border-radius: 14px 14px 0px 0px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin: -1rem -1rem 1rem;
+    padding: 0.9rem 1.15rem;
+}
+
+.workflow-page form.card > .btn {
+    align-self: flex-start;
+}
+
+.workflow-page .workflow-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 575.98px) {
+  .workflow-page .workflow-heading > .d-flex { width: 100%; }
+  .workflow-page .workflow-heading > .d-flex .btn { flex: 1 1 auto; }
+  .workflow-page .card-footer > .ms-auto { margin-left: 0px !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-page .students-card, .workflow-page .workflow-metric { transition: none; }
+  .workflow-page .workflow-metric:hover { transform: none; }
+}
+
+/* Attendance overview */
+
+.attendance-page h1 {
+    font-size: inherit;
+    font-weight: inherit;
+}
+
+.attendance-page .metric-tile {
+    border: 1px solid rgb(229, 233, 240);
+    border-radius: 12px;
+    background: rgb(255, 255, 255);
+    height: 100%;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.attendance-page .attendance-table th {
+    background: rgb(255, 255, 255);
+    border-bottom: 1px solid rgb(229, 233, 240);
+}
+
+.attendance-page .attendance-table td {
+    padding: 0.85rem 1rem;
+}
+
+.attendance-page .attendance-table th {
+    padding: 0.8rem 1rem;
+}
+
+.attendance-page .attendance-status {
+    display: inline-block;
+    padding: 0.35rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.attendance-page .status-present, .attendance-page .status-late {
+    background: rgb(220, 252, 231);
+    color: rgb(22, 101, 52);
+}
+
+.attendance-page .status-partial, .attendance-page .status-pending {
+    background: rgb(254, 243, 199);
+    color: rgb(146, 64, 14);
+}
+
+.attendance-page .status-absent_unexcused, .attendance-page .status-absent_excused {
+    background: rgb(254, 226, 226);
+    color: rgb(153, 27, 27);
+}
+
+.attendance-page .status-review_needed {
+    background: rgb(255, 237, 213);
+    color: rgb(154, 52, 18);
+}
+
+.attendance-page .status-not_recorded, .attendance-page .status-remarked, .attendance-page .status-future, .attendance-page .status-not_eligible {
+    background: rgb(241, 245, 249);
+    color: rgb(71, 85, 105);
+}
+
+.attendance-page .scan-evidence {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(90px, 1fr));
+    gap: 0.25rem 1rem;
+    font-size: 0.8rem;
+}
+
+@media (max-width: 575.98px) {
+  .attendance-page .attendance-filters > div { flex-basis: 100%; }
+  .attendance-page .attendance-filters .filter-action, .attendance-page .filter-action button { width: 100%; }
+  .attendance-page .attendance-actions { width: 100%; }
+  .attendance-page .attendance-actions a { flex: 1 1 0%; }
+}

@@ -1,5 +1,7 @@
 # Hostinger ZIP deployment
 
+For updating the existing Single Web Hosting installation, use [the dedicated existing-site update sequence](HOSTINGER_SINGLE_UPDATE.md). It preserves the configured private files, uses an additive SQL update and fits workers into two cron slots.
+
 The generated `deployment/hostinger` folder contains:
 
 | Item | Purpose |
@@ -106,6 +108,8 @@ then restart only the converted worker. A ZIP/schema install alone does not
 enable annual workflows.
 
 Hostinger instructions:
+
+For the panel revisions release, follow [the additional migration and worker setup](PANEL_REVISIONS_DEPLOYMENT.md). The upload builder includes only the two approved CLI workers under `tools/`; HTTP access remains denied. Configure private backup storage/dump binary and keep intervention sending disabled until current cases and the template are reviewed.
 - [File upload and custom PHP websites](https://www.hostinger.com/support/11792202-how-to-install-custom-php-on-hostinger-agency-plan/)
 - [Database imports](https://www.hostinger.com/support/1884149-how-to-import-a-database-with-phpmyadmin-in-hostinger/)
 - [Cron jobs](https://www.hostinger.com/support/1583465-how-to-set-up-a-cron-job-at-hostinger/)

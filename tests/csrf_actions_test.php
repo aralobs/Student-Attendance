@@ -10,7 +10,7 @@ foreach (['users', 'students', 'sections'] as $directory) {
     foreach (['archive', 'restore', 'delete'] as $name) $actions[] = "$directory/$name.php";
 }
 file_put_contents($fixture . '/config/database.php', '<?php');
-foreach (['mail_helper.php', 'attendance_scan.php', 'student_photos.php'] as $name) file_put_contents($fixture . '/includes/' . $name, '<?php');
+foreach (['teacher_attendance_policy.php','mail_helper.php', 'attendance_scan.php', 'student_photos.php', 'enrollment_operations.php', 'enrollment_reports.php', 'enrollment_commands.php', 'enrollment_access.php', 'school_years.php'] as $name) file_put_contents($fixture . '/includes/' . $name, '<?php');
 copy($root . '/includes/student_access.php', $fixture . '/includes/student_access.php');
 copy($root . '/includes/csrf.php', $fixture . '/includes/csrf.php');
 copy($root . '/includes/abuse_security.php', $fixture . '/includes/abuse_security.php');
@@ -64,6 +64,6 @@ try {
     }
     echo "CSRF endpoint checks passed ($checks cases; no application DB access).\n";
 } finally {
-    foreach (array_merge($pages, $actions, ['config/database.php', 'includes/functions.php', 'includes/student_access.php', 'includes/csrf.php', 'includes/abuse_security.php', 'includes/mail_helper.php', 'includes/attendance_scan.php', 'includes/student_photos.php', 'request.php']) as $file) if (is_file($fixture . '/' . $file)) unlink($fixture . '/' . $file);
+    foreach (array_merge($pages, $actions, ['config/database.php', 'includes/functions.php', 'includes/student_access.php', 'includes/csrf.php', 'includes/abuse_security.php', 'includes/teacher_attendance_policy.php','includes/mail_helper.php', 'includes/attendance_scan.php', 'includes/student_photos.php', 'includes/enrollment_operations.php', 'includes/enrollment_reports.php', 'includes/enrollment_commands.php', 'includes/enrollment_access.php', 'includes/school_years.php', 'request.php']) as $file) if (is_file($fixture . '/' . $file)) unlink($fixture . '/' . $file);
     foreach (['/config', '/includes', '/users', '/students', '/sections', '/attendance', ''] as $dir) rmdir($fixture . $dir);
 }

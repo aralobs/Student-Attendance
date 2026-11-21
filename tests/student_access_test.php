@@ -107,17 +107,17 @@ if ($case === 'teacher_add_unassigned') $_POST['section_id'] = 0;
 if ($case === 'teacher_add_inactive') $_POST['section_id'] = 30;
 PHP);
 copy($root . '/includes/student_access.php', $fixture . '/includes/student_access.php');
-foreach (['enrollment_access.php','enrollment_repository.php','school_years.php','enrollment_reports.php'] as $dependency) copy($root . '/includes/' . $dependency,$fixture . '/includes/' . $dependency);
+foreach (['enrollment_access.php','enrollment_repository.php','school_years.php','enrollment_reports.php','viewing_school_year.php','section_filter.php'] as $dependency) copy($root . '/includes/' . $dependency,$fixture . '/includes/' . $dependency);
 // This fixture already supplies its audit stub in functions.php; service reads do not audit.
 file_put_contents($fixture . '/includes/security_audit.php', "<?php\n");
 copy($root . '/includes/student_photos.php', $fixture . '/includes/student_photos.php');
 $cases = [
     'view' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>200,'teacher_foreign'=>302,
         'teacher_unassigned'=>302,'teacher_inactive'=>302,'teacher_empty'=>302,'admin_foreign'=>200],
-    'edit' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>302,'teacher_foreign'=>302,
+    'edit' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>403,'teacher_foreign'=>403,
         'teacher_transfer'=>403,'teacher_transfer_owned'=>403,'teacher_clear'=>403,
         'teacher_revoked'=>403,'teacher_moved_owned'=>403,'admin_transfer'=>302],
-    'add' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>302,'teacher_add_foreign'=>403,
+    'add' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>403,'teacher_add_foreign'=>403,
         'teacher_add_unassigned'=>403,'teacher_add_inactive'=>403,'teacher_empty'=>403,'admin'=>302],
     'students' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>200,'teacher_empty'=>200,'admin'=>200],
     'archived' => ['guest'=>401,'scanner'=>403,'unknown'=>403,'teacher'=>200,'teacher_empty'=>200,'admin'=>200],
@@ -198,6 +198,6 @@ PHP);
     echo "Student authorization checks passed ($checks cases plus 4 managed scopes, isolated SQL database).\n";
 } finally {
     foreach (array_keys($cases) as $endpoint) if (is_file($fixture.'/students/'.$endpoint.'.php')) unlink($fixture.'/students/'.$endpoint.'.php');
-    foreach (['config/database.php','includes/functions.php','includes/student_access.php','includes/enrollment_reports.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php','includes/security_audit.php','includes/student_photos.php','includes/header.php','request.php','scope_probe.php'] as $file) if (is_file($fixture.'/'.$file)) unlink($fixture.'/'.$file);
+    foreach (['config/database.php','includes/functions.php','includes/section_filter.php','includes/student_access.php','includes/enrollment_reports.php','includes/viewing_school_year.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php','includes/security_audit.php','includes/student_photos.php','includes/header.php','request.php','scope_probe.php'] as $file) if (is_file($fixture.'/'.$file)) unlink($fixture.'/'.$file);
     foreach (['/students','/includes','/config',''] as $dir) rmdir($fixture.$dir);
 }

@@ -15,7 +15,7 @@ if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Section editing
 
 
 $id           = (int)($_POST['id']            ?? 0);
-$sectionName  = trim($_POST['section_name']   ?? '');
+$sectionName  = $id <= 0 ? mb_convert_case(trim($_POST['section_name'] ?? ''), MB_CASE_TITLE, 'UTF-8') : trim($_POST['section_name'] ?? '');
 $gradeLevel   = trim($_POST['grade_level']    ?? '');
 $rule = getScheduleForGrade($gradeLevel);
 $scheduleType = $_POST['schedule_type'] ?? ($rule['default_type'] ?? 'full_day');

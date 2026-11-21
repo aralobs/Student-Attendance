@@ -10,12 +10,15 @@ if (enrollmentModelEnabled(getDB())) {
     require_once __DIR__ . '/../includes/enrollment_reports.php';
     $from=sprintf('%04d-%02d-01',$year,$month);
     $context=prepareEnrollmentReport(getDB(),$from,date('Y-m-t',strtotime($from)),(int)$sectionId);
-    header('Location: ' . BASE_URL . 'reports/sf2.php?' . http_build_query(['month'=>$month,'year'=>$year,'section'=>$sectionId,'school_year_id'=>$context['year']['id']]));
+    $_GET['school_year_id']=$context['year']['id'];
+    $_GET['download_pdf']='1';
+    require __DIR__.'/sf2.php';
     exit;
 }
 [$scope, $params] = studentSectionScope('sec');
 $stmt = getDB()->prepare("SELECT sec.id FROM sections sec WHERE sec.id = ? AND sec.is_active = 1 AND ($scope)");
 $stmt->execute(array_merge([$sectionId], $params));
 if (!$stmt->fetch()) { http_response_code(403); exit('Section access denied.'); }
-header('Location: ' . BASE_URL . 'reports/sf2.php?' . http_build_query(['month'=>$month,'year'=>$year,'section'=>$sectionId]));
+$_GET['download_pdf']='1';
+require __DIR__.'/sf2.php';
 exit;

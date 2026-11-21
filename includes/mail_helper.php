@@ -26,7 +26,7 @@ function sendEmail(string $toEmail, string $toName, string $subject, string $htm
     $port      = (int)(getSetting('mail_port') ?? 587);
     $username  = getSetting('mail_username')  ?? '';
     $password  = getSetting('mail_password')  ?? '';
-    $fromName  = getSetting('mail_from_name') ?? 'SPCCS Kinder Attendance';
+    $fromName  = getSetting('mail_from_name') ?? 'ASAM';
     $fromEmail = getSetting('mail_from_email') ?? $username;
 
     if (empty($username) || empty($password)) {
@@ -128,7 +128,7 @@ function buildEmailTemplate(string $title, string $body, string $color = '#1a56d
                         <td style="background:#f8fafc;padding:20px 32px;
                                    border-top:1px solid #e5e7eb;text-align:center">
                             <p style="margin:0;font-size:12px;color:#9ca3af">
-                                This is an automated message from the SPCCS Attendance System.<br>
+                                This is an automated message from Automated Student Attendance Monitoring (ASAM).<br>
                                 Please do not reply to this email.
                             </p>
                         </td>

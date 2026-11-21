@@ -53,6 +53,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
 
     #sidebar .brand-logo {
         display: flex;
+        flex-shrink: 0;
         align-items: center;
         justify-content: center;
     }
@@ -215,11 +216,11 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
     <!-- Brand -->
     <div class="sidebar-brand d-flex align-items-center px-3 py-3">
         <div class="brand-logo me-2">
-            <i class="bi bi-mortarboard-fill fs-4 text-warning"></i>
+            <img src="<?= BASE_URL ?>assets/img/school_logo.png" alt="School logo" width="44" height="44" style="object-fit:contain">
         </div>
         <div class="brand-text">
-            <div class="fw-bold text-white lh-1" style="font-size:0.9rem">SPCCS</div>
-            <div class="text-white-50" style="font-size:0.7rem">SPCC Attendance Monitoring</div>
+            <div class="fw-bold text-white lh-1" style="font-size:0.9rem">ASAM</div>
+            <div class="text-white-50 mt-1" style="font-size:0.7rem">Automated Student Attendance Monitoring</div>
         </div>
         <button class="btn btn-link ms-auto text-white d-lg-none p-0" id="sidebarClose">
             <i class="bi bi-x-lg"></i>
@@ -297,6 +298,8 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 </a>
             </li>
 
+            <li class="nav-item"><a href="<?= BASE_URL ?>attendance/interventions.php" class="nav-link <?= $currentFile==='interventions.php'?'active':'' ?>"><i class="bi bi-exclamation-circle me-2"></i>Attendance Interventions</a></li>
+
             <?php if (isTeacher()): ?>
             <li class="nav-item">
                 <a href="<?= BASE_URL ?>attendance/end_of_day.php" class="nav-link <?= $currentFile === 'end_of_day.php' ? 'active' : '' ?>">
@@ -345,7 +348,10 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 </a>
             </li>
 
+            <li class="nav-item"><a href="<?= BASE_URL ?>students/change_requests.php" class="nav-link <?= $currentFile==='change_requests.php'?'active':'' ?>"><i class="bi bi-inbox me-2"></i>Change Requests</a></li>
             <?php if (isTeacher() && !isAdmin()): ?>
+            <li class="nav-item"><a href="<?= BASE_URL ?>analytics/analytics.php" class="nav-link <?= $currentFile==='analytics.php'?'active':'' ?>"><i class="bi bi-graph-up me-2"></i>Analytics</a></li>
+            <li class="nav-item"><a href="<?= BASE_URL ?>reports/index_reports.php" class="nav-link <?= $currentFile==='index_reports.php'?'active':'' ?>"><i class="bi bi-file-earmark-bar-graph me-2"></i>Reports</a></li>
             <li class="nav-item">
                 <a href="<?= BASE_URL ?>sections/sections.php" class="nav-link <?= $currentFile === 'sections.php' ? 'active' : '' ?>">
                     <i class="bi bi-diagram-3 me-2"></i>Section Schedules
@@ -372,7 +378,6 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                 <li class="nav-section-label mt-2">ADMIN</li>
                 <?php if (enrollmentModelEnabled(getDB())): ?>
                 <li class="nav-item"><a href="<?= BASE_URL ?>students/moving_up.php" class="nav-link <?= $currentFile === 'moving_up.php' ? 'active' : '' ?>"><i class="bi bi-arrow-up-right-circle me-2"></i>Moving Up</a></li>
-                <li class="nav-item"><a href="<?= BASE_URL ?>students/enrollment_corrections.php" class="nav-link <?= $currentFile === 'enrollment_corrections.php' ? 'active' : '' ?>"><i class="bi bi-pencil-square me-2"></i>Enrollment Corrections</a></li>
                 <?php endif; ?>
 
                 <li class="nav-item">
@@ -396,7 +401,7 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
                     </a>
                 </li>
 
-                <li class="nav-item"><a href="<?= BASE_URL ?>security_audit.php" class="nav-link <?= $currentFile === 'security_audit.php' ? 'active' : '' ?>"><i class="bi bi-shield-check me-2"></i>Security Audit <?php $auditAlertCount = securityAuditAlertCount(); if ($auditAlertCount): ?><span class="badge bg-danger ms-1" title="Flagged events in the last 24 hours"><?= $auditAlertCount ?></span><?php endif; ?></a></li>
+                <li class="nav-item"><a href="<?= BASE_URL ?>security_audit.php" class="nav-link <?= $currentFile === 'security_audit.php' || str_contains($currentPath, '/backups/') ? 'active' : '' ?>"><i class="bi bi-shield-lock me-2"></i>Security <?php $auditAlertCount = securityAuditAlertCount(); if ($auditAlertCount): ?><span class="badge bg-danger ms-1" title="Flagged events in the last 24 hours"><?= $auditAlertCount ?></span><?php endif; ?></a></li>
                   <li class="nav-item">
                     <a href="<?= BASE_URL ?>settings/school_years.php" class="nav-link <?= $currentFile === 'school_years.php' ? 'active' : '' ?>"><i class="bi bi-calendar-range me-2"></i>School Years</a>
                 </li>
@@ -432,7 +437,26 @@ $currentPath = str_replace('\\', '/', $_SERVER['PHP_SELF']);   // normalize slas
             <i class="bi bi-calendar3 me-1"></i>
             <?= date('l, F j, Y') ?>
         </span>
+        <?php
+        if (isset($pageSchoolYearControl)) {
+            echo $pageSchoolYearControl;
+        } elseif (isset($viewingYear)) {
+            renderViewingSchoolYearControl(getDB(),currentUser(),$viewingYear);
+        } elseif (isset($reportContext) && function_exists('enrollmentReportYearControl')) {
+            enrollmentReportYearControl($reportContext);
+        }
+        ?>
     </nav>
 
     <!-- Page content -->
     <div class="content-area p-3 p-lg-4">
+        <?php
+        if (isset($viewingYear)) {
+            renderViewingSchoolYearNotice(getDB(),$viewingYear);
+        } elseif (!empty($reportContext['managed'])) {
+            renderViewingSchoolYearNotice(getDB(),$reportContext['year']);
+        }
+        if (empty($pageEnrollmentNoticeInline) && in_array($currentFile,['scanner.php','add.php','enroll.php','moving_up.php'],true)) {
+            echo '<div class="alert alert-info no-print py-2 small">'.($currentFile==='scanner.php' ? 'Current school year only. Scanning uses the active school year.' : 'Enrollment operation: choose the destination year in this form. Your viewing year does not change enrollment placement.').'</div>';
+        }
+        ?>

@@ -49,7 +49,7 @@ encrypted history unreadable. Do not rotate by simply deleting the key file.
 
 ## Access and alerts
 
-Administrators can open **Security Audit** in the sidebar. Teachers, scanner
+Administrators can open **Logs** in the sidebar. Teachers, scanner
 operators and guests cannot read this page or its decrypted change history.
 History views are themselves logged. The page escapes history values as text.
 Its Alerts filter shows flagged account changes, contact changes, report/QR bulk

@@ -30,7 +30,7 @@ try {
 
     $client            = new UniSms($apiKey);
     $client->recipient = $phone;
-    $client->content = 'Hello! This is a confirmation that SMS notifications are active for SPCCS Attendance System. Thank you.';
+    $client->content = 'Hello! This is a confirmation that SMS notifications are active for Automated Student Attendance Monitoring (ASAM). Thank you.';
     $client->sender_id = $senderId;
 
     $response = $client->send();

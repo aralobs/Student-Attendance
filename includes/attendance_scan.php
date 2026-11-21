@@ -20,6 +20,10 @@ function saveAttendanceScan(PDO $db, int $studentId, string $date, array $sectio
                 $sectionId=(int)($section['section_id']??$section['id']??0);
                 $locked=lockAttendanceEnrollment($db,$studentId,$date,null,$sectionId);
                 $ctx=$locked['context']; $section=$locked['section'];
+                require_once __DIR__.'/delivery_modes.php';
+                $delivery=resolveDeliveryDay($db,$ctx['school_year_id'],$ctx['section_id'],$date);
+                if (!$delivery['eligible']) throw new DomainException('QR attendance is unavailable on a holiday or no-class date.');
+                if ($delivery['mode']!=='face_to_face') throw new DomainException('QR attendance is only available for face-to-face classes. Use Manual Entry for online/modular participation.');
                 $actorRead=$db->prepare('SELECT id,role FROM users WHERE id=? AND is_active=1 LOCK IN SHARE MODE');
                 $actorRead->execute([$recordedBy]); $actor=$actorRead->fetch(PDO::FETCH_ASSOC);
                 if (!$actor || !in_array($actor['role'],['admin','teacher','scanner_operator'],true)

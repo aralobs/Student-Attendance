@@ -2,6 +2,10 @@
 // Upload as attendance-private/hosting.php BESIDE public_html, never inside it.
 // Replace placeholders with the database details shown in your hPanel.
 return [
+    'BACKUP_DIR' => '/home/u123456789/domains/your-domain.example/attendance-private/backups',
+    'BACKUP_DUMP_BINARY' => '/usr/bin/mysqldump',
+    // Keep intervention sending disabled until current cases and template are reviewed.
+    'ATTENDANCE_INTERVENTION_ENABLED_AT' => '',
     'APP_ENV' => 'production',
     'DB_HOST' => 'localhost',
     'DB_PORT' => '3306',

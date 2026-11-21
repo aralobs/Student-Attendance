@@ -32,6 +32,8 @@
 <script src="<?= BASE_URL ?>assets/vendor/chart-4.4.0.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 <!-- Main JS -->
 <script src="<?= BASE_URL ?>assets/js/main.js"></script>
+<script src="<?= BASE_URL ?>assets/js/list_view.js"></script>
+<script src="<?= BASE_URL ?>assets/js/section_filters.js"></script>
 
 <?php if (isset($extraJS)) echo $extraJS; ?>
 

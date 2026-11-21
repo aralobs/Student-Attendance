@@ -4,6 +4,7 @@ require_once '../includes/functions.php';
 require_once '../includes/student_access.php';
 require_once '../includes/enrollment_commands.php';
 requireStudentManagement();
+if (!isAdmin()) { http_response_code(403); exit('Enrollment is restricted to administrators. Submit a learner change request.'); }
 requireCsrfPost();
 $db = getDB();
 if (!enrollmentModelEnabled($db)) { http_response_code(409); exit('Annual enrollment is not enabled.'); }

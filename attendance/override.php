@@ -5,6 +5,7 @@ requireLogin();
 requireCsrfPost();
 if (!isAdmin() && !isTeacher()) { http_response_code(403); exit('Attendance editing is restricted to administrators and teachers.'); }
 require_once '../includes/enrollment_operations.php';
+require_once '../includes/teacher_attendance_policy.php';
 
 
 $id           = (int)($_POST['attendance_id'] ?? 0);
@@ -24,6 +25,12 @@ if ($id <= 0) {
 }
 
 $db = getDB();
+if (enrollmentModelEnabled($db)) {
+    require_once '../includes/delivery_modes.php';
+    if (panelTableAvailable($db,'attendance_decisions')) {
+        http_response_code(409); exit('Use Manual Entry to record a decision with a correction reason. Original scans are preserved.');
+    }
+}
 $db->beginTransaction();
 try {
 
@@ -39,7 +46,8 @@ if (enrollmentModelEnabled($db)) {
     $existing=array_merge($existing,['section_id'=>$locked['context']['section_id'],'grade_level'=>$locked['section']['grade_level'],'schedule_type'=>$locked['section']['schedule_type']]);
 } else {
 $stmt = $db->prepare("
-    SELECT a.*, s.section_id, sec.grade_level, sec.schedule_type
+    SELECT a.*, s.section_id, sec.grade_level, sec.schedule_type,
+        sec.adviser_id, sec.is_active AS section_active, s.is_active AS student_active
     FROM attendance a
     JOIN students s ON a.student_id = s.id
     LEFT JOIN sections sec ON s.section_id = sec.id
@@ -56,11 +64,17 @@ if (!$existing) {
 }
 
 $beforeAudit = $existing;
+if (!enrollmentModelEnabled($db) && (!(int)$existing['section_active'] || !(int)$existing['student_active'] || (isTeacher() && (int)$existing['adviser_id']!==(int)currentUser()['id']))) {
+    $db->rollBack();http_response_code(403);exit('Section or learner access has changed.');
+}
 // Compute attendance_type
 if (empty($existing['section_id']) || !canAccessSection((int)$existing['section_id'])) {
     http_response_code(403); exit('Access denied to this section.');
 }
 $mockSection = $existing;
+requireTeacherAttendanceDate($db,currentUser(),$existing['date']);
+$correctionReason=trim($_POST['correction_reason'] ?? '');
+if ($correctionReason==='' || strlen($correctionReason)>2000) throw new InvalidArgumentException('A correction reason of at most 2,000 bytes is required.');
 $existing['schedule_type'] = getAttendanceScheduleType($existing);
 $schedule = $existing['schedule_type'];
 if ($schedule !== 'pm_only') $pmIn = null;
@@ -95,7 +109,11 @@ $db->prepare("
 ]);
 
 auditAttendanceAfterWrite($db, $id, $beforeAudit, 'attendance.override');
+securityAuditChange($db,'attendance.correction_reason','attendance',$id,null,['reason'=>$correctionReason]);
 $db->commit();
+} catch (DomainException|InvalidArgumentException $error) {
+    if ($db->inTransaction()) $db->rollBack();
+    http_response_code($error instanceof DomainException?403:400);exit($error->getMessage());
 } catch (Throwable $error) {
     if ($db->inTransaction()) $db->rollBack();
     error_log('SECURITY_ALERT attendance_write_failed request_id=' . securityRequestId());

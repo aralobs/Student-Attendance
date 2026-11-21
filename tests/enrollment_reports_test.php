@@ -74,7 +74,12 @@ function enrollmentRenderedReports(array $f): void
     copy($root.'/analytics/analytics.php',$path.'/analytics/analytics.php');
     copy($root.'/dashboard.php',$path.'/dashboard.php');
     copy($root.'/config/schedule_rules.php',$path.'/config/schedule_rules.php');
+    mkdir($path.'/vendor');file_put_contents($path.'/vendor/autoload.php','<?php require '.var_export($root.'/vendor/autoload.php',true).';');
+    mkdir($path.'/assets/img',0700,true);copy($root.'/assets/img/school_logo.png',$path.'/assets/img/school_logo.png');
+    mkdir($path.'/assets/css',0700,true);copy($root.'/assets/css/sf2_form.css',$path.'/assets/css/sf2_form.css');
     foreach (['header','sidebar','footer'] as $file) file_put_contents($path.'/includes/'.$file.'.php','<?php');
+    // The year control belongs to the shared navbar, which this fixture replaces.
+    file_put_contents($path.'/includes/sidebar.php', '<?php if (isset($reportContext)) enrollmentReportYearControl($reportContext);');
     file_put_contents($path.'/includes/session_security.php','<?php function startSession(): void {} function checkSession(bool $touch=true): ?string { return null; }');
     file_put_contents($path.'/config/database.php', <<<'PHP'
 <?php
@@ -255,7 +260,7 @@ PHP);
         $csv=$run('reports/export_excel.php',$f['admin'],['date'=>'2026-10-21','section'=>10,'school_year_id'=>1]);
         checkEnrollment(str_contains($csv['body'],'Current A') && !str_contains($csv['body'],'Next Four') && str_contains($csv['body'],'Unresolved historical ownership exceptions: 1'),'CSV uses original section and visibly qualifies unresolved ownership');
         $pdf=$run('reports/export_pdf.php',$f['teacher'],$get);
-        checkEnrollment($pdf['status']===302,'Existing PDF route accepts authorized archived annual section');
+        checkEnrollment($pdf['status']===200 && str_starts_with($pdf['body'],'%PDF-'),'Existing PDF route downloads authorized archived annual section');
         $scan=$run('reports/sf2.php',['id'=>9,'role'=>'scanner_operator'],$get);
         checkEnrollment($scan['status']===403 && !str_contains($scan['body'],'sf2PrintRoot'),'Scanner cannot render historical report');
         $range=$run('reports/date_range.php',$f['admin'],['date_from'=>'2026-10-01','date_to'=>'2027-10-31']);

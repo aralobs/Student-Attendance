@@ -26,10 +26,11 @@ if (!isAdmin() && !isTeacher()) {
 
 $pageTitle     = 'SF4 — Monthly Learner Movement and Attendance Report';
 $db            = getDB();
+$defaultReportDate = enrollmentReportDefaultDate($db);
 
 // --- Input validation ---
-$month = max(1, min(12, (int)($_GET['month'] ?? date('n'))));
-$year  = max(2020, min(2100, (int)($_GET['year'] ?? date('Y'))));
+$month = max(1, min(12, (int)($_GET['month'] ?? date('n', strtotime($defaultReportDate)))));
+$year  = max(2020, min(2100, (int)($_GET['year'] ?? date('Y', strtotime($defaultReportDate)))));
 
 $reportFrom = sprintf('%04d-%02d-01',$year,$month);
 $reportTo = date('Y-m-t',strtotime($reportFrom));
@@ -246,6 +247,11 @@ $grandPct = $grandPossible > 0
     ? round(($grand['m_t_nlp'] / $grandPossible) * 100, 1)
     : 0;
 
+if (($_GET['download_pdf']??'')==='1') {
+    ob_start(); include __DIR__.'/sf4_print.php'; ob_end_clean();
+    require_once '../includes/report_pdf.php';
+    streamSchoolFormPdf('sf4',get_defined_vars());
+}
 include '../includes/header.php';
 include '../includes/sidebar.php';
 enrollmentReportNotice($reportContext);
@@ -262,8 +268,9 @@ enrollmentReportNotice($reportContext);
     </div>
     <div class="d-flex gap-2">
         <button onclick="window.print()" class="btn btn-success btn-sm">
-            <i class="bi bi-printer me-1"></i>Print / Save PDF
+            <i class="bi bi-printer me-1"></i>Print
         </button>
+        <a class="btn btn-outline-primary btn-sm" href="?<?= sanitize(http_build_query(['month'=>$month,'year'=>$year,'school_year_id'=>$reportContext['year']['id']??0,'download_pdf'=>'1'])) ?>">Download PDF</a>
         <a href="index_reports.php" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-arrow-left me-1"></i>Back
         </a>

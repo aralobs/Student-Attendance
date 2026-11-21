@@ -85,6 +85,12 @@ $stmt->execute($params);
 $rows = $stmt->fetchAll();
 
 $result = [];
+$panelReady=false;
+if (enrollmentModelEnabled($db)) {
+    require_once '../includes/delivery_modes.php';
+    $panelReady=panelTableAvailable($db,'attendance_decisions');
+    if ($panelReady) require_once '../includes/attendance_decisions.php';
+}
 
 foreach ($rows as $r) {
     $type = getAttendanceScheduleType($r);
@@ -120,6 +126,17 @@ foreach ($rows as $r) {
         else                            $attendanceType = 'pending';
     }
 
+    $effectiveStatus=null;
+    if ($panelReady && !$isScanner) {
+        $ctx=getEnrollmentContext($db,(int)$r['student_id'],$today);
+        if ($ctx) {
+            $delivery=resolveDeliveryDay($db,$ctx['school_year_id'],$ctx['section_id'],$today);
+            $q=$db->prepare('SELECT * FROM attendance_decisions WHERE enrollment_id=? AND learning_date=?');$q->execute([$ctx['enrollment_id'],$today]);
+            $classification=classifyAttendanceDay(array_merge($delivery,['date'=>$today,'schedule_type'=>$type]),$r['log_id']?$r:null,$q->fetch(PDO::FETCH_ASSOC)?:null,new DateTimeImmutable('now'));
+            $effectiveStatus=$classification['status'];
+            $attendanceType=match($effectiveStatus){'present','late'=>'full_day','partial'=>'partial','absent_excused','absent_unexcused'=>'absent','remarked'=>'remarked',default=>'pending'};
+        }
+    }
     // ── NEW: determine the most recent event scanned today ──
     // Priority order follows the real-world sequence of the day.
     // Each later event can't exist without the earlier one, so
@@ -150,6 +167,7 @@ foreach ($rows as $r) {
         'am_absent'       => $amAbsent,
         'pm_absent'       => $pmAbsent,
         'attendance_type' => $attendanceType,
+        'effective_status' => $effectiveStatus,
         'last_event'      => $lastEvent,
         'last_event_time' => $lastEventTime
             ? date('h:i A', strtotime($lastEventTime))

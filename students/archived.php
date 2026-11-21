@@ -64,7 +64,7 @@ enrollmentReportNotice($reportContext);
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-archive-fill me-2 text-warning"></i>Archived Students

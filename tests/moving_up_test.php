@@ -108,7 +108,10 @@ PHP);
         enableMovingFixture($db);
         $db->exec("INSERT INTO school_years(id,label,starts_on,ends_on,state) VALUES(3,'2028-2029','2028-06-05','2029-03-29','planned')");
         $getSource=['source_year_id'=>1,'source_section_id'=>10];
+        $emptyTarget=$run('students/moving_up.php',$f['admin'],[],$getSource+['target_year_id'=>3],'GET');
+        checkEnrollment(str_contains($emptyTarget['body'],'No active destination sections exist for 2028-2029') && str_contains($emptyTarget['body'],'../sections/sections.php?school_year_id=3'),'Empty destination list explains target-year setup and links to the selected year');
         $r=$run('students/moving_up.php',$f['admin'],[],$getSource,'GET');
+        checkEnrollment(!str_contains($r['body'],'No active destination sections exist'),'Configured destination year does not show an empty-section warning');
         checkEnrollment(preg_match('/<option value="2" selected>2027-2028/',$r['body'])===1 && !str_contains($r['body'],'Create school year'),'Default selects the managed immediately following label');
         // Leave a later planned year while the immediately following label is absent.
         $db->exec("UPDATE school_years SET label='2029-2030' WHERE id=2");

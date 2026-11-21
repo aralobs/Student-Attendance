@@ -29,7 +29,9 @@ $flash = null;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="<?= htmlspecialchars(csrfToken(), ENT_QUOTES, 'UTF-8') ?>">
     <script src="<?= BASE_URL ?>assets/js/privacy_storage.js" defer></script>
-    <title><?= htmlspecialchars((string)($pageTitle ?? 'Attendance System'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> — SPCCS Kinder</title>
+    <title><?= htmlspecialchars((string)($pageTitle ?? 'Automated Student Attendance Monitoring'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?> — ASAM</title>
+    <link rel="icon" type="image/png" href="<?= BASE_URL ?>assets/img/school_logo.png">
+    <link rel="apple-touch-icon" href="<?= BASE_URL ?>assets/img/school_logo.png">
 
     <!-- Anti-cache meta tags (fallback for older browsers) -->
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
@@ -43,7 +45,8 @@ $flash = null;
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     <!-- Custom CSS -->
-    <link href="<?= BASE_URL ?>assets/css/style.css" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/style.css?v=<?= substr(hash_file('sha256', dirname(__DIR__) . '/assets/css/style.css'), 0, 12) ?>" rel="stylesheet">
+    <link href="<?= BASE_URL ?>assets/css/analytics_template.css?v=<?= substr(hash_file('sha256', dirname(__DIR__) . '/assets/css/analytics_template.css'), 0, 12) ?>" rel="stylesheet">
 
     <script>
     // Force a server round-trip when the page is restored from bfcache

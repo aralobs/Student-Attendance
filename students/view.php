@@ -87,9 +87,10 @@ include '../includes/sidebar.php';
 enrollmentReportNotice($reportContext);
 ?>
 
+<div class="students-page workflow-page">
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="card students-card workflow-heading mb-4">
     <div>
         <h1 class="page-title">
             <i class="bi bi-person-circle me-2 text-primary"></i>Student Profile
@@ -97,8 +98,8 @@ enrollmentReportNotice($reportContext);
         <p class="page-subtitle">Attendance history and student details</p>
     </div>
     <div class="d-flex gap-2">
-        <a href="edit.php?id=<?= $student['id'] ?>" class="btn btn-primary">
-            <i class="bi bi-pencil me-1"></i>Edit
+        <a href="<?= isAdmin()?'edit.php?id=':'change_requests.php?student_id=' ?><?= $student['id'] ?>" class="btn btn-primary">
+            <i class="bi bi-pencil me-1"></i><?= isAdmin()?'Edit':'Request Change' ?>
         </a>
         <a href="generate_qr.php?id=<?= $student['id'] ?>" class="btn btn-outline-success">
             <i class="bi bi-qr-code me-1"></i>QR Code
@@ -113,7 +114,7 @@ enrollmentReportNotice($reportContext);
 
     <!-- Profile Card -->
     <div class="col-lg-4">
-        <div class="card text-center">
+        <div class="card students-card text-center">
             <div class="card-body p-4">
                 <img src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?><?= isset($student['enrollment_id']) ? '&amp;enrollment_id='.(int)$student['enrollment_id'] : '' ?>"
                      class="rounded-circle mb-3"
@@ -185,12 +186,12 @@ enrollmentReportNotice($reportContext);
         <!-- Summary Stats -->
         <div class="row g-3 mb-4">
             <div class="col-6 col-md-3">
-                <div class="stat-card blue py-2">
+                <div class="workflow-metric blue py-2">
                     <div class="stat-icon blue" style="width:36px;height:36px;font-size:0.9rem">
                         <i class="bi bi-calendar-check"></i>
                     </div>
                     <div>
-                        <div class="stat-number" style="font-size:1.3rem">
+                        <div class="stat-number" >
                             <?= $summary['total_days'] ?>
                         </div>
                         <div class="stat-label">Total Days</div>
@@ -198,12 +199,12 @@ enrollmentReportNotice($reportContext);
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="stat-card green py-2">
+                <div class="workflow-metric green py-2">
                     <div class="stat-icon green" style="width:36px;height:36px;font-size:0.9rem">
                         <i class="bi bi-check-circle-fill"></i>
                     </div>
                     <div>
-                        <div class="stat-number" style="font-size:1.3rem">
+                        <div class="stat-number" >
                             <?= $summary['full_day'] ?>
                         </div>
                         <div class="stat-label">Full Day</div>
@@ -211,12 +212,12 @@ enrollmentReportNotice($reportContext);
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="stat-card orange py-2">
+                <div class="workflow-metric orange py-2">
                     <div class="stat-icon orange" style="width:36px;height:36px;font-size:0.9rem">
                         <i class="bi bi-clock-history"></i>
                     </div>
                     <div>
-                        <div class="stat-number" style="font-size:1.3rem">
+                        <div class="stat-number" >
                             <?= $summary['partial'] ?>
                         </div>
                         <div class="stat-label">Partial</div>
@@ -224,12 +225,12 @@ enrollmentReportNotice($reportContext);
                 </div>
             </div>
             <div class="col-6 col-md-3">
-                <div class="stat-card red py-2">
+                <div class="workflow-metric red py-2">
                     <div class="stat-icon red" style="width:36px;height:36px;font-size:0.9rem">
                         <i class="bi bi-x-circle-fill"></i>
                     </div>
                     <div>
-                        <div class="stat-number" style="font-size:1.3rem">
+                        <div class="stat-number" >
                             <?= $summary['absent'] ?>
                         </div>
                         <div class="stat-label">Absent</div>
@@ -239,7 +240,7 @@ enrollmentReportNotice($reportContext);
         </div>
 
         <!-- Rate -->
-        <div class="card mb-4">
+        <div class="card students-card mb-4">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <span class="fw-600">Attendance Rate</span>
@@ -263,7 +264,7 @@ enrollmentReportNotice($reportContext);
         </div>
 
         <!-- Recent Attendance -->
-        <div class="card">
+        <div class="card students-card workflow-list">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-clock-history me-2"></i>Recent Attendance</span>
                 <a href="../attendance/students.php"
@@ -271,7 +272,7 @@ enrollmentReportNotice($reportContext);
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-hover table-sm mb-0" style="font-size:0.82rem">
+                    <table class="table table-hover table-sm mb-0 students-table">
                         <thead>
                             <tr>
                                 <th>Date</th>
@@ -331,4 +332,5 @@ enrollmentReportNotice($reportContext);
     </div>
 </div>
 
-<?php include '../includes/footer.php'; ?>
+<?php echo '</div><!-- /.workflow-page -->';
+include '../includes/footer.php'; ?>

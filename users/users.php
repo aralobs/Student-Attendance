@@ -27,7 +27,7 @@ include '../includes/sidebar.php';
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title"><i class="bi bi-person-gear me-2 text-primary"></i>User Management</h1>
         <p class="page-subtitle">Manage admin and teacher accounts</p>
@@ -48,7 +48,7 @@ include '../includes/sidebar.php';
 <div class="card">
     <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table data-list-search="Search name, username, email, role or status..." data-list-title="User List" class="table table-hover mb-0">
                 <thead>
                     <tr>
                         <th>#</th>

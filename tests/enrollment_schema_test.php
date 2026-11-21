@@ -14,9 +14,7 @@ try {
         ensureEnrollmentSchema($db);
         ensureEnrollmentSchema($db);
         foreach ([['--schema',0],['--schema',0],['--unknown',2]] as [$argument,$expected]) {
-            $env = getenv();
-            $env['MYSQLDATABASE'] = $f['database'];
-            $env['APP_ENV'] = 'development';
+            $env = enrollmentFixtureCliEnvironment($f);
             $process = proc_open([PHP_BINARY,dirname(__DIR__) . '/migrations/school_year_enrollment.php',$argument],
                 [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']], $pipes, dirname(__DIR__), $env);
             if (!is_resource($process)) throw new RuntimeException('Cannot start schema CLI test');

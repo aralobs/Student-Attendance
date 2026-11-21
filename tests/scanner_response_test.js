@@ -6,12 +6,12 @@ const start = source.indexOf('async function processToken(token)');
 const end = source.indexOf('async function refreshLog()', start);
 assert.ok(start >= 0 && end > start);
 
-async function run(response) {
+async function run(response, enabled = true) {
     const messages = [];
     let count = 0;
     let rendered = 0;
     const context = vm.createContext({
-        URLSearchParams, scannerContext: {csrf_token: 'synthetic'}, scanCount: 0,
+        URLSearchParams, scannerContext: {csrf_token: 'synthetic', enabled, message:'Modular today'}, scanCount: 0,
         fetch: async (_url, options) => {
             count++;
             assert.equal(options.method, 'POST');
@@ -25,11 +25,20 @@ async function run(response) {
     });
     vm.runInContext(source.slice(start, end), context);
     await context.processToken('synthetic-token');
-    assert.equal(count, 1, 'Scan request must never be retried automatically');
+    assert.equal(count, enabled ? 1 : 0, 'Disabled scans make no request; enabled scans are never retried');
     return {message: messages.at(-1), rendered};
 }
 
 (async () => {
+    const blocked = await run(new Error('Must not send'), false);
+    assert.equal(blocked.message[1], 'Scanning disabled');
+    assert.equal(blocked.rendered, 0);
+    let cameraRequests = 0;
+    const cameraContext = vm.createContext({scannerContext:{enabled:false,message:'Modular today'},
+        Html5Qrcode:{getCameras:async()=>{cameraRequests++;return[];}},setStatus(){},showResult(){}});
+    vm.runInContext(source.slice(source.indexOf('async function startScanner()'),source.indexOf('async function stopScanner()')),cameraContext);
+    await cameraContext.startScanner();
+    assert.equal(cameraRequests,0,'Disabled scanner never requests camera access');
     for (const body of ['', '<html>PRIVATE SERVER DIAGNOSTIC</html>', 'null', '[]', '{}']) {
         const result = await run({text: async () => body});
         assert.equal(result.message[1], 'Scan unavailable');

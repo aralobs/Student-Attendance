@@ -10,7 +10,7 @@ PHP's OpenSSL extension is required for encrypted settings (enabled in the stand
 
 For local XAMPP installations, the application automatically creates `config/settings_key.php` on the first encrypted save. This PHP file produces no output when requested directly and is ignored by Git. Restrict its filesystem access to the application account, preserve it across upgrades, and back it up securely separately from the database. Losing this key requires entering the provider credentials again.
 
-For hosted deployments (especially ephemeral Railway deployments), the operator must supply a stable `SETTINGS_ENCRYPTION_KEY` environment variable before saving credentials. Its value is a base64-encoded random 32-byte key. Keep this value across deployments; do not switch between a generated local key and an environment key without migrating credentials. School staff do not need to manage this variable.
+For hosted deployments, the operator must supply a stable `SETTINGS_ENCRYPTION_KEY` before saving credentials. On Hostinger, set it in the private `attendance-private/hosting.php` configuration described in [the deployment guide](../docs/HOSTINGER_DEPLOYMENT.md). Its value is a base64-encoded random 32-byte key. Keep this value across deployments; do not switch between a generated local key and an environment key without migrating credentials. School staff do not need to manage this variable.
 
 The encryption protects database-only exposure; an attacker controlling the server or an authorized credential-changing administrator can still misuse the integration. HTTPS is required when administering the system over a network.
 

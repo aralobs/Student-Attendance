@@ -124,9 +124,9 @@ function enrollmentAttendanceAdapterChecks(array $f): void
     foreach (['','/config','/includes','/attendance','/students','/sections'] as $dir) mkdir($path.$dir);
     $files=[];
     $write=function($file,$text) use($path,&$files) { file_put_contents($path.'/'.$file,$text); $files[]=$file; };
-    foreach (['includes/enrollment_operations.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php',
+    foreach (['includes/section_filter.php','includes/teacher_attendance_policy.php','includes/enrollment_operations.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php',
         'includes/security_audit.php','includes/pii_security.php','includes/csrf.php','includes/student_access.php','includes/qr_access.php',
-        'includes/attendance_scan.php','includes/attendance_finalizer.php','includes/end_of_day_alerts.php','includes/notification_templates.php',
+        'includes/attendance_scan.php','includes/attendance_finalizer.php','includes/delivery_modes.php','includes/end_of_day_alerts.php','includes/notification_templates.php',
         'config/schedule_rules.php','attendance/manual.php','attendance/override.php','attendance/get_today_log.php',
         'students/archive.php','students/delete.php','students/restore.php','sections/archive.php','sections/delete.php','sections/restore.php',
         'students/qr_download.php'] as $file) $write($file,file_get_contents($root.'/'.$file));
@@ -225,13 +225,13 @@ PHP);
         checkEnrollment($run('attendance/manual.php',$f['teacher'],$post)['status']===403,'Mixed annual manual roster batch denied');
         unset($post['entries'][106]);
         checkEnrollment($run('attendance/manual.php',$f['otherTeacher'],$post)['status']===403,'Foreign adviser manual POST denied');
-        $override=['attendance_id'=>$record['id'],'am_in'=>'07:10','redirect_date'=>'2026-10-20'];
+        $override=['correction_reason'=>'Synthetic correction','attendance_id'=>$record['id'],'am_in'=>'07:10','redirect_date'=>'2026-10-20'];
         checkEnrollment($run('attendance/override.php',$f['teacher'],$override)['status']===302,'Managed override follows record date annual assignment');
         checkEnrollment($db->query('SELECT am_in FROM attendance WHERE id='.(int)$record['id'])->fetchColumn()==='07:10:00','Managed override saves eligible edit');
         $db->exec("UPDATE enrollment_sections SET ends_on='2026-10-20' WHERE id=2001");
         $db->prepare("INSERT INTO enrollment_sections(id,enrollment_id,section_id,grade_level,starts_on,ends_on) VALUES(2002,1001,11,'Grade 3','2026-10-21',?)")->execute([$operationalEnd]);
         checkEnrollment($run('attendance/override.php',$f['teacher'],$override)['status']===302,'Backdated override retains former assignment scope');
-        checkEnrollment($run('attendance/override.php',$f['otherTeacher'],$override)['status']===503,'Current new-section adviser cannot edit former dated assignment');
+        checkEnrollment($run('attendance/override.php',$f['otherTeacher'],$override)['status']===403,'Current new-section adviser cannot edit former dated assignment');
         $qr=$run('students/qr_download.php',$f['otherTeacher'],[],['id'=>101],'GET');
         checkEnrollment($qr['status']===200 && str_contains($qr['body'],'QR:11:synthetic-101'),'QR card uses annual section and stable identity');
         checkEnrollment($run('students/qr_download.php',$f['teacher'],[],['id'=>101],'GET')['status']===403,'Former teacher cannot issue current QR');
@@ -253,7 +253,7 @@ PHP);
         checkEnrollment($run('sections/archive.php',$f['admin'],['id'=>21])['flash'][0]==='success','Unused section archive endpoint succeeds');
         checkEnrollment($run('sections/restore.php',$f['admin'],['id'=>21])['flash'][0]==='success','Section restore endpoint succeeds');
         $db->exec("UPDATE school_years SET state='closed' WHERE id=1; UPDATE student_enrollments SET state='completed' WHERE school_year_id=1");
-        checkEnrollment($run('attendance/override.php',$f['admin'],$override)['status']===503,'Closed annual override rejected');
+        checkEnrollment($run('attendance/override.php',$f['admin'],$override)['status']===403,'Closed annual override rejected');
         $run('students/archive.php',$f['admin'],['id'=>101]); $run('students/restore.php',$f['admin'],['id'=>101]);
         checkEnrollment($db->query('SELECT state FROM student_enrollments WHERE id=1001')->fetchColumn()==='completed','Restore adapter cannot reopen completed enrollment');
         // Rebuild this disposable synthetic context for real competing scan tests.
@@ -305,7 +305,7 @@ PHP);
         $futureCount->execute([$futureDate]);
         checkEnrollment((int)$futureCount->fetchColumn()===0,'Future scan rejection leaves no attendance');
         $futurePost=['section_id'=>10,'attendance_date'=>$futureDate,'entries'=>[101=>['am_in'=>'07:00','pm_out'=>'']]];
-        checkEnrollment($run('attendance/manual.php',$f['teacher'],$futurePost)['status']===503,'Dynamic future manual POST rejected atomically');
+        checkEnrollment($run('attendance/manual.php',$f['teacher'],$futurePost)['status']===403,'Dynamic future manual POST rejected atomically');
         $futureCount->execute([$futureDate]);
         checkEnrollment((int)$futureCount->fetchColumn()===0,'Future manual rejection leaves no attendance');
     } finally {

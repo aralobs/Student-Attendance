@@ -11,17 +11,36 @@ require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireLogin();
 requireScannerPermission();
+require_once '../includes/scanner_availability.php';
 
 $pageTitle = 'QR Scanner';
 
 $today         = date('Y-m-d');
 $calendarEntry = getCalendarEntry($today);
 $isHoliday     = isHolidayOrNoClass($today);
+try {
+    $scannerAvailability = scannerDeliveryAvailability(getDB(), currentUser(), $today);
+} catch (Throwable $e) {
+    $scannerAvailability = ['enabled'=>false, 'message'=>'QR scanning is disabled because today\'s delivery schedule could not be loaded. Reload the page to try again.'];
+    error_log('Unable to load scanner delivery availability.');
+}
+$scanningDisabled = !$scannerAvailability['enabled'];
 
 include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
+<div class="card analytics-card scanner-page mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <h1 class="h6 mb-0"><i class="bi bi-qr-code-scan me-2 text-primary"></i>QR Scanner</h1>
+            <p class="page-subtitle mt-1" id="liveClock"></p>
+        </div>
+        <span class="badge scan-count-badge" aria-label="Scanned this session">
+            <i class="bi bi-check-circle me-1"></i><span id="scanCount">0</span> scanned
+        </span>
+    </div>
+    <div class="card-body">
 <?php if ($isHoliday): ?>
     <div class="alert alert-warning d-flex align-items-center gap-2 mb-3">
         <i class="bi bi-calendar-x fs-4"></i>
@@ -38,34 +57,32 @@ include '../includes/sidebar.php';
     </div>
 <?php endif; ?>
 
-<div class="page-header">
-    <div>
-        <h1 class="page-title">
-            <i class="bi bi-qr-code-scan me-2 text-primary"></i>QR Scanner
-        </h1>
-        <p class="page-subtitle" id="liveClock"></p>
-    </div>
-    <div class="d-flex gap-2 align-items-center">
-        <span class="badge bg-success fs-6 py-2 px-3">
-            <i class="bi bi-check-circle me-1"></i>
-            <span id="scanCount">0</span> scanned
-        </span>
-    </div>
+<?php if (!$isHoliday): ?>
+<div class="alert alert-<?= $scanningDisabled ? 'warning' : 'info' ?>" role="status"><?= sanitize($scannerAvailability['message']) ?></div>
+<?php endif; ?>
+
+
+<div id="scanFeedback" class="mb-3" role="status" aria-live="polite"></div>
+<div class="card metric-tile scanner-result-panel mb-3">
+    <div class="card-header"><i class="bi bi-info-circle me-2"></i>Last Scan Result</div>
+    <div class="card-body" id="resultArea" role="status" aria-live="polite"></div>
 </div>
+<p class="small text-muted mb-3">Scan a student QR code or use the barcode input to record attendance.</p>
+<div class="section-divider"><i class="bi bi-upc-scan"></i>Attendance Scanning</div>
 
 <div class="row g-3">
 
     <!-- Scanner -->
     <div class="col-lg-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card metric-tile">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span><i class="bi bi-camera-video me-2"></i>Camera</span>
-                <div class="d-flex gap-2 align-items-center">
+                <div class="d-flex gap-2 align-items-center camera-controls">
                     <select id="cameraSelect" class="form-select form-select-sm d-none"
                         style="width:auto;max-width:160px"></select>
-                    <span class="badge bg-secondary" id="scannerStatus">Stopped</span>
+                    <span class="badge bg-secondary" id="scannerStatus"><?= $scanningDisabled ? 'Disabled' : 'Stopped' ?></span>
                     <button class="btn btn-sm btn-primary" id="startBtn" onclick="startScanner()"
-                        <?= $isHoliday ? 'disabled' : '' ?>>
+                        <?= $scanningDisabled ? 'disabled' : '' ?>>
                         <i class="bi bi-play-fill me-1"></i>Start
                     </button>
                     <button class="btn btn-sm btn-danger d-none" id="stopBtn" onclick="stopScanner()">
@@ -73,11 +90,11 @@ include '../includes/sidebar.php';
                     </button>
                 </div>
             </div>
-            <div class="card-body p-2">
+            <div class="card-body p-3">
                 <div id="qr-reader" style="width:100%;border-radius:8px;overflow:hidden"></div>
 
                 <div class="mt-3">
-                    <label class="form-label small fw-600">Manual / Barcode Scanner Input</label>
+                    <label for="manualInput" class="form-label small fw-600">Manual / Barcode Scanner Input</label>
                     <div class="input-group">
                         <span class="input-group-text bg-light">
                             <i class="bi bi-upc-scan"></i>
@@ -85,9 +102,9 @@ include '../includes/sidebar.php';
                         <input type="text" id="manualInput" class="form-control"
                             placeholder="Scan barcode or type QR token..."
                             autocomplete="off" autocorrect="off" spellcheck="false"
-                            <?= $isHoliday ? 'disabled' : '' ?>>
-                        <button class="btn btn-primary" onclick="submitManual()"
-                            <?= $isHoliday ? 'disabled' : '' ?>>
+                            <?= $scanningDisabled ? 'disabled' : '' ?>>
+                        <button class="btn btn-primary" id="recordBtn" onclick="submitManual()"
+                            <?= $scanningDisabled ? 'disabled' : '' ?>>
                             <i class="bi bi-check-lg me-1"></i>Record
                         </button>
                     </div>
@@ -96,7 +113,7 @@ include '../includes/sidebar.php';
             </div>
         </div>
 
-        <div class="card mt-3">
+        <div class="card metric-tile mt-3">
             <div class="card-body py-2">
                 <div class="row g-2 text-center small">
                     <div class="col-6">
@@ -119,32 +136,17 @@ include '../includes/sidebar.php';
         </div>
     </div>
 
-    <!-- Result + Log -->
+    <!-- Today's log -->
     <div class="col-lg-6">
-        <div id="scanFeedback" class="mb-3" role="status" aria-live="polite"></div>
-
-        <div class="card mb-3">
-            <div class="card-header">
-                <i class="bi bi-info-circle me-2"></i>Last Scan Result
-            </div>
-            <div class="card-body" id="resultArea">
-                <div class="text-center text-muted py-3">
-                    <i class="bi bi-qr-code-scan d-block mb-2"
-                        style="font-size:2.5rem;opacity:0.2"></i>
-                    Start scanner and scan a student QR code
-                </div>
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card metric-tile">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span><i class="bi bi-list-check me-2"></i>Today's Log</span>
-                <button class="btn btn-sm btn-outline-secondary" onclick="refreshLog()">
+                <button class="btn btn-sm btn-outline-secondary" onclick="refreshLog()" aria-label="Refresh today's scan log">
                     <i class="bi bi-arrow-clockwise"></i>
                 </button>
             </div>
-            <div style="height:350px;overflow-y:auto">
-                <table class="table table-sm table-hover mb-0">
+            <div class="scanner-log-scroll">
+                <table data-list-search="Search student name, grade, section or status..." data-list-title="Today’s Scan Log" data-list-live="1" class="table table-sm table-hover mb-0">
                     <thead class="sticky-top bg-white">
                         <tr>
                             <th>Student</th>
@@ -167,8 +169,11 @@ include '../includes/sidebar.php';
     </div>
 </div>
 
+    </div>
+</div>
+
 <?php
-$extraJS = '<script>const scannerContext = ' . json_encode(['csrf_token' => csrfToken(), 'user_id' => (int)currentUser()['id'], 'date' => $today, 'last_scan' => $_SESSION['scanner_last_result'] ?? null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script><script src="' . BASE_URL . 'assets/js/scanner_render.js"></script>'
+$extraJS = '<script>const scannerContext = ' . json_encode(['enabled' => $scannerAvailability['enabled'], 'message' => $scannerAvailability['message'], 'csrf_token' => csrfToken(), 'user_id' => (int)currentUser()['id'], 'date' => $today, 'last_scan' => $_SESSION['scanner_last_result'] ?? null], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) . ';</script><script src="' . BASE_URL . 'assets/js/scanner_render.js"></script>'
     . '<script src="' . BASE_URL . 'assets/vendor/html5-qrcode-2.3.8.min.js" integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>' . <<<'JSEOF'
 <script>
 let qrScanner  = null;
@@ -191,6 +196,11 @@ function restoreLastScan() {
 // ── Scanner lifecycle ──────────────────────────────────────
 
 async function startScanner() {
+    if (scannerContext.enabled === false) {
+        showResult('warning', 'Scanning disabled', scannerContext.message);
+        return;
+    }
+
     setStatus('Starting...', 'warning');
     try {
         const cameras = await Html5Qrcode.getCameras();
@@ -236,6 +246,11 @@ Use manual input below.`);
 }
 
 async function startWithCamera(cameraId) {
+    if (scannerContext.enabled === false) {
+        showResult('warning', 'Scanning disabled', scannerContext.message);
+        return;
+    }
+
     const config = {
         fps: 15,
         qrbox: (w, h) => {
@@ -302,6 +317,11 @@ function updateScanGuide(data) {
 }
 
 async function processToken(token) {
+    if (scannerContext.enabled === false) {
+        showResult('warning', 'Scanning disabled', scannerContext.message);
+        return;
+    }
+
     showResult('info', 'Processing...', '');
     try {
         const res = await fetch('scan_process.php', {
@@ -437,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshLog();
     setInterval(refreshLog, 30000);
 
-    const clock = document.querySelector('.page-subtitle');
+    const clock = document.getElementById('liveClock');
     if (clock) {
         const tick = () => {
             clock.textContent = new Date().toLocaleString('en-PH', {

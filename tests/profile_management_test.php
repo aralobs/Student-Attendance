@@ -8,7 +8,7 @@ $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $options = [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC];
 $admin = new PDO($dsn, DB_USER, DB_PASS, $options);
 $created = false; $checks = 0;
-$env = getenv(); $env['MYSQLDATABASE'] = $name;
+$env = getenv(); $env['DB_NAME'] = $name;
 function profileCheck(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); $GLOBALS['checks']++; }
 try {
     $admin->exec("CREATE DATABASE `$name`"); $created = true;
@@ -19,7 +19,7 @@ try {
         session_ip VARCHAR(50), session_last_activity DATETIME)");
     $db->exec(file_get_contents($root . '/migrations/security_abuse_controls.sql'));
     foreach (['','/config','/includes','/sessions'] as $dir) mkdir($fixture . $dir);
-    foreach (['config/database.php','config/deployment_security.php','config/schedule_rules.php','includes/functions.php','includes/security_audit.php','includes/pii_security.php','includes/session_security.php','includes/settings_security.php','includes/csrf.php','includes/abuse_security.php','includes/profile_management.php','profile.php'] as $file) copy($root . '/' . $file, $fixture . '/' . $file);
+    foreach (['config/database.php','config/deployment_security.php','config/hosting_environment.php','includes/sms_status.php','includes/notification_templates.php','config/schedule_rules.php','includes/functions.php','includes/security_audit.php','includes/pii_security.php','includes/session_security.php','includes/settings_security.php','includes/csrf.php','includes/abuse_security.php','includes/profile_management.php','profile.php'] as $file) copy($root . '/' . $file, $fixture . '/' . $file);
     foreach (['header','sidebar','footer'] as $file) file_put_contents($fixture . '/includes/' . $file . '.php','<?php /* Layout omitted in security fixture. */');
     file_put_contents($fixture . '/request.php', <<<'PHP'
 <?php
@@ -103,8 +103,13 @@ PHP);
         profileCheck($row['email'] === ($case === 'profile' ? 'teacher@example.test' : null), "$case unexpected email");
         if ($profileChanged) profileCheck($result['session']['full_name'] === 'Updated Teacher', "$case stale session name");
         if ($case === 'get') {
-            profileCheck(substr_count($out,'name="csrf_token"') === 1 && str_contains($out,'name="new_password"'), 'Missing secure profile form');
-            profileCheck(substr_count($out,'name="current_password"') === 1, 'Current password field is duplicated');
+            preg_match_all('/<form\b[^>]*>(.*?)<\/form>/s', $out, $forms);
+            profileCheck(count($forms[1]) === 2, 'Profile actions must use separate forms');
+            foreach ($forms[1] as $form) {
+                profileCheck(substr_count($form,'name="csrf_token"') === 1 && substr_count($form,'name="current_password"') === 1, 'Each form needs its own CSRF token and current password');
+            }
+            profileCheck(str_contains($forms[1][0],'value="update_profile"') && !str_contains($forms[1][0],'name="new_password"'), 'General profile form includes unrelated security fields');
+            profileCheck(str_contains($forms[1][1],'value="change_password"') && !str_contains($forms[1][1],'name="full_name"'), 'Security form includes unrelated profile fields');
             $page = substr($out, 0, strrpos($out, "\nRESULT:"));
             profileCheck(!str_contains($page,$oldHash) && !str_contains($page,'value="OldPass123"'), 'Password leaked in form');
         }

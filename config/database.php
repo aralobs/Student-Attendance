@@ -9,11 +9,11 @@ try { loadHostingEnvironment(dirname(__DIR__, 2) . '/attendance-private/hosting.
 catch (Throwable $error) { deploymentUnavailable('private_hosting_configuration_failed'); }
 $production = deploymentIsProduction();
 $dbConfig = [
-    'host'=>deploymentEnvironmentValue('MYSQLHOST','DB_HOST') ?? ($production ? '' : 'localhost'),
-    'port'=>deploymentEnvironmentValue('MYSQLPORT','DB_PORT') ?? '3306',
-    'user'=>deploymentEnvironmentValue('MYSQLUSER','DB_USER') ?? ($production ? '' : 'root'),
-    'password'=>deploymentEnvironmentValue('MYSQLPASSWORD','DB_PASS') ?? '',
-    'database'=>deploymentEnvironmentValue('MYSQLDATABASE','DB_NAME') ?? ($production ? '' : 'attendance_system'),
+    'host'=>deploymentEnvironmentValue('DB_HOST') ?? ($production ? '' : 'localhost'),
+    'port'=>deploymentEnvironmentValue('DB_PORT') ?? '3306',
+    'user'=>deploymentEnvironmentValue('DB_USER') ?? ($production ? '' : 'root'),
+    'password'=>deploymentEnvironmentValue('DB_PASS') ?? '',
+    'database'=>deploymentEnvironmentValue('DB_NAME') ?? ($production ? '' : 'attendance_system'),
     'base_url'=>getenv('BASE_URL') ?: ($production ? '' : 'http://localhost/attendance_system/'),
     'tls_ca'=>getenv('DB_TLS_CA') ?: '',
 ];

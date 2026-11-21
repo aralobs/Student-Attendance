@@ -2,9 +2,10 @@
 /** Shared editable text templates. HTML is escaped when used in email. */
 function notificationTemplateDefaults(): array {
     return [
+        'sms_intervention_template' => 'Parent/Guardian: {student_name} has reached the school attendance intervention threshold as of {date}. Please contact the adviser at {school_name} to arrange support.',
         'sms_arrival_template' => 'Hello Parent/Guardian, {student_name} recorded Time-In at {time} on {date} at {school_name}.',
         'sms_departure_template' => 'Hello Parent/Guardian, {student_name} recorded Time-Out at {time} on {date} at {school_name}.',
-        'sms_absence_template' => 'Hello Parent/Guardian, {student_name} has no attendance scans on {date} at {school_name}. Please contact the school if needed.',
+        'sms_absence_template' => 'Hello Parent/Guardian, {student_name} was marked absent on {date} at {school_name}. Please contact the school if needed.',
         'sms_missing_checkout_template' => 'Parent/Guardian: {student_name} did not scan Time-Out on {date}. Please contact the school to confirm their departure.',
         'email_arrival_subject' => 'Time-In recorded - {student_name}',
         'email_departure_subject' => 'Time-Out recorded - {student_name}',

@@ -83,7 +83,7 @@ enrollmentReportNotice($reportContext);
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-person-badge me-2 text-primary"></i>Assign Advisers
@@ -100,6 +100,7 @@ enrollmentReportNotice($reportContext);
     </div>
 </div>
 
+<?php if (!$reportContext['managed']): ?>
 <div class="card mb-3">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-center">
@@ -116,6 +117,7 @@ enrollmentReportNotice($reportContext);
     </div>
 </div>
 
+<?php endif; ?>
 <form method="POST">
 <?= csrfField() ?>
 <input type="hidden" name="sy" value="<?= sanitize($sy) ?>">

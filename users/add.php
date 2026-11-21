@@ -9,7 +9,7 @@ $db        = getDB();
 $errors    = [];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $fullName = trim($_POST['full_name'] ?? '');
+    $fullName = ($_POST['role'] ?? 'teacher') === 'teacher' ? mb_convert_case(trim($_POST['full_name'] ?? ''), MB_CASE_TITLE, 'UTF-8') : trim($_POST['full_name'] ?? '');
     $username = trim($_POST['username'] ?? '');
     $email    = trim($_POST['email'] ?? '');
     $role     = $_POST['role'] ?? 'teacher';
@@ -55,7 +55,7 @@ include '../includes/sidebar.php';
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title"><i class="bi bi-person-plus me-2 text-primary"></i>Add User</h1>
     </div>
@@ -72,7 +72,7 @@ include '../includes/sidebar.php';
 <?= csrfField() ?>
             <div class="mb-3">
                 <label class="form-label">Full Name *</label>
-                <input type="text" name="full_name" class="form-control" required
+                <input type="text" name="full_name" class="form-control" required data-title-case="teacher"
                        value="<?= htmlspecialchars($_POST['full_name'] ?? '') ?>">
             </div>
             <div class="row g-3 mb-3">
@@ -113,4 +113,7 @@ include '../includes/sidebar.php';
     </div>
 </div>
 
-<?php include '../includes/footer.php'; ?>
+<?php
+$extraJS = '<script src="' . BASE_URL . 'assets/js/new_entry_names.js"></script>';
+include '../includes/footer.php';
+?>

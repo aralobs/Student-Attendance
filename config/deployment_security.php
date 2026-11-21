@@ -2,7 +2,6 @@
 function deploymentIsProduction(): bool {
     $mode = strtolower(getenv('APP_ENV') ?: '');
     if ($mode !== '') return !in_array($mode, ['development','local','test','testing'], true);
-    if (getenv('RAILWAY_ENVIRONMENT') || getenv('RAILWAY_ENVIRONMENT_NAME')) return true;
     if (PHP_SAPI === 'cli') return false;
     $host = parse_url('http://' . ($_SERVER['HTTP_HOST'] ?? ''), PHP_URL_HOST);
     return !(in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1','::1'], true)
@@ -18,9 +17,9 @@ function deploymentUnavailable(string $reason): never {
     echo json_encode(['error'=>true,'message'=>'Service unavailable. Please contact the administrator.','request_id'=>$id]);
     exit;
 }
-function deploymentEnvironmentValue(string $primary, string $fallback): ?string {
-    foreach ([$primary,$fallback] as $name) { $value = getenv($name); if ($value !== false && $value !== '') return $value; }
-    return null;
+function deploymentEnvironmentValue(string $name): ?string {
+    $value = getenv($name);
+    return $value !== false && $value !== '' ? $value : null;
 }
 function validateDatabaseConfiguration(array $config, bool $production): void {
     if ($production) {

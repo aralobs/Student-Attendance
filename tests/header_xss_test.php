@@ -12,7 +12,7 @@ $html = ob_get_clean();
 $dom = new DOMDocument();
 @$dom->loadHTML($html);
 $title = $dom->getElementsByTagName('title')->item(0);
-if (!$title || $title->textContent !== $pageTitle . ' — SPCCS Kinder'
+if (!$title || $title->textContent !== $pageTitle . ' — ASAM'
     || $dom->getElementsByTagName('img')->length !== 0
     || $dom->getElementsByTagName('script')->length !== 2
     || $dom->getElementsByTagName('script')->item(0)->getAttribute('src') !== '/assets/js/privacy_storage.js') {

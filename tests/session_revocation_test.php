@@ -8,7 +8,7 @@ $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $options = [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC];
 $admin = new PDO($dsn, DB_USER, DB_PASS, $options);
 $created = false; $checks = 0;
-$env = getenv(); $env['MYSQLDATABASE'] = $name;
+$env = getenv(); $env['DB_NAME'] = $name;
 function revokeCheck(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); $GLOBALS['checks']++; }
 try {
     $admin->exec("CREATE DATABASE `$name`"); $created = true;
@@ -19,7 +19,7 @@ try {
         session_ip VARCHAR(50), session_last_activity DATETIME)");
     $db->prepare('INSERT INTO users VALUES (99,?,?,?,NULL,?,1,?,NULL,NULL,NOW())')->execute(['actor',password_hash('ActorPass123',PASSWORD_BCRYPT),'Synthetic Admin','admin','actor-token']);
     foreach (['','/config','/includes','/users','/sessions'] as $dir) mkdir($fixture . $dir);
-    foreach (['config/database.php','config/deployment_security.php','config/schedule_rules.php','includes/functions.php','includes/security_audit.php','includes/pii_security.php','includes/session_security.php','includes/settings_security.php','includes/csrf.php','includes/abuse_security.php','users/edit.php','users/toggle.php','users/archive.php','users/restore.php','logout.php'] as $file) copy($root . '/' . $file, $fixture . '/' . $file);
+    foreach (['config/database.php','config/deployment_security.php','config/hosting_environment.php','includes/sms_status.php','includes/notification_templates.php','config/schedule_rules.php','includes/functions.php','includes/security_audit.php','includes/pii_security.php','includes/session_security.php','includes/settings_security.php','includes/csrf.php','includes/abuse_security.php','users/edit.php','users/toggle.php','users/archive.php','users/restore.php','logout.php'] as $file) copy($root . '/' . $file, $fixture . '/' . $file);
     file_put_contents($fixture . '/includes/header.php','<?php exit;');
     file_put_contents($fixture . '/request.php', <<<'PHP'
 <?php

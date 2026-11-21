@@ -1,0 +1,70 @@
+<?php
+require_once __DIR__.'/support/enrollment_fixture.php';
+require_once __DIR__.'/support/enrollment_app_fixture.php';
+require_once dirname(__DIR__).'/includes/absence_interventions.php';
+withEnrollmentFixture(function(array $f):void {
+ $db=$f['db'];ensureDeliverySchema($db);ensureAttendanceDecisionSchema($db);ensureInterventionSchema($db);
+ $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES('enrollment_model_version','1')");
+ $db->exec("UPDATE users SET session_token=CONCAT('synthetic-fixture-session-',id)");
+ $copy=__DIR__.'/enrollment_app_'.bin2hex(random_bytes(8));createEnrollmentAppFixture($copy);
+ try {
+  $get=['school_year_id'=>1,'date'=>'2026-10-21'];
+  $read=function(array $filters,array $actor)use($copy,$f,$get):array{
+   $r=runEnrollmentAppEndpoint($copy,$f,'attendance/attendance.php',$actor,[],array_merge($get,$filters),'GET');
+   $doc=new DOMDocument();@$doc->loadHTML($r['body']);return [$r,new DOMXPath($doc)];
+  };
+  [$r,$x]=$read([],$f['admin']);
+  checkEnrollment($r['status']===200,'All sections renders');
+  checkEnrollment($x->query('//select[@name="grade"]')->length===1,'Grade filter restored');
+  checkEnrollment($x->query('//select[@name="type"]')->length===1,'Type filter restored');
+  checkEnrollment($x->query('//select[@name="section"]/option[@value="0" and @selected]')->length===1,'All Sections is the default');
+  checkEnrollment($x->query('//table/tbody/tr/td[1]')->length===2,'All Sections includes both eligible grades');
+  foreach(['Total','Full Day','Partial','Absent','Late'] as $label)checkEnrollment(str_contains($r['body'],'>'.$label.'<'),'Counter: '.$label);
+  foreach(['Grade / Section','Time-In','Time-Out','Type','Actions'] as $label)checkEnrollment(str_contains($r['body'],'>'.$label.'<'),'Column: '.$label);
+  checkEnrollment(str_contains($r['body'],'reports/daily.php?'),'Daily Export restored');
+  [$r,$x]=$read(['grade'=>'Grade 3'],$f['admin']);
+  checkEnrollment($x->query('//select[@name="section"]/option[@value="16"]')->length===0,'Grade filters section options');
+  checkEnrollment($x->query('//table/tbody/tr/td[1]')->length===1,'Grade filters roster');
+  $export=$x->query('//a[contains(@href,"reports/daily.php?")]')->item(0)->getAttribute('href');
+  parse_str(parse_url($export,PHP_URL_QUERY),$exportFilters);
+  checkEnrollment($exportFilters['date']==='2026-10-21' && $exportFilters['grade']==='Grade 3' && (int)$exportFilters['school_year_id']===1,'Daily Export preserves date, grade and school year');
+  $daily=runEnrollmentAppEndpoint($copy,$f,'reports/daily.php',$f['admin'],[],$exportFilters,'GET');
+  checkEnrollment($daily['status']===200 && str_contains($daily['body'],'Three') && !str_contains($daily['body'],'Six, Synthetic'),'Daily Export opens matching report');
+  [$r,$x]=$read(['type'=>'partial'],$f['admin']);
+  checkEnrollment($x->query('//table/tbody/tr/td[1]')->length===1 && str_contains($x->query('//table/tbody')->item(0)->textContent,'Three'),'Partial filter selects matching learner');
+  [$r,$x]=$read(['type'=>'absent'],$f['admin']);
+  checkEnrollment(str_contains($x->query('//table/tbody')->item(0)->textContent,'No attendance records'),'Unrecorded learner is not an absence');
+  [$r,$x]=$read(['grade'=>'Grade 3','section'=>16],$f['admin']);
+  checkEnrollment($r['status']===200 && !str_contains($x->query('//table/tbody')->item(0)->textContent,'Six'),'Stale section resets on grade change');
+  [$r,$x]=$read(['section'=>11],$f['teacher']);
+  checkEnrollment($r['status']===400 && !str_contains($x->query('//table/tbody')->item(0)->textContent,'Three'),'Forged section does not expose roster');
+  [$r,$x]=$read([],$f['otherTeacher']);
+  checkEnrollment(!str_contains($x->query('//table/tbody')->item(0)->textContent,'Three'),'All Sections respects adviser access');
+  [$r,$x]=$read(['type'=>'not_recorded'],$f['admin']);
+  checkEnrollment($r['status']===200 && $x->query('//table/tbody/tr/td[1]')->length===1 && str_contains($x->query('//table/tbody')->item(0)->textContent,'Six'),'Not recorded filter includes learner without scans or decision');
+  checkEnrollment($x->query('//table/tbody/tr/td[5]')->item(0)->textContent==='Not recorded','Not recorded appears in Type column');
+  $db->exec("INSERT INTO delivery_modes(school_year_id,scope_section_id,learning_date,mode,recorded_by) VALUES(1,16,'2026-10-21','online',7)");
+  [$r,$x]=$read(['type'=>'review_needed'],$f['admin']);
+  checkEnrollment($r['status']===200 && $x->query('//table/tbody/tr/td[1]')->length===1 && str_contains($x->query('//table/tbody')->item(0)->textContent,'Six'),'Needs review filter includes unconfirmed past online attendance');
+  checkEnrollment($x->query('//table/tbody/tr/td[5]')->item(0)->textContent==='Needs review','Needs review appears in Type column');
+  [$r,$x]=$read([],$f['admin']);
+  checkEnrollment(str_contains($x->query('//table/tbody')->item(0)->textContent,'Needs review'),'All Types includes Needs review');
+  $db->exec("DELETE FROM delivery_modes WHERE school_year_id=1 AND scope_section_id=16 AND learning_date='2026-10-21'");
+  $db->exec("UPDATE attendance SET am_status='late' WHERE id=501");
+  $db->exec("INSERT INTO attendance(student_id,enrollment_id,assignment_id,date,am_in,pm_in,am_status,pm_status,attendance_type,recorded_by) VALUES(106,1006,2006,'2026-10-21','08:00:00','14:00:00','late','late','full_day',7)");
+  [$r,$x]=$read(['type'=>'late'],$f['admin']);
+  checkEnrollment($x->query('//table/tbody/tr/td[1]')->length===2,'Late filter includes partial and full-day learners');
+  $counter=static function(DOMXPath $x,string $label):int {
+   return (int)$x->query('//div[contains(@class,"metric-label") and text()="'.$label.'"]/following-sibling::div')->item(0)->textContent;
+  };
+  checkEnrollment($counter($x,'Total')===2 && $counter($x,'Full Day')===1 && $counter($x,'Partial')===1,'Summary retains attendance types');
+  checkEnrollment($counter($x,'Late')===2,'Two late sessions count as one late learner');
+  $db->exec("INSERT INTO attendance_decisions(enrollment_id,assignment_id,learning_date,decision,delivery_mode,recorded_by,confirmed_at) VALUES(1006,2006,'2026-10-21','absent_excused','face_to_face',7,'2026-10-21 16:00:00')");
+  [$r,$x]=$read(['type'=>'absent'],$f['admin']);
+  checkEnrollment($x->query('//table/tbody/tr/td[1]')->length===1 && str_contains($x->query('//table/tbody')->item(0)->textContent,'Six'),'Absence filter honors confirmed decision over scans');
+  checkEnrollment($counter($x,'Absent')===1 && $counter($x,'Late')===1,'Corrected absence is not also counted late');
+  [$r,$x]=$read(['school_year_id'=>2,'date'=>'2027-10-21'],$f['admin']);
+  checkEnrollment($x->query('//select[@name="section"]/option[@value="10"]')->length===0 && $x->query('//select[@name="section"]/option[@value="20"]')->length===1,'Section options follow school year');
+ }finally{removeEnrollmentAppFixture($copy);removeEnrollmentAppFixturePhotos($copy);}
+});
+echo 'Attendance overview filters passed ('.$GLOBALS['enrollment_checks']." checks).\n";

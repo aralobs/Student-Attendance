@@ -12,11 +12,12 @@ require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'By Student';
 $db              = getDB();
+$defaultReportDate = enrollmentReportDefaultDate($db);
 $search          = trim($_GET['search']   ?? '');
 $sectionId       = (int)($_GET['section'] ?? 0);
 $gradeLevel      = $_GET['grade']         ?? '';
-$month           = (int)($_GET['month']   ?? date('n'));
-$year            = (int)($_GET['year']    ?? date('Y'));
+$month           = (int)($_GET['month']   ?? date('n', strtotime($defaultReportDate)));
+$year            = (int)($_GET['year']    ?? date('Y', strtotime($defaultReportDate)));
 $reportFrom = sprintf('%04d-%02d-01', $year, $month);
 $reportTo = date('Y-m-t', strtotime($reportFrom));
 $reportContext = prepareEnrollmentReport($db, $reportFrom, $reportTo, ($sectionId ?? 0) ?: null);
@@ -101,7 +102,7 @@ include '../includes/sidebar.php';
 enrollmentReportNotice($reportContext);
 ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-person-lines-fill me-2 text-primary"></i>By Student
@@ -156,13 +157,9 @@ enrollmentReportNotice($reportContext);
             <?php endif; ?>
             <div class="col-md-2">
                 <label class="form-label mb-1 small fw-600">Section</label>
-                <select name="section" class="form-select form-select-sm">
+                <select name="section" class="form-select form-select-sm" data-section-filter>
                     <option value="0">All</option>
-                    <?php foreach($allowedSections as $s): ?>
-                    <option value="<?=$s['id']?>" <?=$sectionId==$s['id']?'selected':''?>>
-                        <?= sanitize($s['grade_level'].' — '.$s['section_name']) ?>
-                    </option>
-                    <?php endforeach; ?>
+                    <?php renderSectionFilterOptions($allowedSections, $sectionId, $gradeLevel); ?>
                 </select>
             </div>
             <div class="col-md-2">

@@ -7,6 +7,7 @@ require_once '../includes/functions.php';
 require_once '../includes/student_access.php';
 require_once '../includes/student_photos.php';
 requireStudentManagement();
+if (!isAdmin()) { http_response_code(403); exit('Profile changes require administrator review. Submit a learner change request.'); }
 guardCsrfPage();
 
 $id = (int)($_GET['id'] ?? 0);
@@ -166,123 +167,34 @@ include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
+<link rel="stylesheet" href="<?= BASE_URL ?>assets/css/student_form.css">
+<div class="students-page workflow-page student-form-page">
 <?php showFlash(); ?>
-
-<div class="page-header">
-    <div>
-        <h1 class="page-title">
-            <i class="bi bi-pencil-square me-2 text-primary"></i>Edit Student
-        </h1>
-        <p class="page-subtitle">Update student information</p>
-    </div>
-    <a href="view.php?id=<?= $id ?>" class="btn btn-outline-secondary">
-        <i class="bi bi-arrow-left me-1"></i>Back
-    </a>
-</div>
+<nav aria-label="Breadcrumb" class="student-breadcrumb"><a href="students.php">Students</a><span aria-hidden="true">/</span><span>Edit Student</span></nav>
+<header class="student-form-heading">
+    <div><h1>Edit Student</h1><p>Update the student profile and parent or guardian details.</p></div>
+    <a href="students.php" class="btn btn-outline-primary"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Back to Students</a>
+</header>
 
 <?php if (!empty($errors)): ?>
-<div class="alert alert-danger">
-    <ul class="mb-0">
-        <?php foreach ($errors as $e) echo "<li>" . htmlspecialchars($e) . "</li>"; ?>
-    </ul>
+<div class="alert alert-danger" role="alert" tabindex="-1" id="student-form-errors">
+    <strong>Please check the following details:</strong>
+    <ul class="mb-0 mt-2"><?php foreach ($errors as $e): ?><li><?= htmlspecialchars($e) ?></li><?php endforeach; ?></ul>
 </div>
 <?php endif; ?>
-
-<form method="POST" enctype="multipart/form-data" novalidate>
+<form method="POST" enctype="multipart/form-data" novalidate class="student-profile-form">
 <?= csrfField() ?>
-    <div class="row g-4">
-
-        <!-- Photo -->
-        <div class="col-lg-4">
-            <div class="card">
-                <div class="card-header"><i class="bi bi-camera me-2"></i>Photo</div>
-                <div class="card-body text-center">
-                    <img id="photoPreview"
-                         src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?>"
-                         class="rounded-circle mb-3"
-                         style="width:120px;height:120px;object-fit:cover;border:3px solid #1a56db">
-                    <div>
-                        <label for="photo" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-camera me-1"></i>Change Photo
-                        </label>
-                        <input type="file" id="photo" name="photo"
-                               accept="image/*" class="d-none"
-                               onchange="previewPhoto(this)">
-                    </div>
-                    <small class="text-muted d-block mt-1">Max 2MB (JPG, PNG)</small>
-                    <hr>
-                    <div class="text-start small">
-                        <div class="text-muted mb-1">QR Token</div>
-                        <code style="font-size:0.68rem;word-break:break-all">
-                            <?= sanitize($student['qr_token']) ?>
-                        </code>
-                        <div class="mt-2">
-                            <a href="generate_qr.php?id=<?= $id ?>"
-                               class="btn btn-sm btn-outline-success w-100">
-                                <i class="bi bi-qr-code me-1"></i>View QR Code
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Info -->
-        <div class="col-lg-8">
-            <div class="card mb-3">
-                <div class="card-header">
-                    <i class="bi bi-person me-2"></i>Student Information
-                </div>
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <label class="form-label">LRN <span class="text-danger">*</span></label>
-                            <input type="text" name="lrn" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['lrn'] ?? $student['lrn']) ?>"
-                                   maxlength="20" required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">First Name <span class="text-danger">*</span></label>
-                            <input type="text" name="first_name" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['first_name'] ?? $student['first_name']) ?>"
-                                   required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Middle Name</label>
-                            <input type="text" name="middle_name" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['middle_name'] ?? $student['middle_name']) ?>">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Last Name <span class="text-danger">*</span></label>
-                            <input type="text" name="last_name" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['last_name'] ?? $student['last_name']) ?>"
-                                   required>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Gender <span class="text-danger">*</span></label>
-                            <select name="gender" class="form-select" required>
-                                <option value="">Select...</option>
-                                <option value="Male"
-                                    <?= ($_POST['gender'] ?? $student['gender']) === 'Male' ? 'selected' : '' ?>>
-                                    Male
-                                </option>
-                                <option value="Female"
-                                    <?= ($_POST['gender'] ?? $student['gender']) === 'Female' ? 'selected' : '' ?>>
-                                    Female
-                                </option>
-                            </select>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Birth Date</label>
-                            <input type="date" name="birth_date" class="form-control"
-                                   value="<?= htmlspecialchars($_POST['birth_date'] ?? $student['birth_date']) ?>">
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label">Section</label>
+    <div class="student-form-layout">
+        <div class="student-form-main">
+            <section class="card students-card student-form-card mb-4" aria-labelledby="enrollment-heading">
+                <div class="card-header"><h2 id="enrollment-heading">Student Placement</h2></div>
+                <div class="card-body"><div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="section_id">Section</label>
                             <?php if ($managedEnrollment || !isAdmin()): ?>
                             <input type="hidden" name="section_id" value="<?= (int)$student['section_id'] ?>">
                             <?php endif; ?>
-                            <select name="section_id" class="form-select" <?= $managedEnrollment || !isAdmin() ? 'disabled' : '' ?>>
+                            <select id="section_id" name="section_id" class="form-select" <?= $managedEnrollment || !isAdmin() ? 'disabled' : '' ?>>
                                 <option value="">Select Section</option>
                                 <?php
                                 $currentGrade = '';
@@ -303,68 +215,141 @@ include '../includes/sidebar.php';
                             </select>
                             <?php if ($managedEnrollment): ?><small class="text-muted">Placement changes require an administrator. <?php if (isAdmin()): ?><a href="enrollment_corrections.php?student_id=<?= (int)$student['id'] ?>">Review enrollment correction</a><?php endif; ?></small><?php elseif (!isAdmin()): ?><small class="text-muted">Contact an administrator to transfer this student.</small><?php endif; ?>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label">Address</label>
-                            <textarea name="address" class="form-control" rows="2"><?= htmlspecialchars($_POST['address'] ?? $student['address']) ?></textarea>
-                        </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="placementYear">School Year</label>
+                        <input id="placementYear" class="form-control" value="<?= sanitize($student['school_year'] ?? '') ?>" readonly>
+                        <small class="student-field-help">Current student placement. Profile changes keep enrollment history intact.</small>
                     </div>
-                </div>
-            </div>
+                </div></div>
+            </section>
 
-            <!-- Parent -->
-            <div class="card">
-                <div class="card-header">
-                    <i class="bi bi-person-lines-fill me-2"></i>Parent / Guardian
-                </div>
+            <section class="card students-card student-form-card mb-4" aria-labelledby="student-info-heading">
+                <div class="card-header student-card-title"><h2 id="student-info-heading">Student Information</h2><small><span class="text-danger">*</span> Required fields</small></div>
                 <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="lrn">LRN <span class="text-danger">*</span></label>
+                            <input type="text" id="lrn" name="lrn" class="form-control"
+                                   value="<?= htmlspecialchars($_POST['lrn'] ?? $student['lrn']) ?>"
+                                   inputmode="numeric" maxlength="20" required>
+                        </div>
+
+                    </div>
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label">Name</label>
-                            <input type="text" name="parent_name" class="form-control"
+                            <label class="form-label" for="last_name">Last Name <span class="text-danger">*</span></label>
+                            <input type="text" id="last_name" name="last_name" class="form-control"
+                                   value="<?= htmlspecialchars($_POST['last_name'] ?? $student['last_name']) ?>"
+                                   required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="first_name">First Name <span class="text-danger">*</span></label>
+                            <input type="text" id="first_name" name="first_name" class="form-control"
+                                   value="<?= htmlspecialchars($_POST['first_name'] ?? $student['first_name']) ?>"
+                                   required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="middle_name">Middle Name <span class="student-optional">(optional)</span></label>
+                            <input type="text" id="middle_name" name="middle_name" class="form-control"
+                                   value="<?= htmlspecialchars($_POST['middle_name'] ?? $student['middle_name']) ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="birth_date">Birth Date</label>
+                            <input type="date" id="birth_date" name="birth_date" class="form-control"
+                                   value="<?= htmlspecialchars($_POST['birth_date'] ?? $student['birth_date']) ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="gender">Gender <span class="text-danger">*</span></label>
+                            <select id="gender" name="gender" class="form-select" required>
+                                <option value="">Select...</option>
+                                <option value="Male"
+                                    <?= ($_POST['gender'] ?? $student['gender']) === 'Male' ? 'selected' : '' ?>>
+                                    Male
+                                </option>
+                                <option value="Female"
+                                    <?= ($_POST['gender'] ?? $student['gender']) === 'Female' ? 'selected' : '' ?>>
+                                    Female
+                                </option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="address">Address</label>
+                            <textarea id="address" name="address" class="form-control" rows="2"><?= htmlspecialchars($_POST['address'] ?? $student['address']) ?></textarea>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+            <section class="card students-card student-form-card" aria-labelledby="guardian-heading">
+                <div class="card-header"><h2 id="guardian-heading">Parent / Guardian</h2></div>
+                <div class="card-body"><div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label" for="parent_name">Name</label>
+                            <input type="text" id="parent_name" name="parent_name" class="form-control"
                                    value="<?= htmlspecialchars($_POST['parent_name'] ?? $student['parent_name']) ?>">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">
+                            <label class="form-label" for="parent_contact">
                                 Contact
                                 <i class="bi bi-chat-dots-fill text-info ms-1"
                                    title="Used for SMS notifications"></i>
                             </label>
-                            <input type="text" name="parent_contact" class="form-control"
+                            <input type="text" id="parent_contact" name="parent_contact" class="form-control"
                                    placeholder="09XXXXXXXXX"
                                    value="<?= htmlspecialchars($_POST['parent_contact'] ?? $student['parent_contact']) ?>">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label">Email</label>
-                            <input type="email" name="parent_email" class="form-control"
+                            <label class="form-label" for="parent_email">Email</label>
+                            <input type="email" id="parent_email" name="parent_email" class="form-control"
                                    value="<?= htmlspecialchars($_POST['parent_email'] ?? $student['parent_email']) ?>">
                         </div>
+
+                </div></div>
+            </section>
+        </div>
+        <aside class="student-form-sidebar" aria-label="Student photo and QR identity">
+            <section class="card students-card student-form-card">
+                <div class="card-header student-card-title"><h2>Student Photo</h2><small>Optional</small></div>
+                <div class="card-body text-center">
+                    <img id="photoPreview" src="<?= BASE_URL ?>student_photo.php?id=<?= (int)$student['id'] ?>" class="student-photo-preview" alt="Student photo preview" width="120" height="120">
+                    <div class="student-photo-upload">
+                        <input type="file" id="photo" name="photo" accept="image/*" onchange="previewPhoto(this)" aria-label="Change Photo" aria-describedby="photo-help">
+                        <span class="btn btn-outline-primary" aria-hidden="true"><i class="bi bi-upload me-1"></i>Change Photo</span>
+                    </div>
+                    <small id="photo-help" class="student-field-help">Max 2 MB · JPG, PNG, GIF or WebP</small>
+                    <div class="student-qr-identity">
+                        <i class="bi bi-qr-code-scan" aria-hidden="true"></i>
+                        <h3>QR Identity</h3>
+                        <a href="generate_qr.php?id=<?= $id ?>" class="btn btn-outline-primary"><i class="bi bi-qr-code me-1" aria-hidden="true"></i>View QR Code</a>
+                        <p class="student-field-help mt-2 mb-0">The student's existing QR identity is retained.</p>
                     </div>
                 </div>
-            </div>
-
-            <div class="mt-3 d-flex gap-2">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-check-circle me-1"></i>Save Changes
-                </button>
-                <a href="view.php?id=<?= $id ?>" class="btn btn-outline-secondary">Cancel</a>
-            </div>
+            </section>
+        </aside>
+    </div>
+    <div class="student-form-actions">
+        <p>Review the changes before saving.</p>
+        <div class="student-action-buttons">
+            <a href="students.php" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-2" aria-hidden="true"></i>Save Changes</button>
         </div>
     </div>
 </form>
-
+</div>
 <?php
 $extraJS = <<<'JS'
 <script>
 function previewPhoto(input) {
     if (input.files && input.files[0]) {
         const reader = new FileReader();
-        reader.onload = e => {
-            document.getElementById('photoPreview').src = e.target.result;
-        };
+        reader.onload = e => { document.getElementById('photoPreview').src = e.target.result; };
         reader.readAsDataURL(input.files[0]);
     }
 }
+const studentErrors = document.getElementById('student-form-errors');
+if (studentErrors) studentErrors.focus();
 </script>
 JS;
+
 include '../includes/footer.php';
 ?>

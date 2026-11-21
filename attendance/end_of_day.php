@@ -26,7 +26,7 @@ catch (Throwable $e) { error_log('End-of-day review: ' . $e->getMessage()); $row
 include '../includes/header.php'; include '../includes/sidebar.php';
 ?>
 <?php showFlash(); ?>
-<div class="page-header"><div><h1 class="page-title">End of Day Review</h1><p class="page-subtitle">Students needing attention after their section's Time-Out window closes.</p></div></div>
+<div class="page-header analytics-template"><div><h1 class="page-title">End of Day Review</h1><p class="page-subtitle">Students needing attention after their section's Time-Out window closes.</p></div></div>
 <?php if ($error): ?><div class="alert alert-danger" role="alert"><?= sanitize($error) ?></div><?php endif; ?>
 <form method="get" class="d-flex gap-2 mb-3"><label for="reviewDate" class="form-label">Date</label><input id="reviewDate" type="date" name="date" value="<?= sanitize($date) ?>" max="<?= date('Y-m-d') ?>" class="form-control" style="max-width:200px"><button class="btn btn-outline-primary">View</button></form>
 <div class="alert alert-info">Existing remarks exclude a student from this list. Add an explanation such as “Excused” or “Sent Home Sick”. For missing Time-Out scans, select the checkbox to send a parent SMS when you submit. Missing scans alone do not confirm a child's whereabouts.</div>
@@ -34,7 +34,7 @@ include '../includes/header.php'; include '../includes/sidebar.php';
 <?php if ($rows): ?>
 <form method="post" id="endOfDayReviewForm">
 <input type="hidden" name="date" value="<?= sanitize($date) ?>"><input type="hidden" name="csrf" value="<?= sanitize($_SESSION['end_of_day_csrf']) ?>">
-<div class="card"><div class="card-header"><?= count($rows) ?> students need attention</div><div class="table-responsive"><table class="table mb-0"><thead><tr><th>Student / parent alert</th><th>Section</th><th>Needs attention</th><th>Teacher remark</th></tr></thead><tbody>
+<div class="card"><div class="card-header"><?= count($rows) ?> students need attention</div><div class="table-responsive"><table data-list-search="Search student name, grade, section or attendance issue..." data-list-title="End of Day Review" class="table mb-0"><thead><tr><th>Student / parent alert</th><th>Section</th><th>Needs attention</th><th>Teacher remark</th></tr></thead><tbody>
 <?php foreach ($rows as $row): $id = (int)$row['student_id']; ?>
 <tr><td>
 <?php if ($row['reason'] === 'incomplete' && !$row['notification_status'] && !empty($row['parent_contact'])): ?>

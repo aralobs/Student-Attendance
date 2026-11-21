@@ -1,5 +1,6 @@
 <?php
 // Generate the real section-page footer without an authenticated school request.
+define('BASE_URL', '/');
 $source = file_get_contents(__DIR__ . '/../sections/sections.php');
 $start = strpos($source, '$gradeDefaultsJson =');
 $end = strpos($source, "include '../includes/footer.php';", $start);

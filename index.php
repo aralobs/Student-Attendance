@@ -50,6 +50,7 @@ if ($kicked === 'session_taken') {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    requireCsrfPost();
     if (!is_string($_POST['username'] ?? null) || !is_string($_POST['password'] ?? null)) {
         http_response_code(400);
         exit('Invalid login request.');
@@ -94,6 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['full_name']     = $user['full_name'];
                 $_SESSION['role']          = $user['role'];
                 $_SESSION['session_token'] = $token;
+                unset($_SESSION['viewing_school_year']);
 
                 securityAuditContext((int)$user['id']);
                 $GLOBALS['security_audit_outcome'] = 'success';
@@ -124,7 +126,9 @@ $schoolName = getSetting('school_name') ?? 'San Pablo City Central School';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — <?= htmlspecialchars($schoolName) ?></title>
+    <title>Login — ASAM</title>
+    <link rel="icon" type="image/png" href="assets/img/school_logo.png">
+    <link rel="apple-touch-icon" href="assets/img/school_logo.png">
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
@@ -141,11 +145,11 @@ $schoolName = getSetting('school_name') ?? 'San Pablo City Central School';
     <div class="login-card fade-in">
 
         <div class="login-logo">
-            <i class="bi bi-mortarboard-fill"></i>
+            <img src="assets/img/school_logo.png" alt="School logo" width="72" height="72" style="object-fit:contain">
         </div>
 
         <h1 class="text-center login-title">
-            Student Attendance System
+            Automated Student Attendance Monitoring
         </h1>
         <p class="text-center login-sub">
             <?= htmlspecialchars($schoolName) ?>
@@ -171,6 +175,7 @@ $schoolName = getSetting('school_name') ?? 'San Pablo City Central School';
         <?php endif; ?>
 
         <form method="POST" novalidate>
+            <?= csrfField() ?>
             <div class="mb-3">
                 <label class="form-label">Username</label>
                 <div class="input-group">
@@ -215,7 +220,7 @@ $schoolName = getSetting('school_name') ?? 'San Pablo City Central School';
         </form>
 
         <div class="login-footer">
-            SPCCS Attendance System
+            ASAM
             <span class="sep"></span>
             v2.0
         </div>

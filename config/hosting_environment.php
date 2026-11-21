@@ -8,7 +8,8 @@ function loadHostingEnvironment(string $path): void {
         'BASE_URL', 'DB_TLS_CA', 'TRUSTED_PROXY_IPS', 'PII_KEY_FILE',
         'PII_ENCRYPTION_KEY', 'SETTINGS_ENCRYPTION_KEY', 'STUDENT_PHOTO_DIR',
         'SESSION_IDLE_TIMEOUT', 'SESSION_ABSOLUTE_TIMEOUT',
-        'SCANNER_SESSION_IDLE_TIMEOUT', 'SCANNER_SESSION_ABSOLUTE_TIMEOUT'];
+        'SCANNER_SESSION_IDLE_TIMEOUT', 'SCANNER_SESSION_ABSOLUTE_TIMEOUT',
+        'BACKUP_DIR','BACKUP_DUMP_BINARY','ATTENDANCE_INTERVENTION_ENABLED_AT'];
     foreach ($values as $name => $value) {
         if (!in_array($name, $allowed, true) || !is_string($value) || str_contains($value, "\0")) {
             throw new RuntimeException('Invalid private hosting configuration');

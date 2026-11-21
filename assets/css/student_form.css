@@ -1,0 +1,69 @@
+/* Enrollment and profile forms only; other student workflows retain their style. */
+.student-form-page { max-width: 1440px; margin: 0 auto; color: #14233f; }
+.student-form-page .student-breadcrumb { display: flex; flex-wrap: wrap; gap: .65rem; margin-bottom: .65rem; font-size: .875rem; color: #52627b; }
+.student-form-page .student-breadcrumb a { text-decoration: none; }
+.student-form-page .student-form-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+.student-form-page .student-form-heading h1 { font-size: clamp(1.65rem, 2.4vw, 2rem); font-weight: 700; margin: 0 0 .4rem; color: #10213d; }
+.student-form-page .student-form-heading p { margin: 0; font-size: 1rem; color: #52627b; }
+.student-form-page .btn { font-size: .9375rem; padding: .6rem 1rem; min-height: 44px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
+.student-form-page .student-mode { display: inline-flex; flex-wrap: wrap; border: 1px solid #ccd6e4; border-radius: 7px; overflow: hidden; margin-bottom: 1.5rem; background: #fff; }
+.student-form-page .student-mode a { display: inline-flex; align-items: center; justify-content: center; gap: .65rem; min-height: 48px; padding: .65rem 1.3rem; text-decoration: none; color: #253855; font-weight: 600; font-size: .9375rem; }
+.student-form-page .student-mode a.active { color: #fff; background: #1556db; }
+.student-form-page .student-mode a:not(.active):hover { background: #eef4ff; }
+.student-form-page .student-form-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr); align-items: start; gap: 24px; }
+.student-form-page .student-form-main, .student-form-page .student-form-sidebar { min-width: 0; }
+.student-form-page .student-form-card { border: 1px solid #dce3ed; border-radius: 9px; box-shadow: none; overflow: hidden; }
+.student-form-page .student-form-card:hover { box-shadow: none; }
+.student-form-page .student-form-card > .card-header { padding: 1.25rem 1.5rem 0; border: 0; background: #fff; border-radius: 9px 9px 0 0 !important; }
+.student-form-page .student-form-card h2 { font-size: 1.15rem; font-weight: 700; margin: 0; color: #14233f; }
+.student-form-page .student-card-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .5rem; }
+.student-form-page .student-card-title small { font-size: .8125rem; }
+.student-form-page .student-form-card .card-body { padding: 1.25rem 1.5rem 1.5rem; }
+.student-form-page .form-label { font-size: .875rem; font-weight: 600; margin-bottom: .4rem; color: #253855; }
+.student-form-page .form-control, .student-form-page .form-select { font-size: 1rem; min-height: 44px; border: 1px solid #cbd5e1; border-radius: 6px; color: #24344e; padding: .6rem .75rem; }
+.student-form-page .form-select { padding-right: 2.25rem; text-overflow: ellipsis; }
+.student-form-page .form-control::placeholder { color: #6b7890; opacity: 1; }
+.student-form-page .form-control:focus, .student-form-page .form-select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgb(37 99 235 / 14%); }
+.student-form-page .form-control:disabled, .student-form-page .form-control[readonly], .student-form-page .form-select:disabled { background-color: #f3f6fa; color: #52627b; }
+.student-form-page .student-field-help { display: block; margin-top: .4rem; font-size: .8125rem; line-height: 1.5; color: #596b84; }
+.student-form-page .student-optional { font-size: .8125rem; font-weight: 400; color: #596b84; }
+.student-form-page .student-photo-preview { display: block; width: 120px; height: 120px; margin: .25rem auto 1.25rem; border: 1px solid #d6e3fc; border-radius: 50%; object-fit: cover; background: #edf3ff; }
+.student-form-page .student-photo-upload { position: relative; display: inline-block; max-width: 100%; }
+.student-form-page .student-photo-upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; z-index: 1; }
+.student-form-page .student-photo-upload:focus-within { border-radius: 6px; outline: 3px solid #2563eb; outline-offset: 3px; }
+.student-form-page .student-photo-upload:hover .btn { background: #eef4ff; color: #1556db; }
+.student-form-page .student-qr-identity { border-top: 1px solid #dce3ed; margin-top: 1.5rem; padding-top: 1.5rem; }
+.student-form-page .student-qr-identity > .bi { font-size: 2rem; color: #6680a6; }
+.student-form-page .student-qr-identity h3 { font-size: 1rem; font-weight: 700; margin: .6rem 0; }
+.student-form-page .student-form-actions { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1.5rem; padding: 1rem 1.5rem; border: 1px solid #dce3ed; border-radius: 9px 9px 0 0; background: #fff; box-shadow: 0 -3px 12px rgb(15 23 42 / 4%); }
+.student-form-page .student-form-actions p { margin: 0; color: #52627b; font-size: .875rem; }
+.student-form-page .student-action-buttons { display: flex; gap: .75rem; flex-shrink: 0; }
+.student-form-page .student-action-buttons .btn-primary { min-width: 160px; background: #1556db; border-color: #1556db; }
+.student-form-page .student-action-buttons .btn-primary:hover { background: #1045b4; }
+.student-form-page .student-search-controls { display: flex; align-items: stretch; gap: .75rem; }
+.student-form-page .student-search-controls .form-control { min-width: 0; }
+.student-form-page .student-search-controls .btn { flex-shrink: 0; }
+.student-form-page .student-search-list { list-style: none; padding: 0; margin: 0; max-height: 360px; overflow-y: auto; }
+.student-form-page .student-search-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .85rem 0; border-bottom: 1px solid #e2e8f0; }
+.student-form-page .student-search-list li:last-child { border-bottom: 0; }
+.student-form-page .student-search-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.student-form-page .student-search-list .btn { flex-shrink: 0; }
+.student-form-page .student-archived-status { max-width: 45%; color: #8a5700; font-size: .875rem; }
+.student-form-page .student-selected-identity { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; border: 1px solid #c8d9fb; border-radius: 6px; padding: .85rem; background: #f0f5ff; font-size: .875rem; overflow-wrap: anywhere; }
+.student-form-page .student-selected-identity a { margin-left: auto; }
+@media (max-width: 1199.98px) {
+    .student-form-page .student-form-layout { grid-template-columns: minmax(0, 2.5fr) minmax(220px, 1fr); gap: 20px; }
+    .student-form-page .student-form-card > .card-header { padding: 1.1rem 1.1rem 0; }
+    .student-form-page .student-form-card .card-body { padding: 1.1rem; }
+}
+@media (max-width: 991.98px) {
+    .student-form-page .student-form-layout { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 575.98px) {
+    .student-form-page .student-form-heading { align-items: flex-start; }
+    .student-form-page .student-mode { display: flex; }
+    .student-form-page .student-mode a { flex: 1 1 0; padding: .65rem .7rem; font-size: .875rem; gap: .4rem; }
+    .student-form-page .student-form-actions { flex-direction: column; align-items: stretch; padding: .75rem; gap: .6rem; }
+    .student-form-page .student-form-actions p { font-size: .8125rem; }
+    .student-form-page .student-action-buttons .btn { flex: 1; min-width: 0; padding: .6rem .75rem; }
+}

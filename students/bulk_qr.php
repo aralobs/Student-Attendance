@@ -37,7 +37,7 @@ include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
-<div class="page-header no-print">
+<div class="page-header analytics-template no-print">
     <div>
         <h1 class="page-title">
             <i class="bi bi-grid-3x3 me-2 text-primary"></i>Bulk QR Print

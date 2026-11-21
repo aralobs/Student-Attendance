@@ -51,7 +51,9 @@ function closedSessionAbsences(array $record, array $section, string $date, Date
     if (($record['attendance_type'] ?? '') === 'holiday' || trim($record['remarks'] ?? '') !== '') return $record;
     $schedule = getAttendanceScheduleType($section);
     $end = $section[$schedule === 'am_only' ? 'am_out_end' : 'pm_out_end'] ?? null;
-    if (!$end) return $record;
+    // Legacy sections use midnight as an unset time. Treating that placeholder
+    // as a valid same-day cutoff marks learners absent before morning classes.
+    if (!$end || $end === '00:00:00') return $record;
     $cutoff = new DateTimeImmutable($date . ' ' . $end, $now->getTimezone());
     if ($now < $cutoff) return $record;
     foreach (['student_created_at', 'section_created_at'] as $field) {
@@ -128,6 +130,7 @@ function finalizeAttendanceAbsences(string $date, ?int $sectionId = null, ?DateT
  * attendance. Eligibility is re-read for this learning date, never from caches. */
 function finalizeEnrollmentAttendanceDate(PDO $db, string $date, ?int $sectionId, DateTimeImmutable $now, bool $reconcileOnly = false): int
 {
+    require_once __DIR__.'/delivery_modes.php';
     requireAttendanceFinalizerWorker();
     unset($GLOBALS['security_audit_actor'],$GLOBALS['security_audit_device']);
     validatedSchoolYearDate($date);
@@ -142,6 +145,15 @@ function finalizeEnrollmentAttendanceDate(PDO $db, string $date, ?int $sectionId
         try {
             $locked=lockAttendanceEnrollment($db,(int)$candidate['student_id'],$date,null,$sectionId);
             $ctx=$locked['context']; $section=$locked['section'];
+            if (panelTableAvailable($db,'delivery_modes')) {
+                $delivery=resolveDeliveryDay($db,$ctx['school_year_id'],$ctx['section_id'],$date);
+                if (!$delivery['eligible'] || $delivery['mode']!=='face_to_face') { $db->commit(); continue; }
+            }
+            if (panelTableAvailable($db,'attendance_decisions')) {
+                $decision=$db->prepare('SELECT id FROM attendance_decisions WHERE enrollment_id=? AND learning_date=? FOR UPDATE');
+                $decision->execute([$ctx['enrollment_id'],$date]);
+                if ($decision->fetchColumn()) { $db->commit(); continue; }
+            }
             $read=$db->prepare('SELECT * FROM attendance WHERE student_id=? AND date=? FOR UPDATE');
             $read->execute([$ctx['student_id'],$date]); $before=$read->fetch(PDO::FETCH_ASSOC);
             if ($before) verifyAttendanceEnrollment($before,$ctx);

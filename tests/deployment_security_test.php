@@ -17,7 +17,7 @@ try {
     $options=databasePDOOptions($fixture.'/ca.pem');
     deployCheck($options[PDO::MYSQL_ATTR_SSL_CA]===$fixture.'/ca.pem' && $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT]===true,'Database TLS verification disabled');
     putenv('APP_ENV=production');deployCheck(deploymentIsProduction(),'Explicit production mode ignored');putenv('APP_ENV=development');deployCheck(!deploymentIsProduction(),'Local mode lost');putenv('APP_ENV');
-    $env=getenv();foreach(['MYSQLHOST','MYSQLPORT','MYSQLUSER','MYSQLPASSWORD','MYSQLDATABASE','DB_TLS_CA','TRUSTED_PROXY_IPS'] as $key) unset($env[$key]);
+    $env=getenv();foreach(['DB_TLS_CA','TRUSTED_PROXY_IPS'] as $key) unset($env[$key]);
     $env['APP_ENV']='production';$env['DB_HOST']='localhost';$env['DB_PORT']='3306';$env['DB_USER']='school_fixture';
     $env['DB_PASS']='SECRET_FIXTURE_CREDENTIAL';$env['DB_NAME']='school_fixture';$env['BASE_URL']='https://school.example.test/';
     $router='<?php require_once '.var_export($root.'/config/deployment_security.php',true).';' . <<<'PHP'

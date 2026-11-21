@@ -12,7 +12,10 @@ function enrollmentMigrationPrivatePath(string $path, bool $existing): string
     $resolved=$parent.DIRECTORY_SEPARATOR.basename($path);
     $normalized=strtolower(str_replace('\\','/',$resolved));
     $root=strtolower(str_replace('\\','/',(string)realpath(dirname(__DIR__))));
-    $documentRoot=realpath($_SERVER['DOCUMENT_ROOT']??'');
+    // CLI leaves DOCUMENT_ROOT empty. realpath('') resolves the working
+    // directory and would incorrectly classify the whole cron home as public.
+    $configuredDocumentRoot=$_SERVER['DOCUMENT_ROOT']??'';
+    $documentRoot=$configuredDocumentRoot!==''?realpath($configuredDocumentRoot):false;
     if (str_starts_with($normalized,$root.'/') || preg_match('~/(?:htdocs|public_html|wwwroot|www)/~',$normalized)
         || ($documentRoot && str_starts_with($normalized,strtolower(str_replace('\\','/',$documentRoot)).'/'))) throw new InvalidArgumentException('Inventory and mapping files must be outside public directories.');
     if ($existing && (!is_file($resolved) || !is_readable($resolved))) throw new InvalidArgumentException('Private input is unavailable.');
@@ -99,6 +102,16 @@ try {
     }
 } catch (Throwable $error) {
     // Never print raw JSON, paths, SQL, student records, or connection details.
+    if (!$commandValidated && $error instanceof InvalidArgumentException) {
+        $safeReasons = [
+            'Local private path required.' => 'PRIVATE_PATH_FORMAT: use a local filesystem path.',
+            'Private destination is unavailable.' => 'PRIVATE_DIRECTORY: parent folder is missing, inaccessible, or the file is a symlink.',
+            'Inventory and mapping files must be outside public directories.' => 'PUBLIC_DIRECTORY: mapping path was classified as web-accessible.',
+            'Private input is unavailable.' => 'PRIVATE_INPUT: mapping file was not found or is unreadable at the supplied path.',
+            'Private destination already exists.' => 'OUTPUT_EXISTS: choose a new private output filename.',
+        ];
+        if (isset($safeReasons[$error->getMessage()])) fwrite(STDERR, $safeReasons[$error->getMessage()] . "\n");
+    }
     fwrite(STDERR,($commandValidated ? 'Enrollment migration command failed. Schema progress is retained on DDL failure. ' : '')."Usage: php migrations/school_year_enrollment.php --schema | --inventory --output=<private-path> | --apply-map=<private-json-path> --actor-id=<admin-id> | --readiness=<year-id> --output=<private-path> | --initialize-preview=<year-id> --actor-id=<admin-id> --output=<private-path> | --initialize=<year-id> --fingerprint=<hash> --actor-id=<admin-id>\n");
     exit($commandValidated ? 1 : 2);
 }

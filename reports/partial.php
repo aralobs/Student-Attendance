@@ -13,8 +13,9 @@ require_once '../includes/enrollment_reports.php';
 
 $pageTitle       = 'Partial Attendance';
 $db              = getDB();
-$dateFrom        = $_GET['date_from']  ?? date('Y-m-d');
-$dateTo          = $_GET['date_to']    ?? date('Y-m-d');
+$defaultReportDate = enrollmentReportDefaultDate($db);
+$dateFrom        = $_GET['date_from']  ?? date('Y-m-d', strtotime($defaultReportDate));
+$dateTo          = $_GET['date_to']    ?? date('Y-m-d', strtotime($defaultReportDate));
 $sectionId       = (int)($_GET['section'] ?? 0);
 $gradeLevel      = $_GET['grade']         ?? '';
 $reportContext = prepareEnrollmentReport($db, $dateFrom, $dateTo, $sectionId ?: null);
@@ -62,7 +63,7 @@ include '../includes/sidebar.php';
 enrollmentReportNotice($reportContext);
 ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-clock-history me-2 text-warning"></i>Partial Attendance
@@ -106,13 +107,9 @@ enrollmentReportNotice($reportContext);
             <?php endif; ?>
             <div class="col-md-3">
                 <label class="form-label mb-1 small fw-600">Section</label>
-                <select name="section" class="form-select form-select-sm">
+                <select name="section" class="form-select form-select-sm" data-section-filter>
                     <option value="0">All</option>
-                    <?php foreach($allowedSections as $s): ?>
-                    <option value="<?=$s['id']?>" <?=$sectionId==$s['id']?'selected':''?>>
-                        <?= sanitize($s['grade_level'].' — '.$s['section_name']) ?>
-                    </option>
-                    <?php endforeach; ?>
+                    <?php renderSectionFilterOptions($allowedSections, $sectionId, $gradeLevel); ?>
                 </select>
             </div>
             <div class="col-auto">

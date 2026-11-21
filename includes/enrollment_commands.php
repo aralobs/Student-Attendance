@@ -6,7 +6,7 @@ require_once __DIR__ . '/enrollment_access.php';
 function lockAnnualEnrollmentDestination(PDO $db, array $actor, int $yearId, int $sectionId, string $start, string $end): array
 {
     if (!$db->inTransaction()) throw new LogicException('Enrollment locks require a transaction.');
-    if (!in_array($actor['role'] ?? '', ['admin','teacher'], true) || (int)($actor['id'] ?? 0) <= 0) throw new DomainException('Enrollment creation access denied.');
+    if (($actor['role'] ?? '') !== 'admin' || (int)($actor['id'] ?? 0) <= 0) throw new DomainException('Enrollment creation is restricted to administrators.');
     if (!$db->query('SELECT id FROM school_year_control WHERE id=1 FOR UPDATE')->fetchColumn()) throw new DomainException('School-year control is not initialized.');
     if (!enrollmentModelEnabled($db)) throw new DomainException('Annual enrollment is not enabled.');
     $years = $db->query('SELECT * FROM school_years ORDER BY id FOR UPDATE')->fetchAll(PDO::FETCH_ASSOC);

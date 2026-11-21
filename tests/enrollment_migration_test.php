@@ -156,7 +156,7 @@ withEnrollmentFixture(function (array $f): void {
 
 withEnrollmentFixture(function (array $f): void {
     $run=static function(array $args) use ($f): array {
-        $env=getenv(); $env['MYSQLDATABASE']=$f['database']; $env['APP_ENV']='testing';
+        $env=enrollmentFixtureCliEnvironment($f);
         $process=proc_open(array_merge([PHP_BINARY,__DIR__.'/../migrations/school_year_enrollment.php'],$args),[0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,null,$env);
         if (!is_resource($process)) throw new RuntimeException('CLI subprocess unavailable');
         fclose($pipes[0]); $out=stream_get_contents($pipes[1]); $err=stream_get_contents($pipes[2]); fclose($pipes[1]); fclose($pipes[2]);

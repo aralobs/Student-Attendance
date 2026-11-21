@@ -391,3 +391,67 @@ CREATE TABLE IF NOT EXISTS enrollment_schema_progress (
     step_key VARCHAR(100) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
     completed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+-- Pending panel revisions: delivery, decisions, interventions, backups.
+CREATE TABLE IF NOT EXISTS delivery_modes (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, school_year_id INT NOT NULL,
+        scope_section_id INT NOT NULL DEFAULT 0, learning_date DATE NOT NULL,
+        mode ENUM('face_to_face','online','modular') NOT NULL, deadline_at DATETIME NULL,
+        recorded_by INT NOT NULL, revision INT NOT NULL DEFAULT 1,
+        UNIQUE KEY delivery_scope(school_year_id,scope_section_id,learning_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS attendance_decisions (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY, enrollment_id INT NOT NULL, assignment_id INT NOT NULL,
+        learning_date DATE NOT NULL, decision VARCHAR(24) NOT NULL, delivery_mode VARCHAR(16) NOT NULL,
+        participation_method VARCHAR(40) NULL, reason_ciphertext TEXT NULL, recorded_by INT NOT NULL,
+        revision INT NOT NULL DEFAULT 1, confirmed_at DATETIME NOT NULL,
+        UNIQUE KEY decision_day(enrollment_id,learning_date), KEY decision_assignment(assignment_id,learning_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    CREATE TABLE IF NOT EXISTS attendance_recompute_queue (
+        enrollment_id INT PRIMARY KEY, from_date DATE NOT NULL, revision BIGINT NOT NULL DEFAULT 1
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS absence_episodes (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,enrollment_id INT NOT NULL,starts_on DATE NOT NULL,ends_on DATE NOT NULL,
+        absence_count INT NOT NULL,state VARCHAR(32) NOT NULL,threshold_date DATE NULL,blocked_on DATE NULL,
+        notification_owner VARCHAR(64) NOT NULL,active TINYINT NOT NULL DEFAULT 1, is_current TINYINT NOT NULL DEFAULT 1,
+        UNIQUE KEY episode_start(enrollment_id,starts_on),KEY episode_enrollment(enrollment_id,active)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    CREATE TABLE IF NOT EXISTS absence_notifications (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,notification_owner VARCHAR(64) NOT NULL,
+        episode_id BIGINT UNSIGNED NOT NULL,enrollment_id INT NOT NULL,threshold_date DATE NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',superseded TINYINT NOT NULL DEFAULT 0,
+        attempted_at DATETIME NULL, completed_at DATETIME NULL, UNIQUE KEY intervention_owner(notification_owner)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS database_backups (
+      id CHAR(32) PRIMARY KEY,kind ENUM('daily','manual') NOT NULL,daily_date DATE NULL,
+      status ENUM('queued','running','completed','failed','expired') NOT NULL DEFAULT 'queued',
+      created_at DATETIME NOT NULL,completed_at DATETIME NULL,created_by INT NULL,
+      relative_path VARCHAR(160) NULL,bytes BIGINT UNSIGNED NULL,sha256 CHAR(64) NULL,
+      monthly_until DATETIME NULL,retained_until DATETIME NULL,
+      UNIQUE KEY daily_backup(daily_date),KEY backup_rotation(status,created_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+ALTER TABLE sms_logs MODIFY type ENUM('am_arrival','am_departure','pm_arrival','pm_departure','absence','missing_checkout','intervention') NOT NULL;
+
+
+-- Daily manual absence notice reservation.
+CREATE TABLE IF NOT EXISTS attendance_absence_notifications (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,enrollment_id INT NOT NULL,learning_date DATE NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'pending',attempted_at DATETIME NULL,completed_at DATETIME NULL,
+        UNIQUE KEY daily_absence_notice(enrollment_id,learning_date)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
+-- Class adviser requests and intervention follow-ups.
+CREATE TABLE IF NOT EXISTS learner_change_requests (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,student_id INT NOT NULL,section_id INT NOT NULL,
+        school_year_id INT NULL,kind VARCHAR(24) NOT NULL,details_ciphertext TEXT NOT NULL,
+        requested_by INT NOT NULL,status VARCHAR(16) NOT NULL DEFAULT 'pending',
+        review_ciphertext TEXT NULL,reviewed_by INT NULL,created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        reviewed_at DATETIME NULL,KEY request_section(section_id,status)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    CREATE TABLE IF NOT EXISTS intervention_followups (
+        id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,episode_id BIGINT UNSIGNED NOT NULL,
+        outcome VARCHAR(24) NOT NULL,note_ciphertext TEXT NOT NULL,recorded_by INT NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,KEY followup_episode(episode_id,id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

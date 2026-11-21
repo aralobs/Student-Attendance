@@ -1,0 +1,38 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/support/enrollment_fixture.php';
+$service=dirname(__DIR__).'/includes/viewing_school_year.php';
+if(is_file($service)) require_once $service;
+withEnrollmentFixture(function(array $f):void {
+ checkEnrollment(function_exists('viewingSchoolYear'),'Shared viewing-year resolver exists');
+ $db=$f['db']; $_SESSION=[]; $_GET=[];
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===1,'New session defaults active');
+ $_GET=['view_school_year'=>'2'];
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===2,'Explicit selector changes view');
+ $_GET=[];
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===2,'Navigation retains viewing year');
+ $_GET=['school_year_id'=>'1'];
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===1,'Deep links override view');
+ $_GET=[];
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===2,'Deep links do not overwrite preference');
+ $_GET=['view_school_year'=>'current'];
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===1,'Return current resets view');
+ $_GET=['view_school_year'=>['2']];
+ expectEnrollmentError(InvalidArgumentException::class,fn()=>viewingSchoolYear($db,$f['teacher']));
+ $_GET=['view_school_year'=>'999'];
+ expectEnrollmentError(DomainException::class,fn()=>viewingSchoolYear($db,$f['teacher']));
+ $_GET=['view_school_year'=>'2']; viewingSchoolYear($db,$f['teacher']); $_GET=[];
+ $db->exec('UPDATE sections SET adviser_id=8 WHERE school_year_id=2');
+ checkEnrollment((int)viewingSchoolYear($db,$f['teacher'])['id']===1,'Revoked remembered access falls back');
+ $_GET=['view_school_year'=>'2'];
+ expectEnrollmentError(DomainException::class,fn()=>viewingSchoolYear($db,$f['teacher']));
+ $_GET=[];
+ checkEnrollment((int)viewingSchoolYear($db,$f['otherTeacher'])['id']===1,'Preference cannot leak between actors');
+ checkEnrollment((int)getActiveSchoolYear($db)['id']===1,'Viewing never changes active year');
+ $_GET=['grade'=>'Grade 3','section'=>'10','date'=>'2026-10-21'];
+ ob_start();renderViewingSchoolYearControl($db,$f['teacher'],getActiveSchoolYear($db));$control=ob_get_clean();
+ checkEnrollment(!str_contains($control,'name="grade"')&&!str_contains($control,'name="section"')&&!str_contains($control,'name="date"'),'Year switch clears dependent filters');
+ checkEnrollment(str_contains($control,'</select>'),'Shared control closes its select before actions');
+ expectEnrollmentError(DomainException::class,fn()=>viewingSchoolYear($db,['id'=>99,'role'=>'scanner_operator']));
+});
+echo "Shared viewing-year tests passed.\n";

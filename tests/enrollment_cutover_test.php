@@ -6,7 +6,7 @@ require_once dirname(__DIR__).'/includes/moving_up.php';
 
 function cutoverCli(array $f, array $args): array
 {
-    $env=getenv(); $env['MYSQLDATABASE']=$f['database']; $env['APP_ENV']='testing';
+    $env=enrollmentFixtureCliEnvironment($f);
     $process=proc_open(array_merge([PHP_BINARY,dirname(__DIR__).'/migrations/school_year_enrollment.php'],$args),
         [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,null,$env);
     if (!is_resource($process)) throw new RuntimeException('Cutover CLI process unavailable');

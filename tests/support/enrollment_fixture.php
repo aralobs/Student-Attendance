@@ -17,6 +17,20 @@ function expectEnrollmentError(string $class, callable $operation): void
     throw new RuntimeException('Expected exception: ' . $class);
 }
 
+/** Bind real CLI entry points to the same disposable server as their parent fixture. */
+function enrollmentFixtureCliEnvironment(array $fixture): array
+{
+    if (!preg_match('/\Aenrollment_test_[0-9a-f]{16}\z/', $fixture['database'] ?? '')) throw new RuntimeException('Synthetic database required');
+    $env=getenv();
+    $env['DB_HOST']=getenv('MYSQLHOST') ?: '127.0.0.1';
+    $env['DB_PORT']=getenv('MYSQLPORT') ?: '3307';
+    $env['DB_USER']=getenv('MYSQLUSER') !== false ? getenv('MYSQLUSER') : 'root';
+    $env['DB_PASS']=getenv('MYSQLPASSWORD') !== false ? getenv('MYSQLPASSWORD') : '';
+    $env['DB_NAME']=$env['MYSQLDATABASE']=$fixture['database'];
+    $env['APP_ENV']='testing';
+    return $env;
+}
+
 /** Only synthetic data; never loads application connection configuration or sends notifications.
  * Options: legacy=true leaves enrollment schema/seed absent; schema selects an allowed fresh import.
  */

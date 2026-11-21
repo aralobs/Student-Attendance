@@ -29,7 +29,6 @@ if ($reportContext['managed']) {
     if (!$reportContext['historical']) $allRows=array_values(array_filter($allRows,fn($row)=>(int)$row['is_active']===1));
     $total=count($allRows); $students=array_slice($allRows,$offset,$perPage);
     $sections=$reportContext['sections'];
-    $schoolYears=enrollmentReportYearLabels($db,currentUser());
 } else {
 [$studentScope, $scopeParams] = studentRecordScope('s');
 $where  = ['s.is_active = 1', "({$studentScope})"];
@@ -80,15 +79,6 @@ $students = $stmt->fetchAll();
 // Sections dropdown
 $sections = getAllowedSections();
 
-// School years dropdown (distinct)
-$yearStmt = $db->prepare("
-    SELECT DISTINCT school_year FROM students s
-    WHERE school_year IS NOT NULL AND school_year != '' AND ({$studentScope})
-    ORDER BY school_year DESC
-");
-$yearStmt->execute($scopeParams);
-$schoolYears = $yearStmt->fetchAll(PDO::FETCH_COLUMN);
-
 }
 
 // Grade levels for filter
@@ -101,12 +91,13 @@ enrollmentReportNotice($reportContext);
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="students-page">
+<div class="card students-card mb-4">
+<div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-3">
     <div>
-        <h1 class="page-title"><i class="bi bi-people-fill me-2 text-primary"></i>Students</h1>
-        <p class="page-subtitle">Manage kindergarten students</p>
+        <h1 class="h6 mb-0"><i class="bi bi-people-fill me-2 text-primary" aria-hidden="true"></i>Students</h1>
     </div>
-    <div class="d-flex gap-2 flex-wrap">
+    <div class="students-actions d-flex gap-2 flex-wrap">
         <a href="archived.php" class="btn btn-outline-warning">
             <i class="bi bi-archive me-1"></i>Archived
         </a>
@@ -118,39 +109,39 @@ enrollmentReportNotice($reportContext);
         <a href="section_advisers.php" class="btn btn-outline-secondary">
             <i class="bi bi-person-badge me-1"></i>Assign Advisers
         </a>
-        <?php endif; ?>
         <?php if (enrollmentModelEnabled($db)): ?><a href="enroll.php" class="btn btn-outline-primary">Returning Student Enrollment</a><?php endif; ?>
         <a href="add.php" class="btn btn-primary">
             <i class="bi bi-person-plus-fill me-1"></i>Add Student
         </a>
+        <?php endif; ?>
+        <a href="change_requests.php" class="btn btn-outline-primary">Change Requests</a>
     </div>
 </div>
 
 <!-- Filters -->
-<div class="card mb-3">
-    <div class="card-body py-2">
-        <form method="GET" class="row g-2 align-items-center">
-            <div class="col-md-4">
+    <div class="card-body">
+        <div class="section-divider"><i class="bi bi-funnel" aria-hidden="true"></i>Find Students</div>
+        <form method="GET" class="row g-2 align-items-end">
+            <input type="hidden" name="sy" value="<?= sanitize($sy) ?>">
+            <div class="col-md-5">
+                <label for="studentSearch" class="form-label">Search</label>
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="text" name="search" class="form-control"
+                    <input id="studentSearch" type="text" name="search" class="form-control"
                            placeholder="Search name or LRN..."
                            value="<?= htmlspecialchars($search) ?>">
                 </div>
             </div>
-            <div class="col-md-2">
-                <select name="section" class="form-select form-select-sm">
+            <div class="col-md-3">
+                <label for="studentSection" class="form-label">Section</label>
+                <select id="studentSection" name="section" class="form-select form-select-sm" data-section-filter>
                     <option value="">All Sections</option>
-                    <?php foreach ($sections as $sec): ?>
-                    <option value="<?= $sec['id'] ?>"
-                            <?= $sectionId == $sec['id'] ? 'selected' : '' ?>>
-                        <?= sanitize($sec['section_name']) ?>
-                    </option>
-                    <?php endforeach; ?>
+                    <?php renderSectionFilterOptions($sections, $sectionId, $grade); ?>
                 </select>
             </div>
             <div class="col-md-2">
-                <select name="grade" class="form-select form-select-sm">
+                <label for="studentGrade" class="form-label">Grade</label>
+                <select id="studentGrade" name="grade" class="form-select form-select-sm">
                     <option value="">All Grades</option>
                     <?php foreach ($gradeLevels as $g): ?>
                     <option value="<?= $g ?>" <?= $grade === $g ? 'selected' : '' ?>>
@@ -159,19 +150,9 @@ enrollmentReportNotice($reportContext);
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-2">
-                <select name="sy" class="form-select form-select-sm">
-                    <option value="">All School Years</option>
-                    <?php foreach ($schoolYears as $y): ?>
-                    <option value="<?= sanitize($y) ?>" <?= $sy === $y ? 'selected' : '' ?>>
-                        <?= sanitize($y) ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <div class="col-auto">
-                <button type="submit" class="btn btn-primary btn-sm">Filter</button>
-                <a href="students.php" class="btn btn-outline-secondary btn-sm">Reset</a>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1" aria-hidden="true"></i>Apply</button>
+                <a href="students.php<?= $sy !== '' ? '?sy=' . urlencode($sy) : '' ?>" class="btn btn-outline-secondary btn-sm">Reset</a>
             </div>
         </form>
 
@@ -188,7 +169,7 @@ enrollmentReportNotice($reportContext);
 </div>
 
 <!-- Bulk action bar (shown only when rows are selected) -->
-<div class="card mb-3 d-none" id="bulkBar">
+<div class="card students-card mb-3 d-none" id="bulkBar">
     <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
         <span class="me-2"><strong id="bulkCount">0</strong> selected</span>
         <?php if (enrollmentModelEnabled($db)): ?>
@@ -216,8 +197,8 @@ enrollmentReportNotice($reportContext);
 </div>
 
 <!-- Student Table -->
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
+<div class="card students-card students-list">
+    <div class="card-header d-flex justify-content-center align-items-center text-center">
         <span>
             <i class="bi bi-table me-1"></i>
             Student List
@@ -229,11 +210,11 @@ enrollmentReportNotice($reportContext);
 <?= csrfField() ?>
         </form>
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover students-table mb-0">
                 <thead>
                     <tr>
                         <th style="width:36px;">
-                            <input type="checkbox" class="form-check-input" id="selectAll">
+                            <input type="checkbox" class="form-check-input" id="selectAll" aria-label="Select all students">
                         </th>
                         <th>#</th>
                         <th>Photo</th>
@@ -300,8 +281,8 @@ enrollmentReportNotice($reportContext);
                                    class="btn btn-sm btn-outline-info" title="View">
                                     <i class="bi bi-eye"></i>
                                 </a>
-                                <a href="edit.php?id=<?= $s['id'] ?>"
-                                   class="btn btn-sm btn-outline-primary" title="Edit">
+                                <a href="<?= isAdmin()?'edit.php?id=':'change_requests.php?student_id=' ?><?= $s['id'] ?>"
+                                   class="btn btn-sm btn-outline-primary" title="<?= isAdmin()?'Edit':'Request Change' ?>">
                                     <i class="bi bi-pencil"></i>
                                 </a>
                                 <a href="generate_qr.php?id=<?= $s['id'] ?>"
@@ -343,6 +324,7 @@ enrollmentReportNotice($reportContext);
         <?= paginate($total, $perPage, $page, 'students.php?search=' . urlencode($search) . '&section=' . $sectionId . '&grade=' . urlencode($grade) . '&sy=' . urlencode($sy)) ?>
     </div>
     <?php endif; ?>
+</div>
 </div>
 
 <?php

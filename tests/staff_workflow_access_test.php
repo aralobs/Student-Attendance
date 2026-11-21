@@ -9,7 +9,8 @@ $routes = ['attendance/attendance.php', 'reports/daily.php', 'reports/by_student
 foreach (['', '/config', '/includes', '/attendance', '/reports', '/analytics', '/calendar'] as $dir) mkdir($fixture . $dir);
 foreach (array_merge($routes, ['includes/functions.php', 'includes/end_of_day_alerts.php',
     'includes/attendance_finalizer.php', 'includes/settings_security.php', 'includes/csrf.php',
-    'includes/sms_status.php','includes/notification_templates.php','includes/enrollment_reports.php','includes/enrollment_operations.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php',
+    'includes/section_filter.php','includes/teacher_attendance_policy.php','includes/analytics_absence_reasons.php','includes/attendance_decisions.php','includes/delivery_modes.php','includes/manual_absence_notifications.php','includes/pii_security.php',
+    'includes/sms_status.php','includes/notification_templates.php','includes/enrollment_reports.php','includes/viewing_school_year.php','includes/enrollment_operations.php','includes/enrollment_access.php','includes/enrollment_repository.php','includes/school_years.php',
     'includes/abuse_security.php', 'includes/sidebar.php', 'includes/footer.php', 'config/schedule_rules.php']) as $file) {
     copy($root . '/' . $file, $fixture . '/' . $file);
 }
@@ -97,6 +98,7 @@ class ScopeStatement {
 }
 class ScopeDB { function prepare($sql) { return new ScopeStatement; } }
 function getDB() { return new ScopeDB; }
+function enrollmentReportDefaultDate($db) { return date('Y-m-d'); }
 function prepareEnrollmentReport($db,$from,$to) { return ['managed'=>false,'students'=>'students','attendance'=>'attendance','join'=>'','year'=>null]; }
 function enrollmentReportDay($context,$date) { return true; }
 PHP

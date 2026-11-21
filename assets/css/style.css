@@ -490,6 +490,7 @@ body {
         padding: 4px;
     }
     .entry-label { display: none; }
+    .calendar-cell .delivery-label { display: block; font-size: 0.55rem; }
     .day-number  { font-size: 0.75rem; }
     .calendar-day-header { font-size: 0.65rem; padding: 4px 2px; }
 }
@@ -538,4 +539,71 @@ body {
 .summary-box hr {
     border-color: #e2e8f0;
     opacity: 1;
+}
+
+/* Keep the year filter in the existing navbar, above the page content. */
+.school-year-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 0 auto;
+    min-width: 0;
+}
+.viewing-year-notice {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #fcd34d;
+    border-radius: 12px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 0.85rem;
+}
+.viewing-year-notice a { color: #92400e; font-weight: 700; }
+.school-year-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0.4rem;
+    border: 1px solid #dbe5f1;
+    border-radius: 12px;
+    background: #fff;
+    max-width: 100%;
+}
+.school-year-control label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    color: #64748b;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+.school-year-control label i { color: #2563eb; }
+.school-year-control .form-select {
+    width: auto;
+    min-width: 0;
+    border-color: transparent;
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 700;
+}
+.school-year-control .btn {
+    flex-shrink: 0;
+    border-color: #dbe5f1;
+}
+@media (max-width: 767.98px) {
+    .top-navbar:has(.school-year-toolbar) > .text-muted { display: none; }
+    .school-year-control { gap: 0.25rem; }
+    .school-year-control .form-select { max-width: 12rem; }
+}
+@media (max-width: 399.98px) {
+    .school-year-control label span { display: none; }
+    .school-year-control .form-select { max-width: 10rem; }
+}
+@media print {
+    .school-year-toolbar { display: none !important; }
 }

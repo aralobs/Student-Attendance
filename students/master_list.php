@@ -159,7 +159,7 @@ enrollmentReportNotice($reportContext);
 
 <?php showFlash(); ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-list-columns-reverse me-2 text-primary"></i>Master List
@@ -186,6 +186,9 @@ enrollmentReportNotice($reportContext);
 <div class="card mb-3 d-print-none">
     <div class="card-body py-2">
         <form method="GET" class="row g-2 align-items-center">
+            <?php if ($reportContext['managed']): ?>
+            <input type="hidden" name="sy" value="<?= sanitize($sy) ?>">
+            <?php else: ?>
             <div class="col-md-3">
                 <select name="sy" class="form-select form-select-sm">
                     <?php foreach ($schoolYears as $y): ?>
@@ -195,6 +198,7 @@ enrollmentReportNotice($reportContext);
                     <?php endforeach; ?>
                 </select>
             </div>
+            <?php endif; ?>
             <div class="col-md-3">
                 <select name="grade" class="form-select form-select-sm">
                     <option value="">All Grade Levels</option>

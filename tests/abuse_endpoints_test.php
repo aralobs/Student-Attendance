@@ -10,7 +10,7 @@ $dsn = 'mysql:host=' . DB_HOST . ';port=' . DB_PORT . ';charset=utf8mb4';
 $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC];
 $admin = new PDO($dsn, DB_USER, DB_PASS, $options);
 $created = false; $checks = 0;
-$env = getenv(); $env['MYSQLDATABASE'] = $name;
+$env = getenv(); $env['DB_NAME'] = $name;
 function routeCheck(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); $GLOBALS['checks']++; }
 function routeRequest(string $route, string $case): array {
     global $fixture, $env;
@@ -51,6 +51,7 @@ function saveAttendanceScan($db, $studentId, ...$args) {
 PHP);
     file_put_contents($fixture . '/includes/functions.php', '<?php require_once ' . var_export($root . '/includes/abuse_security.php', true) . '; require_once ' . var_export($root . '/includes/csrf.php', true) . ';' . <<<'PHP'
 
+function enrollmentModelEnabled($db): bool { return false; }
 function securityAuditContext(...$args) {}
 function startSession(): void {
     if (str_starts_with($GLOBALS['case'], 'login') && session_status() === PHP_SESSION_NONE) session_start();
@@ -71,6 +72,7 @@ PHP);
 $case = $argv[1]; $GLOBALS['case'] = $case;
 http_response_code(200);
 $_SERVER['REQUEST_METHOD'] = 'POST'; $_SERVER['REMOTE_ADDR'] = '127.0.0.1';
+if (str_starts_with($case, 'login')) session_start();
 $_GET = []; $_SESSION = ['app_csrf' => str_repeat('a',64), 'session_token' => 'synthetic-scanner-session'];
 $_POST = ['csrf_token'=>str_repeat('a',64), 'token'=>'STU-LEGACY-ABCDEF', 'username'=>'testadmin', 'password'=>'incorrect'];
 if ($case === 'teacher_foreign') $_POST['token'] = 'OTHER_TOKEN';

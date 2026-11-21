@@ -4,6 +4,7 @@ define('BASE_URL', 'https://school.example.test/');
 function csrfToken(): string { return 'synthetic'; }
 function currentUser(): array { return ['id' => 1]; }
 $today = '2026-10-11'; $_SESSION = [];
+$scannerAvailability = ['enabled'=>true, 'message'=>'Face-to-face classes'];
 $source = file_get_contents(__DIR__ . '/../attendance/scanner.php');
 $start = strpos($source, '$extraJS =');
 $end = strpos($source, "include '../includes/footer.php';", $start);

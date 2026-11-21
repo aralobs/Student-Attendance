@@ -1,0 +1,2 @@
+# Preserve exact vendor bytes required by browser subresource integrity.
+/assets/vendor/* -text

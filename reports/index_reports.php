@@ -6,13 +6,16 @@
 require_once '../config/database.php';
 require_once '../includes/functions.php';
 requireStaff();
+require_once '../includes/viewing_school_year.php';
+$db=getDB();
+if (enrollmentModelEnabled($db)) $viewingYear=requireViewingSchoolYear($db,currentUser());
 
 $pageTitle = 'Reports';
 include '../includes/header.php';
 include '../includes/sidebar.php';
 ?>
 
-<div class="page-header">
+<div class="page-header analytics-template">
     <div>
         <h1 class="page-title">
             <i class="bi bi-file-earmark-bar-graph me-2 text-primary"></i>Reports

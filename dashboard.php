@@ -21,6 +21,13 @@ require_once 'includes/enrollment_reports.php';
 $pageTitle = 'Dashboard';
 $db        = getDB();
 $today     = date('Y-m-d');
+$dashboardHistorical=false;
+if (enrollmentModelEnabled($db)) {
+    $viewingYear=requireViewingSchoolYear($db,currentUser());
+    $dashboardHistorical=(int)$viewingYear['id']!==(int)(getActiveSchoolYear($db)['id'] ?? 0);
+    $today=viewingSchoolYearDate($viewingYear);
+}
+$dashboardLive=$today===date('Y-m-d') && !$dashboardHistorical;
 $user      = currentUser();
 
 $endpointUrl = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/')
@@ -42,8 +49,8 @@ $upcomingEvents = $db->query("
 // ── Today's snapshot ───────────────────────────────────────
 if (enrollmentModelEnabled($db)) {
     require_once 'includes/enrollment_operations.php';
-    $todayRoster=enrollmentOperationalRows($db,$today,null,$user);
     $todayContext=prepareEnrollmentReport($db,$today,$today,null,true);
+    $todayRoster=$todayContext['data']['roster'];
     $todayIds=array_column($todayRoster,'id');
     $stats=['total_students'=>count($todayRoster),'full_day_today'=>0,'partial_today'=>0,'absent_today'=>0,'late_today'=>0,'is_holiday'=>$isHoliday,'calendar_entry'=>$calendarEntry];
     foreach ($todayContext['data']['attendance'] as $record) {
@@ -65,7 +72,8 @@ if (!isAdmin()) {
 
 // ── 7-day trend: single GROUP BY query (no N+1) ────────────
 $trend = [];
-$startDate = date('Y-m-d', strtotime('-6 days'));
+$startDate = date('Y-m-d', strtotime($today.' -6 days'));
+if (isset($viewingYear)) $startDate=max($startDate,$viewingYear['starts_on']);
 
 $reportContext = prepareEnrollmentReport($db,$startDate,$today,null,true);
 $reportStudents = $reportContext['students']; $reportAttendance = $reportContext['attendance']; $reportJoin = $reportContext['join'];
@@ -90,7 +98,8 @@ foreach ($stmt->fetchAll() as $r) {
 
 // Fill missing days (holidays / no-scan days)
 for ($i = 6; $i >= 0; $i--) {
-    $d     = date('Y-m-d', strtotime("-{$i} days"));
+    $d     = date('Y-m-d', strtotime($today." -{$i} days"));
+    if ($d < $startDate) continue;
     $isHol = isHolidayOrNoClass($d);
     $r     = $rowsByDate[$d] ?? null;
 
@@ -105,63 +114,11 @@ for ($i = 6; $i >= 0; $i--) {
 
 include 'includes/header.php';
 include 'includes/sidebar.php';
+if (is_file(__DIR__.'/includes/intervention_alert.php')) include 'includes/intervention_alert.php';
 enrollmentReportNotice($reportContext);
 ?>
 
-<style>
-/* Compact stat strip for 7-day trend */
-.mini-trend-row {
-    display: flex;
-    justify-content: space-between;
-    gap: .5rem;
-}
-.mini-trend-day {
-    flex: 1;
-    text-align: center;
-    font-size: .72rem;
-    color: #64748b;
-}
-.mini-trend-day .label { font-weight: 600; margin-bottom: .25rem; }
-.mini-trend-bar {
-    height: 60px;
-    display: flex;
-    flex-direction: column-reverse;
-    border-radius: 4px;
-    overflow: hidden;
-    background: #f1f5f9;
-    margin-bottom: .25rem;
-}
-.mini-trend-bar span { display: block; width: 100%; }
-.mini-trend-bar .seg-full    { background: #0e9f6e; }
-.mini-trend-bar .seg-partial { background: #f59e0b; }
-.mini-trend-bar .seg-absent  { background: #e02424; }
-.mini-trend-day .totals { font-size: .68rem; color: #94a3b8; }
-
-/* Quick action tiles */
-.quick-tile {
-    display: flex;
-    align-items: center;
-    gap: .75rem;
-    padding: .85rem 1rem;
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    background: #fff;
-    text-decoration: none;
-    color: #1e293b;
-    transition: all .15s ease;
-    height: 100%;
-}
-.quick-tile:hover {
-    border-color: #93c5fd;
-    box-shadow: 0 4px 12px rgba(15, 23, 42, .06);
-    color: #1e293b;
-    transform: translateY(-1px);
-}
-.quick-tile i { font-size: 1.4rem; }
-.quick-tile .qt-title { font-weight: 600; font-size: .88rem; }
-.quick-tile .qt-sub   { font-size: .72rem; color: #64748b; }
-</style>
-
+<div class="dashboard-page">
 <?php showFlash(); ?>
 
 <?php if ($isHoliday && $calendarEntry): ?>
@@ -179,58 +136,52 @@ enrollmentReportNotice($reportContext);
 </div>
 <?php endif; ?>
 
-<!-- Page Header -->
-<div class="page-header">
-    <div>
-        <h1 class="page-title">
+<div class="card analytics-card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h1 class="h6 mb-0 d-flex align-items-center flex-wrap gap-2">
             <i class="bi bi-speedometer2 me-2 text-primary"></i>Dashboard
+            <span class="month-badge ms-2"><i class="bi bi-calendar-check"></i><?= date('M j, Y',strtotime($today)) ?></span>
         </h1>
-        <p class="page-subtitle"><?= date('l, F j, Y') ?> — Today at a glance</p>
-    </div>
-    <a href="attendance/scanner.php" class="btn btn-primary">
+    <a href="attendance/scanner.php" class="btn btn-sm btn-primary">
         <i class="bi bi-qr-code-scan me-1"></i>Open Scanner
     </a>
+    </div>
+    <div class="card-body">
+        <div class="section-divider"><i class="bi bi-calendar-range"></i><?= $dashboardLive ? 'Today at a glance' : 'Snapshot as of '.sanitize($today) ?></div>
+<div class="row g-2">
+    <div class="col-6 col-lg-3">
+        <div class="metric-tile p-3 text-center h-100">
+            <div>
+                <div class="metric-label">Total Students</div>
+                <div class="metric-value text-primary"><?= $stats['total_students'] ?></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="metric-tile p-3 text-center h-100">
+            <div>
+                <div class="metric-label">Present<?= $dashboardLive ? ' Today' : ' on snapshot date' ?></div>
+                <div class="metric-value text-success"><?= $stats['present_today'] ?></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="metric-tile p-3 text-center h-100">
+            <div>
+                <div class="metric-label">Partial<?= $dashboardLive ? ' Today' : ' on snapshot date' ?></div>
+                <div class="metric-value text-warning"><?= $stats['partial_today'] ?></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="metric-tile p-3 text-center h-100">
+            <div>
+                <div class="metric-label">Absent<?= $dashboardLive ? ' Today' : ' on snapshot date' ?></div>
+                <div class="metric-value text-danger"><?= $stats['absent_today'] ?></div>
+            </div>
+        </div>
+    </div>
 </div>
-
-<!-- ============================================================
-     STAT CARDS — today's snapshot
-     ============================================================ -->
-<div class="row g-3 mb-4">
-    <div class="col-6 col-lg-3">
-        <div class="stat-card blue">
-            <div class="stat-icon blue"><i class="bi bi-people-fill"></i></div>
-            <div>
-                <div class="stat-number"><?= $stats['total_students'] ?></div>
-                <div class="stat-label">Total Students</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-lg-3">
-        <div class="stat-card green">
-            <div class="stat-icon green"><i class="bi bi-check-circle-fill"></i></div>
-            <div>
-                <div class="stat-number"><?= $stats['present_today'] ?></div>
-                <div class="stat-label">Present Today</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-lg-3">
-        <div class="stat-card orange">
-            <div class="stat-icon orange"><i class="bi bi-clock-history"></i></div>
-            <div>
-                <div class="stat-number"><?= $stats['partial_today'] ?></div>
-                <div class="stat-label">Partial Today</div>
-            </div>
-        </div>
-    </div>
-    <div class="col-6 col-lg-3">
-        <div class="stat-card red">
-            <div class="stat-icon red"><i class="bi bi-x-circle-fill"></i></div>
-            <div>
-                <div class="stat-number"><?= $stats['absent_today'] ?></div>
-                <div class="stat-label">Absent Today</div>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -238,23 +189,24 @@ enrollmentReportNotice($reportContext);
      TODAY'S LOG — mirrors scanner.php display
      Shows ALL students with AM/PM In/Out + Late/Absent badges
      ============================================================ -->
+<?php if ($dashboardLive): ?>
 <div class="row g-3 mb-4">
     <div class="col-12">
-        <div class="card">
+        <div class="card analytics-card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span>
                     <i class="bi bi-list-check me-2 text-primary"></i>
                     Today's Log — <span id="todayLogDate"><?= date('F j, Y') ?></span>
                     <span id="todayLogCount" class="badge bg-primary ms-2">—</span>
                 </span>
-                <div class="d-flex gap-2 align-items-center">
-                    <select id="todayLogGrade" class="form-select form-select-sm" style="width:auto">
+                <div class="dashboard-log-filters d-flex gap-2 align-items-center">
+                    <select id="todayLogGrade" class="form-select form-select-sm" aria-label="Filter by grade level">
                         <option value="">All Grade Levels</option>
                         <?php foreach (getGradeLevels() as $grade): ?>
                             <option value="<?= sanitize($grade) ?>"><?= sanitize($grade) ?></option>
                         <?php endforeach; ?>
                     </select>
-                    <select id="todayLogType" class="form-select form-select-sm" style="width:auto">
+                    <select id="todayLogType" class="form-select form-select-sm" aria-label="Filter by attendance type">
                         <option value="">All Types</option>
                         <option value="full_day">Full Day</option>
                         <option value="partial">Partial</option>
@@ -264,13 +216,15 @@ enrollmentReportNotice($reportContext);
                            id="todayLogSearch"
                            class="form-control form-control-sm"
                            placeholder="Search name / LRN / section..."
-                           style="width:220px">
-                    <button id="todayLogRefresh" class="btn btn-sm btn-outline-primary" title="Refresh">
+                           aria-label="Search today's log">
+                    <button id="todayLogRefresh" class="btn btn-sm btn-outline-primary" title="Refresh" aria-label="Refresh today's log">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </div>
             </div>
-            <div class="card-body p-0" style="max-height:420px;overflow-y:auto">
+            <div class="card-body">
+                <div class="section-divider"><i class="bi bi-list-check"></i>Attendance Records</div>
+                <div class="metric-tile dashboard-log-scroll">
                 <table class="table table-sm table-hover mb-0" id="todayLogTable">
                     <thead class="sticky-top bg-white" style="z-index:1">
                         <tr>
@@ -290,8 +244,9 @@ enrollmentReportNotice($reportContext);
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
-            <div class="card-footer text-muted small d-flex justify-content-between">
+            <div class="card-footer text-muted small d-flex justify-content-between flex-wrap gap-2">
                 <span id="todayLogUpdated">—</span>
                 <span>Showing students scanned today.</span>
             </div>
@@ -299,6 +254,7 @@ enrollmentReportNotice($reportContext);
     </div>
 </div>
 
+<?php endif; ?>
 <!-- ============================================================
      MINI 7-DAY TREND + UPCOMING EVENTS
      (compact; full analytics moved to analytics.php)
@@ -307,10 +263,10 @@ enrollmentReportNotice($reportContext);
 
     <!-- Mini trend -->
     <div class="col-lg-8">
-        <div class="card h-100">
+        <div class="card analytics-card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span>
-                    <i class="bi bi-graph-up me-2 text-primary"></i>Last 7 Days
+                    <i class="bi bi-graph-up me-2 text-primary"></i><?= $dashboardLive ? 'Last 7 Days' : '7 Days Ending '.sanitize($today) ?>
                 </span>
                 <a href="analytics/analytics.php" class="btn btn-sm btn-outline-primary">
                     <i class="bi bi-bar-chart-fill me-1"></i>Full Analytics
@@ -342,7 +298,7 @@ enrollmentReportNotice($reportContext);
                         </div>
                     <?php endforeach; ?>
                 </div>
-                <div class="d-flex gap-3 mt-3 small text-muted">
+                <div class="d-flex flex-wrap gap-3 mt-3 small text-muted">
                     <span><i class="bi bi-square-fill text-success"></i> Full Day</span>
                     <span><i class="bi bi-square-fill text-warning"></i> Partial</span>
                     <span><i class="bi bi-square-fill text-danger"></i> Absent</span>
@@ -351,9 +307,10 @@ enrollmentReportNotice($reportContext);
         </div>
     </div>
 
+    <?php if ($dashboardLive): ?>
     <!-- Upcoming events -->
     <div class="col-lg-4">
-        <div class="card h-100">
+        <div class="card analytics-card h-100">
             <div class="card-header">
                 <i class="bi bi-calendar-event me-2 text-primary"></i>Upcoming Events
                 <small class="text-muted ms-1">(30 days)</small>
@@ -381,6 +338,7 @@ enrollmentReportNotice($reportContext);
             </div>
         </div>
     </div>
+<?php endif; ?>
 </div>
 
 <!-- ============================================================
@@ -388,14 +346,15 @@ enrollmentReportNotice($reportContext);
      ============================================================ -->
 <div class="row g-3 mb-4">
     <div class="col-12">
-        <div class="card">
+        <div class="card analytics-card">
             <div class="card-header">
                 <i class="bi bi-lightning-charge me-2 text-primary"></i>Quick Actions
             </div>
             <div class="card-body">
+                <div class="section-divider"><i class="bi bi-grid"></i>Everyday Tools</div>
                 <div class="row g-3">
                     <div class="col-6 col-md-3">
-                        <a href="attendance/scanner.php" class="quick-tile">
+                        <a href="attendance/scanner.php" class="quick-tile metric-tile">
                             <i class="bi bi-qr-code-scan text-primary"></i>
                             <div>
                                 <div class="qt-title">Scanner</div>
@@ -404,7 +363,7 @@ enrollmentReportNotice($reportContext);
                         </a>
                     </div>
                     <div class="col-6 col-md-3">
-                        <a href="students/students.php" class="quick-tile">
+                        <a href="students/students.php" class="quick-tile metric-tile">
                             <i class="bi bi-people text-success"></i>
                             <div>
                                 <div class="qt-title">Students</div>
@@ -413,7 +372,7 @@ enrollmentReportNotice($reportContext);
                         </a>
                     </div>
                     <div class="col-6 col-md-3">
-                        <a href="analytics/analytics.php" class="quick-tile">
+                        <a href="analytics/analytics.php" class="quick-tile metric-tile">
                             <i class="bi bi-bar-chart text-warning"></i>
                             <div>
                                 <div class="qt-title">Analytics</div>
@@ -423,7 +382,7 @@ enrollmentReportNotice($reportContext);
                     </div>
                     <?php if (isAdmin()): ?>
                     <div class="col-6 col-md-3">
-                        <a href="sms/logs.php" class="quick-tile">
+                        <a href="sms/logs.php" class="quick-tile metric-tile">
                             <i class="bi bi-chat-dots text-danger"></i>
                             <div>
                                 <div class="qt-title">SMS</div>
@@ -438,8 +397,11 @@ enrollmentReportNotice($reportContext);
     </div>
 </div>
 
+</div><!-- /.dashboard-page -->
+
 <?php
 // JSON data for the Today's Log JS — mirrors scanner.php's display
+$dashboardLiveJS=$dashboardLive?'true':'false';
 $extraJS = <<<JS
 <script>
 // ── Today's Log (mirrors scanner.php layout) ─────────────────
@@ -595,6 +557,7 @@ $extraJS = <<<JS
 // Preserves scroll position and pauses while the user is
 // typing in a filter box or has a modal open.
 (function () {
+    if (!{$dashboardLiveJS}) return;
     const REFRESH_MS = 120000;   // 2 minutes
     const KEY = 'dashboardScrollY';
 

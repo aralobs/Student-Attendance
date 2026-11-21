@@ -15,12 +15,12 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 
 $html   = buildEmailTemplate(
     'Test Email',
-    '<p>This is a test email from the SPCCS Attendance System.</p>
+    '<p>This is a test email from Automated Student Attendance Monitoring (ASAM).</p>
      <p>If you received this, email notifications are working correctly! ✅</p>'
 );
 
 try {
-    $result = sendEmail($email, 'Test Recipient', 'Test Email — SPCCS Attendance System', $html);
+    $result = sendEmail($email, 'Test Recipient', 'Test Email — ASAM', $html);
     echo json_encode(['success' => $result['success'], 'message' => $result['success']
         ? 'Email sent successfully.' : 'Email could not be sent. Check the saved Gmail address and App Password.']);
 } catch (Throwable $e) {

@@ -1,0 +1,34 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__.'/support/enrollment_fixture.php';
+$service=dirname(__DIR__).'/includes/attendance_decisions.php'; if(is_file($service)) require_once $service;
+checkEnrollment(function_exists('classifyAttendanceDay'),'Shared classification must exist');
+$now=new DateTimeImmutable('2026-10-25 18:00:00',new DateTimeZone('Asia/Manila'));
+$ctx=['eligible'=>true,'mode'=>'face_to_face','date'=>'2026-10-20','schedule_type'=>'full_day'];
+checkEnrollment(classifyAttendanceDay($ctx,null,null,$now)['status']==='not_recorded','Missing is not absent');
+checkEnrollment(classifyAttendanceDay($ctx,null,['decision'=>'present'],$now)['present_units']===1.0,'Manual present needs no scans');
+checkEnrollment(classifyAttendanceDay($ctx,['attendance_type'=>'remarked','remarks'=>'ill'],null,$now)['status']==='remarked','Remark is unresolved, not Excused');
+$mod=array_merge($ctx,['mode'=>'modular','deadline_at'=>'2026-10-26 17:00:00']);
+checkEnrollment(classifyAttendanceDay($mod,null,null,$now)['status']==='pending','Before deadline pending');
+$mod['deadline_at']='2026-10-24 17:00:00';
+checkEnrollment(classifyAttendanceDay($mod,null,null,$now)['status']==='review_needed','After deadline requires review');
+withEnrollmentFixture(function(array $f) use($now): void {
+    $db=$f['db']; ensureDeliverySchema($db); ensureAttendanceDecisionSchema($db);
+    $db->exec("INSERT INTO system_settings(setting_key,setting_value) VALUES('enrollment_model_version','1')");
+    $cmd=['student_id'=>101,'section_id'=>10,'date'=>'2026-10-21','decision'=>'absent_excused','reason'=>'Synthetic illness','expected_revision'=>0];
+    $scan=$db->query('SELECT am_in FROM attendance WHERE id=501')->fetchColumn();
+    $saved=saveAttendanceDecision($db,$f['teacher'],$cmd);
+    checkEnrollment($saved['revision']===1,'First revision saved');
+    checkEnrollment($db->query('SELECT am_in FROM attendance WHERE id=501')->fetchColumn()===$scan,'Scans preserved');
+    checkEnrollment(!str_contains($db->query('SELECT reason_ciphertext FROM attendance_decisions')->fetchColumn(),'Synthetic illness'),'Reason encrypted');
+    expectEnrollmentError(DomainException::class,fn()=>saveAttendanceDecision($db,$f['teacher'],$cmd));
+    $cmd['expected_revision']=1; $cmd['reason']='';
+    expectEnrollmentError(InvalidArgumentException::class,fn()=>saveAttendanceDecision($db,$f['teacher'],$cmd));
+    $cmd['reason']='Synthetic correction';
+    expectEnrollmentError(DomainException::class,fn()=>saveAttendanceDecision($db,$f['otherTeacher'],$cmd));
+    $sheet=loadAttendanceSheet($db,$f['teacher'],1,10,'2026-10-20',$now);
+    checkEnrollment(count($sheet)===1 && $sheet[0]['classification']['status']==='not_recorded','Full roster includes missing scans without writes');
+    expectEnrollmentError(DomainException::class,fn()=>loadAttendanceSheet($db,$f['otherTeacher'],1,10,'2026-10-20',$now));
+    checkEnrollment((int)$db->query('SELECT COUNT(*) FROM attendance')->fetchColumn()===1,'Read creates no attendance');
+});
+echo 'Attendance decisions passed ('.$GLOBALS['enrollment_checks']." checks).\n";
